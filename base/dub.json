@@ -1,0 +1,19 @@
+{
+	"authors": [
+		"Ralph Alexander Bariz"
+	],
+	"importPaths": [
+		"source/"
+	],
+	"name": "flow-base",
+	"version": "0.1.1",
+	"license": "GPL-3.0",
+	"targetName": "flow-base",
+	"targetType": "library",
+	"targetPath": "lib",
+	"description": "FLOW runtime base.",
+	"homepage": "https://github.com/RalphBariz/flow-base",
+	"sourcePaths": [
+		"source/"
+	]
+}

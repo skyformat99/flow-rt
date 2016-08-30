@@ -1,12 +1,59 @@
 {
-    "version": "0.2.0",
+    "version": "0.2.0"/*,
     "configurations": [
         {
-            "name": "flowbase ut",
+            "name": "flow-base",
             "type": "gdb",
             "request": "launch",
-            "target": "__test__library__",
-            "cwd": "${workspaceRoot}/flowbase"
+            "autorun": [
+                "handle SIGUSR1 nostop noprint",
+                "handle SIGUSR2 nostop noprint",
+                "break onInvalidMemoryOperationError"
+            ],
+            "target": "flow-base-test-library",
+            "cwd": "${workspaceRoot}/base/lib"
+        }
+    ]*//*,
+    "configurations": [
+        {
+            "name": "flow-util",
+            "type": "gdb",
+            "request": "launch",
+            "autorun": [
+                "handle SIGUSR1 nostop noprint",
+                "handle SIGUSR2 nostop noprint",
+                "break onInvalidMemoryOperationError"
+            ],
+            "target": "flow-util-test-library",
+            "cwd": "${workspaceRoot}/util/lib"
+        }
+    ]*//*,
+    "configurations": [
+        {
+            "name": "flow-alien",
+            "type": "gdb",
+            "request": "launch",
+            "autorun": [
+                "handle SIGUSR1 nostop noprint",
+                "handle SIGUSR2 nostop noprint",
+                "break onInvalidMemoryOperationError"
+            ],
+            "target": "flow-alien-test-library",
+            "cwd": "${workspaceRoot}/alien/lib"
+        }
+    ]*/,
+    "configurations": [
+        {
+            "name": "flow-causal",
+            "type": "gdb",
+            "request": "launch",
+            "autorun": [
+                "handle SIGUSR1 nostop noprint",
+                "handle SIGUSR2 nostop noprint",
+                "break onInvalidMemoryOperationError"
+            ],
+            "target": "flow-causal",
+            "cwd": "${workspaceRoot}/causal/bin"
         }
     ]
 }

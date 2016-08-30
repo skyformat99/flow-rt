@@ -1,13 +1,9 @@
 #!/bin/bash
 
-function build() {
-	cd $1
-	#dub build #--compiler=ldc2
-	dub test #--compiler=ldc2
-	cd ..
-}
+rootDir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-#build thrift
-build flowbase
-#build playground
+cd $rootDir/base && dub test &&
+cd $rootDir/util && dub test &&
+cd $rootDir/alien && dub test &&
 
+cd $rootDir/causal && dub build --build $1 ${@:2}

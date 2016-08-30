@@ -1,0 +1,27 @@
+{
+	"authors": [
+		"Ralph Alexander Bariz"
+	],
+	"importPaths": [
+		"source/"
+	],
+	"dependencies": {
+		"derelict-cl": "~>2.0.0",
+		"flow-base": "==0.1.1",
+		"flow-util": "==0.1.1"
+	},
+	"name": "flow-alien",
+	"version": "0.1.1",
+	"license": "GPL-3.0",
+	"targetName": "flow-alien",
+	"targetType": "library",
+	"targetPath": "lib",
+	"description": "FLOW runtime alien.",
+	"homepage": "https://github.com/RalphBariz/flow",
+	"sourcePaths": [
+		"source/"
+	],
+	"copyFiles": [
+		"public/"
+	]
+}

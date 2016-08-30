@@ -1,0 +1,8 @@
+
+sudo apt-get install dcd dfmt dscanner dmd-bin
+
+https://github.com/Pure-D/workspace-d/releases
+
+Workspace settings of vscode:
+"d.neverUseDub": true,
+"d.projectImportPaths": ["base/source/","alien/source/", "util/source/"]

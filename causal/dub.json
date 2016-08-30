@@ -1,0 +1,28 @@
+{
+	"authors": [
+		"Ralph Alexander Bariz"
+	],
+	"importPaths": [
+		"source/"
+	],
+	"dependencies": {
+		"flow-base": "==0.1.1",
+		"flow-util": "==0.1.1",
+		"flow-alien": "==0.1.1"
+	},
+	"name": "flow-causal",
+	"version": "0.1.1",
+	"license": "GPL-3.0",
+	"targetName": "flow-causal",
+	"targetType": "executable",
+	"targetPath": "bin",
+	"description": "FLOW causal studio.",
+	"homepage": "https://github.com/RalphBariz/flow",
+	"sourcePaths": [
+		"source/"
+	],
+	"copyFiles": [
+		"public/",
+		"etc/"
+	]
+}

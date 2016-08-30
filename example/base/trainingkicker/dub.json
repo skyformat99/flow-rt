@@ -1,0 +1,23 @@
+{
+	"authors": [
+		"Ralph Alexander Bariz"
+	],
+	"importPaths": [
+		"source/"
+	],
+	"dependencies": {
+		"flow-base": "==0.1.1",
+		"flow-example-base-lib": "==0.1.1"
+	},
+	"name": "flow-example-base-trainingkicker",
+	"version": "0.1.1",
+	"license": "GPL-3.0",
+	"targetName": "flow-example-base-trainingkicker",
+	"targetType": "executable",
+	"targetPath": "bin",
+	"description": "FLOW example trainingkicker.",
+	"homepage": "https://github.com/RalphBariz/flow",
+	"sourcePaths": [
+		"source/"
+	]
+}

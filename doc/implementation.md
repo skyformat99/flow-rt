@@ -1,243 +1,62 @@
-# Implementation
-This text should provide a rough guideline for implementing the specifications.
-It is not only meant for helping to implement compatible entities in different languages,
-but also for helping me to focus my thoughts. I simply want to avoid refractoring again and again.
+## About
+For how to implement a flowing swarm I ask you to think about following gedankenexperiment [Infinite-Monkey-Theorem](https://de.wikipedia.org/wiki/Infinite-Monkey-Theorem) and imagine following scenario.
+* there is a room full of monkeys,
+* an overseer searching their texts for the bible (can search all the texts in parallel),
+* an >0 amount of monkeys typing (random bytes) in hebrew
+* unfortunately the overseer speaks only german(string) and therefore needs a translator
+* and for sure the overseer rewards the monkey writing the bible
 
-## Conventions
-Since the first implementation will happen in D, the conventions are designed for that language.
-For implementing FLOW in different languages the conventions may have to be adapted.
+You may ask:
+* What communication (signaling) happens here?
+* What is the communicating **entity**?
+* What signals causes what activity (**task**ing) in this scenario?
 
-### Module naming
-The library itself is called **flowbase**. It contains following **codedomain**s.
-* **type**: the base types required for the implementation (SignalArgs, List, FiFo, etc.)
-* **data**: the whole base code for the data handling(not data services).
-* **task**: the whole base code for task handling and dispatching.
-* **resource**: base code for resource definitions.
-* **entity**: base functionality of the entities allowing them to be instanciated, managed, listening etc.
+Therefore **tasks** can be induced by **signal**s into **entities**.
 
-Each codedomain contains one or more of following D modules:
-* **interfaces.d**: interface definitions.
-* **exceptions.d**: error and exception types (throwables).
-* **meta.d**: compile time templates/code generation.
-* **signals.d**: signals and their aruguments(base is flowbase.type.types.SignalArgs).
-* **templates.d**: shared implementations.
-* **types.d**: type definitions and their implementation.
-* **extensions.d**: methods extending type, struct and interface functionality
-* **tests.d**: unit tests
+## Components
+### Signaling
+A signal is information transmitted into the swarm.
 
-### Code
-#### Basic naming
-Type and struct names as Compile Time Templates are written as UpperCamelCase.
+The following signaling schemes exist:
+* **unicast** messages are directed to a single **destination**
+* **multicast** messages are directed to a **domain** (leave domain empty for all)
+* **anycast** messages are directed to a **domain** and accepted by exact one destination
 
-In the opposite to whats common in D Phobos library interface names are begining with a capitalized "I" followed by an UpperCamelCase name.
-For example IMyDefinition.
+### Data management
+A signal is nothing but a piece of data with a special purpose.
+At the moment data hierarchies can contain fields(1:1) and lists(1:n)
 
-Signal names are beginning with a capitalized "S" followed by an UpperCamelCase name.
-For example SCollectionChanged.
+### Entity
+An **entity** is **listen**ing into the swarm for signals, if it accepts the signal, a **task** is triggered inside an own thread called **tasker**.
 
-Template names are beginning with a capitalized "T" followed by an UpperCamelCase name.
-For example TDataObject.
+### Tasking
+A **task** is an atomic algorithm.
+Such tasks can be executed as strings of pearls,
+able to fork, to loop, etc.
 
-For satisfying naming conventions the required parts interfaces, templates and signals from the Phobos library are wrapped.
-Also later this should guarantee flexibility up to a certain point.
+There are also synchronized tasks (**stask**).
+Synchronized tasks are meant to set a statemachine in a synchronized way.
+It is guaranteed, that all listener are waiting for the **stask** to finish.
+Never send signals from a synchronized task
+except you can assure there wont happen a deadlock.
+Otherwise send signals from a **next** normal task.
 
-#### Member naming
-Private field and property names are beginning with a "_" followed by a lowerCamelCase name.
+An internal flow is hosted by a **tasker**
 
-Public field, property and method names are written as lowerCamelCase.
+**An internal flow is a subset of a full flow, a defined piece of causality.**
 
-## Basics
-You define an executable this way:
-```D
-import mylib.entity.types;
+### Organs
+Finally an **organ** is a **start** and **stop**able collection of entities with a specific configuration.
+Since entities are kind of generic and should be always designed with a category of tasks in mind, the organ configures it proper for a specific task.
 
-int main()
-{
-    auto manager = new EntityManager();
-    manager.add(new FooEntity());
-    manager.add(new BarEntity());
+## Lets see
+Most code is pretty simple. Its just a definition of the composition of the swarm(**entity**, **listen**) and of the signaling(**unicast**, **multicast**, **anycast**).
+The **task** contains an algorithm.
+* in [signals.d](https://github.com/RalphBariz/FLOW/blob/master/example/base/shared/source/flow/example/base/typingmonkeys/signals.d) you find declarations of signals used by more than one entity
+* in [monkey.d](https://github.com/RalphBariz/FLOW/blob/master/example/base/shared/source/flow/example/base/typingmonkeys/monkey.d) you find signals, data, tasks and the entity of the monkey
+* in [translator.d](https://github.com/RalphBariz/FLOW/blob/master/example/base/shared/source/flow/example/base/typingmonkeys/translator.d) you find signals, data, tasks and the entity of the translator
+* in [overseer.d](https://github.com/RalphBariz/FLOW/blob/master/example/base/shared/source/flow/example/base/typingmonkeys/overseer.d) you find signals, data, tasks and the entity of the overseer
+* in [typingmonkeys.d](https://github.com/RalphBariz/FLOW/blob/master/example/base/shared/source/flow/example/base/typingmonkeys/typingmonkeys.d) you find the organ casting the overseer, the translator and the monkeys
+* in [test.d](https://github.com/RalphBariz/FLOW/blob/master/example/base/shared/source/flow/example/base/typingmonkeys/test.d) you find the usage of the organ and a few test only stuff(just ignore it)
 
-    return manager.run();
-}
-```
-
-As you can see, here you get an **entity manager** receiving entity instances before(but also after is possible) it enters the main loop.
-
-## Entity
-An entity is controllable by certain controll mechanisms like start(optional with deserialization), stop, break, continue, serialize, and for tasking entities enqueue.
-All this basic functionality is defined by the abstract type flowbase.entity.types.Entity.
-
-Sample entity base implementation:
-```D
-module flowbase.entity.types;
-
-import core.time;
-import flowbase.resource.interfaces;
-
-abstract class Entity : IEntity
-{
-    private EntityManager _manager;
-    @property EntityManager manager(){return this._manager;}
-
-    private SignalCaster _caster = new SignalCaster(this);
-    @property SignalCaster caster(){return this._caster;}
-
-    @property Listener listener() {return null;}
-
-    @property IResource[] resources() {return null;}
-
-    @property EntityScope scope(){return EntityScope.Global;}
-    @property IEntitySerializer serializer(){return null;}
-    
-    private EntityState _state;
-    @property EntityState state() {return this._state;}
-    protected @property void state(EntityState value)
-    {
-        if(this._state != value)
-        {
-            this._state = state;
-
-            this.stateChanged.emit(this, new StateChangedSignalArgs());
-        }
-    }
-
-    private SStateChanged _stateChanged = new SStateChanged();
-    @property SStateChanged stateChanged()
-    {
-        return this._stateChanged;
-    }
-
-    abstract @property string domain();
-
-    void start(string json = null)
-    {
-        if(json !is null)
-        {
-            if(this.serializer !is null)
-                this.serializer.deserialize(json);
-            else throw new IncompatibleRuntimeDataError(typeid(this), json);
-        }
-
-        this.onStart();
-        this.state = EntityState.Running;
-    }
-
-    void break()
-    {
-        this.state = EntityState.Paused;
-        while(this._dispatcher.IsRunning) Thread.sleep(50.msecs);
-    }
-
-    void continue()
-    {
-        this.state = EntityState.Running;
-    }
-
-    string stop()
-    {   string json;
-        if(this.serializer !is null)
-           json = this.serializer.serialize();
-          
-        this.onStop();
-        this.state = EntityState.Halted;
-        
-        return json;
-    }
-
-    protected void onStart(){}
-    protected void onBreak(){}
-    protected void onContinue(){}
-    protected void onStop(){}
-
-    string serialize()
-    {
-        return this.serializer !is null ? this.serializer.serialize() : null;
-    }
-}
-```
-
-Sample tasking entity base implementation:
-```D
-import core.thread;
-import flowbase.task.types;
-
-abstract class TaskingEntity : Entity, ITasking
-{
-    private List!TaskChain _taskChains = new List!TaskChain();
-
-    protected void enqueue(ITask task)
-    {
-        auto chain = new TaskChain(this, task);
-        this._taskChains.put(chain);
-        chain.Run();
-    }
-
-    package void dispose(TaskChain chain)
-    {
-        this._taskChains.remove(chain);
-    } 
-
-    override string stop()
-    {
-        foreach(taskChain; this._taskChains)
-            taskChain.Dispose();
-
-        base.stop();
-    }
-}
-```
-
-Therefor a concrete implementation would look like:
-```D
-module mylib.entity.types;
-import mylib.resource.types;
-import mylib.task.types;
-import mylib.listener.types;
-
-import core.thread;
-import core.time;
-import flowbase.entity.types;
-import flowbase.task.types;
-import flowbase.resource.interfaces;
-import flowbase.listener.types;
-
-class FooEntity : TaskingEntity
-{
-    override
-    {
-        @property IResource[] resources()
-        {
-            IResource[] res;
-            res ~= new CpuResource();
-            return res;
-        }
-
-        private Listener _listener;
-        @property Listener listener()
-        {
-            return this._listener;
-        }
-
-        @property string domain()
-        {
-            return "mydomain.mycategory";
-        }
-
-        void onStart()
-        {
-            this._listener = new FooListener();
-        }
-
-        void onStop()
-        {
-            // do some cleanup
-
-            destroy(this._listener);
-            this._listener = null;
-        }
-    }
-}
-```
-
-### Data bag
-
+**I hope you got a brief overview about what you can do with FLOW. The rest is up to your imagination.**

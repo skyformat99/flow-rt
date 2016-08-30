@@ -1,0 +1,23 @@
+{
+	"authors": [
+		"Ralph Alexander Bariz"
+	],
+	"importPaths": [
+		"source/"
+	],
+	"dependencies": {
+		"flow-base": "==0.1.1",
+		"flow-example-base-lib": "==0.1.1"
+	},
+	"name": "flow-example-base-simplekicker",
+	"version": "0.1.1",
+	"license": "GPL-3.0",
+	"targetName": "flow-example-base-simplekicker",
+	"targetType": "executable",
+	"targetPath": "bin",
+	"description": "FLOW example simplekicker.",
+	"homepage": "https://github.com/RalphBariz/flow",
+	"sourcePaths": [
+		"source/"
+	]
+}

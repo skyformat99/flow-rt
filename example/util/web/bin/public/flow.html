@@ -1,0 +1,65 @@
+<html><body>
+<script type="text/template" id="Flow-Host">
+    <div id="Flow-Host-body">
+    </div>
+</script>
+
+<script type="text/template" id="Flow-TickManager">
+    <div class="navbar navbar-default navbar-static-top">
+        <div class="collapse navbar-collapse">
+            <ul id="Flow-TickManager-body" class="nav navbar-nav"></ul>
+        </div>
+    </div>
+</script>
+
+<script type="text/template" id="Flow-Ticker">
+    <a id="btn" class="navbar-brand" style="cursor: pointer;"><%= display %><span id="btnClose" class="glyphicon glyphicon-remove" /></a>
+</script>
+
+<script type="text/template" id="Flow-Tick">
+    <div>
+        <div class="panel-header">
+            <ul class="nav nav-tabs">
+                <li id="Flow-Tick-btnOverview" role="presentation" style="cursor: pointer;" class="active"><a href="#"><span class="glyphicon glyphicon-cloud" title="Overview"></span></a></li>
+                <li id="Flow-Tick-btnTrace" role="presentation" style="cursor: pointer;"><a href="#"><span class="glyphicon glyphicon-eye-open" title="Trace"></span></a></li>
+            </ul>
+        </div>
+        <div id="Flow-Tick-body" class="panel-body"></div>
+    </div>
+</script>
+
+<script type="text/template" id="Flow-Tick-display">
+    <span class="glyphicon glyphicon-tasks" title="FLOW"></span>
+</script>
+
+<script type="text/template" id="Flow-OverviewView">
+    <div>
+        <div id="body">
+
+        </div>
+    </div>
+</script>
+
+<script type="text/template" id="Flow-TraceView">
+    <div>
+        <nav class="navbar navbar-default">
+            <div class="container-fluid">
+                <div class="collapse navbar-collapse">
+                    <ul class="nav navbar-nav">
+                        <li style="cursor: pointer;"><a id="Flow-TraceView-btnClear" class="navbar-brand" href="#"><span class="glyphicon glyphicon-erase" title="Clear"></span></a></li>
+                        <li>
+                            <form class="navbar-form navbar-left" role="search">
+                                <div class="form-group">
+                                    <input id="Flow-TraceView-slider" style="width: 500px;" class="navbar-brand" name="Flow-TraceView-slider" type="text" value="<%= act %>" data-slider-max="<%= seq %>" data-slider-value="0">
+                                </div>
+                            </form>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+            <!--<button id="Flow-TraceView-btnClear" type="button" class="btn btn-default">Clear</button>-->
+        </nav>
+        <section id="Flow-TraceView-body" style="height: 1000px; border-style: solid; background-color: #AAAAAA;"></section>
+    </div>
+</script>
+</body></html>

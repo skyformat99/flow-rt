@@ -1,0 +1,25 @@
+{
+	"authors": [
+		"Ralph Alexander Bariz"
+	],
+	"importPaths": [
+		"source/"
+	],
+	"dependencies": {
+		"flow-base": "==0.1.1"
+	},
+	"name": "flow-util",
+	"version": "0.1.1",
+	"license": "GPL-3.0",
+	"targetName": "flow-util",
+	"targetType": "library",
+	"targetPath": "lib",
+	"description": "FLOW runtime util.",
+	"homepage": "https://github.com/RalphBariz/flow",
+	"sourcePaths": [
+		"source/"
+	],
+	"copyFiles": [
+		"public/"
+	]
+}
