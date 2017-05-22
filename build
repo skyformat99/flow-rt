@@ -1,0 +1,25 @@
+#!/bin/bash
+
+
+if [ $1 ]; then buildBinType=$1; else buildBinType=debug; fi
+buildBinParams=${@:2}
+rootDir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+function buildLib {
+    cd $rootDir/$1 &&
+    dub test --build $buildBinType $buildBinParams &&
+    dub add-local ./
+}
+
+function buildBin {
+    cd $rootDir/$1 &&
+    dub build --build $buildBinType $buildBinParams
+}
+
+$rootDir/clean
+
+buildLib base &&
+buildLib util &&
+buildLib alien &&
+
+buildBin causal

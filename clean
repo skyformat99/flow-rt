@@ -1,0 +1,18 @@
+#!/bin/bash
+
+rootDir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+function cleanLib {
+    dub remove-local $rootDir/$1
+    rm -fr $rootDir/$1/lib
+}
+
+function cleanBin {
+    rm -fr $rootDir/$1/bin
+}
+
+cleanBin causal
+
+cleanLib alien
+cleanLib util
+cleanLib base
