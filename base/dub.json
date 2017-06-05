@@ -11,7 +11,7 @@
 	"targetName": "flow-base",
 	"targetType": "library",
 	"targetPath": "lib",
-	"description": "FLOW runtime base.",
+	"description": "FLOW runtime",
 	"homepage": "https://github.com/RalphBariz/flow-base",
 	"sourcePaths": [
 		"source/"

@@ -8,7 +8,9 @@
 	"dependencies": {
 		"flow-base": "==0.1.1",
 		"flow-util": "==0.1.1",
-		"flow-alien": "==0.1.1"
+		"flow-util-ui": "==0.1.1",
+		"flow-alien": "==0.1.1",
+		"flow-alien-ui": "==0.1.1"
 	},
 	"name": "flow-causal",
 	"version": "0.1.1",

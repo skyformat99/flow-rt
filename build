@@ -7,6 +7,7 @@ rootDir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 function buildLib {
     cd $rootDir/$1 &&
+    dub remove-local ./
     dub test --build $buildBinType $buildBinParams &&
     dub add-local ./
 }
@@ -20,7 +21,9 @@ $rootDir/clean
 
 buildLib base &&
 buildLib util &&
+buildLib util-ui &&
 buildLib alien &&
+buildLib alien-ui &&
 
-#buildBin causal
-buildBin hive/experiments/take01
+buildBin causal
+#buildBin hive/experiments/take01

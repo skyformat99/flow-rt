@@ -15,5 +15,7 @@ cleanBin hive/experiments/take01
 cleanBin causal
 
 cleanLib alien
+clearLib alien-ui
 cleanLib util
+cleanLib util-ui
 cleanLib base

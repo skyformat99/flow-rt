@@ -14,12 +14,9 @@
 	"targetName": "flow-util",
 	"targetType": "library",
 	"targetPath": "lib",
-	"description": "FLOW runtime util.",
+	"description": "FLOW runtime - util modules",
 	"homepage": "https://github.com/RalphBariz/flow",
 	"sourcePaths": [
 		"source/"
-	],
-	"copyFiles": [
-		"public/"
 	]
 }
