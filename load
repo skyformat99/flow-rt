@@ -1,0 +1,52 @@
+#!/bin/bash
+
+rootDir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+qgit=$(which git)
+if [ ! "$qgit" == "/bin/git" && ! "$qgit" == "/usr/bin/git" ] # if you got a system where git is located somewhere else add it
+then
+    echo "!!!git has to be installed!!!"
+fi
+
+if [ "$4" == "--ssh" ]
+then
+    git@github.com:$owner/flow-$module.git
+else
+    git clone https://github.com/$owner/flow-$module.git
+fi
+
+if [ -z $1 || -z $2 ]
+then
+    echo "load user module [commit/tag/branch] [-s|--ssh]"
+    echo "user: github username used in repository paths"
+    echo "\teg. RalphBariz in https://github.com/RalphBariz/flow-util.git"
+    echo "module: eg. util for flow-util or util-ui for flow-util-ui."
+    echo "\tthe git repository is cloned to the respective"
+    echo "\tpaths flow/util or flow/util-ui"
+    echo "commit/tag/branch: therefor simply the git checkout parameter"
+    echo "\tif left empty, master branch will be used"
+    echo "-s|--ssh: if you have write access to that repo"
+    echo "\tand create a dev env, use this"
+else
+    owner=$1
+    module=$2
+fi
+
+if [ -z $3 ]
+then
+    version=master
+else
+    version=$3
+fi
+
+# walking to flow source dir and cloning repo
+msg="module cloned into dev env"
+
+actDir=$(pwd)
+cd rootDir
+if [ "$4" == "--ssh" || "$4" == "-s" ] # user wants it as ssh?
+then
+    git@github.com:$owner/flow-$module.git && echo $msg
+else
+    git clone https://github.com/$owner/flow-$module.git && echo $msg
+fi
+cd actDir
