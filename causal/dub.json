@@ -6,14 +6,14 @@
 		"source/"
 	],
 	"dependencies": {
-		"flow-base": "==0.1.1",
-		"flow-util": "==0.1.1",
-		"flow-util-ui": "==0.1.1",
-		"flow-alien": "==0.1.1",
-		"flow-alien-ui": "==0.1.1"
+		"flow-base": "==0.2.0",
+		"flow-util": "==0.2.0",
+		"flow-util-ui": "==0.2.0",
+		"flow-alien": "==0.2.0",
+		"flow-alien-ui": "==0.2.0"
 	},
 	"name": "flow-causal",
-	"version": "0.1.1",
+	"version": "0.2.0",
 	"license": "GPL-3.0",
 	"targetName": "flow-causal",
 	"targetType": "executable",

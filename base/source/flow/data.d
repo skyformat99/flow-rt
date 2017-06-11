@@ -13,8 +13,17 @@ class IdData : Data, IIdentified
     mixin TField!(UUID, "id");
 }
 
+/// configuration object of flow process
+class FlowConfig : Data
+{
+    mixin TData;
+    
+    mixin TField!(bool, "tracing");
+    mixin TField!(bool, "preventIdTheft");
+}
+
 /// referencing a specific process having an unique address like udp://hostname:port
-class ProcessRef : Data
+class FlowRef : Data
 {
     mixin TData;
 
@@ -27,7 +36,7 @@ class EntityRef : IdData
     mixin TData;
 
     mixin TField!(string, "type");
-    mixin TField!(ProcessRef, "process");
+    mixin TField!(FlowRef, "process");
 }
 
 /// referencing a specific entity 

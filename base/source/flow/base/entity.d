@@ -11,11 +11,11 @@ import flow.dev, flow.interfaces, flow.signals, flow.data, flow.ticks;
 struct ListenerMeta
 {
     string signal;
-    Object function(IEntity, IFlowSignal) handle;
+    Object function(IEntity, ISignal) handle;
 }
 
 /// generates listener meta informations to use by an entity
-mixin template TListen(string signal, Object function(IEntity, IFlowSignal) handle)
+mixin template TListen(string signal, Object function(IEntity, ISignal) handle)
 {
     import flow.base.entity;
     
@@ -53,22 +53,22 @@ mixin template TEntity(T = void)
     }
 
     this()
-    {this(randomUUID, "", EntityScope.Global, null, null, null);}
+    {this(randomUUID, "", EntityScope.Local, null, null, null);}
 
     this(Object context)
-    {this(randomUUID, "", EntityScope.Global, null, context, null);}
+    {this(randomUUID, "", EntityScope.Local, null, context, null);}
 
     this(string domain, Object context)
-    {this(randomUUID, domain, EntityScope.Global, null, context, null);}
+    {this(randomUUID, domain, EntityScope.Local, null, context, null);}
 
     this(Object context, Data settings)
-    {this(randomUUID, "", EntityScope.Global, null, context, settings);}
+    {this(randomUUID, "", EntityScope.Local, null, context, settings);}
 
     this(string domain, Object context, Data settings)
-    {this(randomUUID, domain, EntityScope.Global, null, context, settings);}
+    {this(randomUUID, domain, EntityScope.Local, null, context, settings);}
 
     this(string domain)
-    {this(randomUUID, domain, EntityScope.Global, null, null, null);}
+    {this(randomUUID, domain, EntityScope.Local, null, null, null);}
     
     this(UUID id, string domain, EntityScope availability)
     {this(id, domain, availability, null, null, null);}
@@ -98,7 +98,7 @@ mixin template TEntity(T = void)
 class Listener
 {
     private Mutex _lock;
-    private Object function(IEntity, IFlowSignal)[UUID] _handles;
+    private Object function(IEntity, ISignal)[UUID] _handles;
 
     private string _signal;
     @property string signal() {return this._signal;}
@@ -118,7 +118,7 @@ class Listener
         debugMsg("listener("~this._signal~", "~this.entity.id.toString~");"~msg, level);
     }
 
-    UUID add(Object function(IEntity, IFlowSignal) handle)
+    UUID add(Object function(IEntity, ISignal) handle)
     {
         synchronized(this._lock)
         {
@@ -144,7 +144,7 @@ class Listener
     }
 
     /// receive and handle a signal
-    bool receive(IFlowSignal s)
+    bool receive(ISignal s)
     {
         if(s.source is null)
             this.writeDebug("{RECEIVE} signal("~s.type~", "~s.id.toString~") FROM entity(GOD)", 3);
@@ -166,7 +166,7 @@ class Listener
                 if(invoking.as!ITriggerAware !is null)
                     invoking.as!ITriggerAware.trigger = s;
 
-                if(this._entity.process.tracing &&
+                if(this._entity.hull.tracing &&
                     s.as!IStealth is null)
                 {
                     auto td = new TraceSignalData;
@@ -187,7 +187,7 @@ class Listener
                     ts.data.id = s.id;
                     ts.data.time = Clock.currTime.toUTC();
                     ts.data.type = s.type;
-                    this._entity.process.send(ts);
+                    this._entity.hull.send(ts);
                 }
 
                 this._entity.invoke(invoking);
@@ -202,7 +202,7 @@ class Listener
     }
 }
 
-    private Object handlePing(IEntity e, IFlowSignal s)
+    private Object handlePing(IEntity e, ISignal s)
     {
         if(s.as!UPing !is null || (s.as!Ping !is null && s.source !is null && e.id != s.source.id))
             return new SendPong;
@@ -213,7 +213,7 @@ class Listener
 abstract class Entity : IInvokingEntity, ITickingEntity
 {
     private Mutex _lock;
-    private IFlowProcess _process;
+    IHull _hull;
     private flow.base.type.List!(Ticker) _ticker;
     protected bool _shouldStop;
     protected bool _isStopped = true;
@@ -222,8 +222,8 @@ abstract class Entity : IInvokingEntity, ITickingEntity
     abstract @property string __fqn();
     @property Mutex lock(){return this._lock;}
 
-    @property IFlowProcess process() {return this._process;}
-    @property void process(IFlowProcess value) {this._process = value;}
+    @property IHull hull() {return this._hull;}
+    @property void hull(IHull value) {this._hull = value;}
 
     private EntityInfo _info;
     @property EntityInfo info() {return this._info;}
@@ -316,7 +316,7 @@ abstract class Entity : IInvokingEntity, ITickingEntity
             this._info.signals.put(this._listeners.values.map!(l=>l.signal).array);
     }
     
-    UUID beginListen(string s, Object function(IEntity, IFlowSignal) h)
+    UUID beginListen(string s, Object function(IEntity, ISignal) h)
     {
         synchronized(this._lock)
         {
@@ -354,7 +354,7 @@ abstract class Entity : IInvokingEntity, ITickingEntity
         }
     }
     
-    bool receive(IFlowSignal s)
+    bool receive(ISignal s)
     {
         if(!this._isStopped)
         {

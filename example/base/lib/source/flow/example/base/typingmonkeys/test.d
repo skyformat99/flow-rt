@@ -32,23 +32,23 @@ void run(uint amount, string search)
         }";
         auto config = Data.fromJson(configStr);
 
-        // create a new process hosting the local swarm
-        auto process = new Process;
+        // create a new flow hosting the local swarm
+        auto flow = new Flow;
 
         // add typing monkeys organ
         auto organ = Organ.create(config);
-        process.add(organ);
+        flow.add(organ);
 
         // wait for an event indicating that swarm can be shut down
-        process.wait();
+        flow.wait();
 
         // unimportant for example
-        auto overseer = process.get(
+        auto overseer = flow.get(
             organ.context.as!TypingMonkeysContext.overseer);
         pages = overseer.context.as!OverseerContext.pages;
 
         // shut down local swarm
-        process.stop();
+        flow.stop();
     };
 
     

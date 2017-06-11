@@ -3,30 +3,105 @@ module flow.base.process;
 import core.thread, core.sync.mutex;
 import std.uuid, std.range.interfaces, std.string;
 
-import flow.base.type, flow.base.data;
+import flow.base.exception, flow.base.type, flow.base.data;
+import flow.base.organ, flow.base.entity;
 import flow.dev, flow.interfaces, flow.data;
 
-/// a flow process able to host the local swarm
-class FlowProcess : IFlowProcess
+/// a hull hosting an entity
+class Hull(T) : IHull if(is(T == Entity) || is(T == Organ))
 {
+    private Flow _flow;
+    private T _obj;
+
+    this(Flow f, T o)
+    {
+        this._flow = f;
+        this._obj = o;
+        this._obj.hull = this;
+    }
+
+    @property T obj() { return this._obj; }
+
+    @property FlowRef flow() { return this._flow.reference; }
+    @property bool tracing() { return this._flow.tracing; }
+
+    UUID add(IEntity e) { return this._flow.add(e); }
+    void remove(UUID id) { return this._flow.remove(id); }
+    IEntity get(UUID id) { return this._flow.get(id); }
+    
+    bool send(IUnicast s, EntityRef e)
+    {
+        if(this._flow._config.preventIdTheft)
+        {
+            static if(is(T == Entity))
+                s.source = this.obj.info.reference;
+            else
+                s.source = null;
+        }
+        return this._flow.send(s, e);
+    }
+    bool send(IUnicast s, EntityInfo e) { return this.send(s, e.reference); }
+    bool send(IUnicast s, IEntity e) { return this.send(s, e.info); }
+    bool send(IUnicast s)
+    {
+        this._preventIdTheft(s);
+        return this._flow.send(s);
+    }
+    bool send(IMulticast s)
+    {
+        this._preventIdTheft(s);
+        return this._flow.send(s);
+    }
+    bool send(IAnycast s)
+    {
+        this._preventIdTheft(s);
+        return this._flow.send(s);
+    }
+
+    // wait for finish
+    void wait(bool delegate() expr) { this._flow.wait(expr); }
+
+    private void _preventIdTheft(ISignal s)
+    {
+        if(this._flow._config.preventIdTheft)
+        {
+            static if(is(T == Entity))
+                s.source = this.obj.info.reference;
+            else
+                s.source = null;
+        }
+    }
+
+    void dispose() { this._obj.dispose(); }
+}
+
+/// a flow process able to host the local swarm
+class Flow : IFlow
+{
+    private FlowConfig _config;
     private bool _shouldStop;
     private bool _isStopped;
     private Mutex _lock;
-    private IEntity[UUID] _local;
-    private List!IOrgan _organs;
+    private Hull!Entity[UUID] _local;
+    private Hull!Organ[UUID] _organs;
 
-    private ProcessRef _reference;
-    @property ProcessRef reference() {return this._reference;}
+    private FlowRef _reference;
+    @property FlowRef reference() { return this._reference; }
 
-    private bool _tracing;
-    @property bool tracing(){return this._tracing;}
-    @property void tracing(bool value){this._tracing = value;}
+    @property bool tracing(){ return this._config.tracing; }
 
-    this()
+    this(FlowConfig c = null)
     {
-        this._organs = new List!IOrgan;
+        if(c is null) // if no config is passed use defaults
+        {
+            c = new FlowConfig;
+            c.tracing = false;
+            c.preventIdTheft = true;
+        }
+
         this._lock = new Mutex;
-        auto pf = new ProcessRef;
+        this._config = c;
+        auto pf = new FlowRef;
         pf.address = "";
         this._reference = pf;
     }
@@ -44,11 +119,14 @@ class FlowProcess : IFlowProcess
 
             this.writeDebug("{DESTROY}", 2);            
 
-            foreach(o; this._organs)
-                o.dispose();
+            synchronized(this._lock)
+            {
+                foreach(o; this._organs)
+                    o.dispose();
 
-            foreach(r, e; this._local)
-                e.dispose();
+                foreach(r, e; this._local)
+                    e.dispose();
+            }
 
             this._isStopped = true;
         }
@@ -63,9 +141,16 @@ class FlowProcess : IFlowProcess
     {
         if(!this._shouldStop)
         {
-            o.process = this;
-            o.create();
-            this._organs.put(o);
+            auto obj = o.as!Organ;
+            if(obj is null)
+                throw new UnsupportedObjectTypeException();
+
+            synchronized(this._lock)
+            {
+                auto m = new Hull!Organ(this, obj);
+                m.obj.create();
+                this._organs[obj.id] = m;
+            }
         }
     }
 
@@ -73,27 +158,26 @@ class FlowProcess : IFlowProcess
     {
         if(!this._shouldStop)
         {
-            auto worker = new Thread({
-                synchronized(this._lock)
+            auto obj = e.as!Entity;
+            if(obj is null)
+                throw new UnsupportedObjectTypeException();
+            
+            synchronized(this._lock)
+            {
+                this.writeDebug("{ADD} entity("~fqnOf(e)~", "~e.id.toString~")", 2);
+                auto m = new Hull!Entity(this, obj);
+                this._local[obj.id] = m;
+                obj.info.reference.process = this.reference;
+
+                try
                 {
-                    this.writeDebug("{ADD} entity("~fqnOf(e)~", "~e.id.toString~")", 2);
-                    this._local[e.id] = e;
-                    e.process = this;
-                    e.info.reference.process = this.reference;
-
-                    try
-                    {
-                        e.create();
-                    }
-                    catch(Exception exc)
-                    {
-                        this.writeDebug("{ADD FAILED} entity("~fqnOf(e)~", "~e.id.toString~") ["~exc.msg~"]", 0);
-                    }
+                    e.create();
                 }
-            });
-
-            worker.start();
-            worker.join();
+                catch(Exception exc)
+                {
+                    this.writeDebug("{ADD FAILED} entity("~fqnOf(e)~", "~e.id.toString~") ["~exc.msg~"]", 0);
+                }
+            }
 
             return e.id;
         } else return UUID.init;
@@ -103,8 +187,13 @@ class FlowProcess : IFlowProcess
     {
         if(!this._shouldStop)
         {
-            this._organs.remove(o);
-            o.dispose();
+            auto obj = o.as!Organ;
+            if(obj is null)
+                throw new UnsupportedObjectTypeException();
+            
+            synchronized(this._lock)
+                this._organs.remove(obj.id);
+            obj.dispose();
         }
     }
 
@@ -112,18 +201,13 @@ class FlowProcess : IFlowProcess
     {
         if(!this._shouldStop)
         {
-            auto worker = new Thread({
-                synchronized(this._lock)
-                {
-                    auto e = this._local[id];
-                    this.writeDebug("{REMOVE} entity("~fqnOf(e)~", "~e.id.toString~")", 2);
-                    e.dispose();
-                    this._local.remove(id);
-                }
-            });
-
-            worker.start();
-            worker.join();
+            synchronized(this._lock)
+            {
+                auto m = this._local[id];
+                this.writeDebug("{REMOVE} entity("~fqnOf(m.obj)~", "~id.toString~")", 2);
+                m.dispose();
+                this._local.remove(id);
+            }
         }
     }
 
@@ -131,15 +215,16 @@ class FlowProcess : IFlowProcess
     {
         if(!this._shouldStop)
             synchronized(this._lock)
-                return this._local[id];
+                return this._local[id].obj;
         else return null;
     }
 
     private bool allFinished()
     {
-        foreach(o; this._organs)
-            if(!o.finished())
-                return false;
+        synchronized(this._lock)
+            foreach(id, m; this._organs)
+                if(!m.obj.finished())
+                    return false;
         
         return true;
     }
@@ -162,7 +247,7 @@ class FlowProcess : IFlowProcess
         }
     }
 
-    private void giveIdAndTypeIfHasnt(IFlowSignal s)
+    private void giveIdAndTypeIfHasnt(ISignal s)
     {
         if(s.id == UUID.init)
             s.id = randomUUID;
@@ -272,7 +357,7 @@ class FlowProcess : IFlowProcess
         return this.deliverInternal(s, e);
     }
 
-    private bool deliverInternal(IFlowSignal s, EntityRef e)
+    private bool deliverInternal(ISignal s, EntityRef e)
     {
         if(!this._shouldStop)
         {
@@ -285,14 +370,14 @@ class FlowProcess : IFlowProcess
             synchronized(this._lock)
                 isLocal = e is null || e.id in this._local;
             if(isLocal)
-                return this.receive(s.clone.as!IFlowSignal, e);
+                return this.receive(s.clone.as!ISignal, e);
             else{return false;/* TODO search online when implementing apache thrift*/}
         }
 
         return false;
     }
 
-    bool receive(IFlowSignal s, EntityRef e)
+    bool receive(ISignal s, EntityRef e)
     {
         if(!this._shouldStop)
         {
@@ -302,10 +387,10 @@ class FlowProcess : IFlowProcess
             else
                 this.writeDebug("{RECEIVE} signal("~s.type~") FOR entity(GOD)", 3);
 
-            IEntity entity;
+            Entity entity;
             synchronized(this._lock)
                 if(e !is null && e.id in this._local)
-                    entity = this._local[e.id];
+                    entity = this._local[e.id].obj;
 
             if(entity !is null)
                 return entity.receive(s);
@@ -319,7 +404,7 @@ class FlowProcess : IFlowProcess
     InputRange!EntityInfo getReceiver(string signal)
     {
         return this.getListener(signal).inputRangeObject;
-        // TODO when using thrift call InputRange!EntityInfo getReceiver(ProcessRef process, string type) of others and merge results
+        // TODO when using thrift call InputRange!EntityInfo getReceiver(FlowRef process, string type) of others and merge results
     }
 
     EntityInfo[] getListener(string signal)
@@ -334,7 +419,7 @@ class FlowProcess : IFlowProcess
             {
                 foreach(id; this._local.keys)
                 {
-                    auto e = this._local[id].info;
+                    auto e = this._local[id].obj.info;
                     foreach(s; e.signals)
                     {
                         if(s == signal)

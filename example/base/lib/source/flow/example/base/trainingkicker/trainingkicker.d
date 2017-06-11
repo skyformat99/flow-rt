@@ -36,7 +36,7 @@ class TrainingKicker : Organ
 
         auto trainer = new Trainer(c.domain);
         trainer.context.as!TrainerContext.expectedKicks = c.times;
-        this.process.add(trainer);
+        this.hull.add(trainer);
         d.trainer = trainer.id;
 
         // add kicker entities to the local swarm
@@ -44,14 +44,14 @@ class TrainingKicker : Organ
         {
             auto kicker = new TrainedKicker(c.domain);
             kicker.context.as!KickerContext.times = c.times;
-            this.process.add(kicker);
+            this.hull.add(kicker);
             d.kicker.put(kicker.id);
         }
 
         // bring god signal into game to activate the swarm
         auto s = new Whisper;
-        s.data = this.process.get(d.kicker.front).info.reference;
-        this.process.send(s, trainer);
+        s.data = this.hull.get(d.kicker.front).info.reference;
+        this.hull.send(s, trainer);
 
         return d;
     }
@@ -61,15 +61,15 @@ class TrainingKicker : Organ
         auto c = this.context.as!TrainingKickerContext;
 
         foreach(id; c.kicker)
-            this.process.remove(id);
+            this.hull.remove(id);
         
-        this.process.remove(c.trainer);
+        this.hull.remove(c.trainer);
     }
 
     override @property bool finished()
     {
         auto d = this.context.as!TrainingKickerContext;
-        auto c = this.process.get(d.trainer).context.as!TrainerContext;
+        auto c = this.hull.get(d.trainer).context.as!TrainerContext;
         return c.counter >= c.expectedKicks && !c.ballMissing;
     } 
 }

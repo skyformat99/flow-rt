@@ -63,7 +63,7 @@ class Kick : Tick
     }
 }
 
-bool canKick(IEntity e, IFlowSignal s)
+bool canKick(IEntity e, ISignal s)
 {
     auto c = e.context.as!KickerContext;
     auto acceptable = s.source.type == "flow.example.base.simplekicker.kicker.Kicker";
@@ -76,7 +76,7 @@ bool canKick(IEntity e, IFlowSignal s)
     else return false;
 }
 
-bool canAccept(IEntity e, IFlowSignal s)
+bool canAccept(IEntity e, ISignal s)
 {
     return s.source is null || !s.source.identWith(e);
 }

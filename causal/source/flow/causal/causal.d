@@ -44,9 +44,9 @@ class Causal : Organ
         auto memoryContext = new MemoryContext;
         auto memory = new Memory(memoryContext, memorySettings);
         memory.storage = new FileMemoryStorage(memory);
-        c.memory = this.process.add(memory);
+        c.memory = this.hull.add(memory);
 
-        c.nls = this.process.add(new ClAdNls);
+        c.nls = this.hull.add(new ClAdNls);
 
         return c;
     }
@@ -55,7 +55,7 @@ class Causal : Organ
     {
         auto c = context.as!CausalContext;
 
-        this.process.remove(c.nls);
-        this.process.remove(c.memory);
+        this.hull.remove(c.nls);
+        this.hull.remove(c.memory);
     }
 }

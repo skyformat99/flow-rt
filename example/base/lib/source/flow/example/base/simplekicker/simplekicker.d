@@ -35,13 +35,13 @@ class SimpleKicker : Organ
         {
             auto kicker = new Kicker(c.domain);
             kicker.context.as!KickerContext.times = c.times;
-            this.process.add(kicker);
+            this.hull.add(kicker);
             d.kicker.put(kicker.id);
         }
 
         // bring god signal into game to activate the swarm
-        auto first = this.process.get(d.kicker.front); 
-        this.process.send(new Ball, first);
+        auto first = this.hull.get(d.kicker.front); 
+        this.hull.send(new Ball, first);
 
         return d;
     }
@@ -51,7 +51,7 @@ class SimpleKicker : Organ
         auto c = this.context.as!SimpleKickerContext;
 
         foreach(id; c.kicker)
-            this.process.remove(id);
+            this.hull.remove(id);
     }
 
     override bool finished()
@@ -59,7 +59,7 @@ class SimpleKicker : Organ
         auto c = this.context.as!SimpleKickerContext;
 
         foreach(id; c.kicker)
-            if(this.process.get(id).context.as!KickerContext.done)
+            if(this.hull.get(id).context.as!KickerContext.done)
                 return true;
 
         return false;

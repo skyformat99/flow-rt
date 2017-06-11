@@ -125,7 +125,7 @@ class CatchCandy : Tick
     }
 }
 
-private Object onPunch(IEntity e, IFlowSignal signal)
+private Object onPunch(IEntity e, ISignal signal)
 {
     import std.conv, std.random;
     import flow.dev;
@@ -153,21 +153,21 @@ private Object onPunch(IEntity e, IFlowSignal signal)
     } else return null;
 }
 
-Object handleShowCandy(IEntity e, IFlowSignal s)
+Object handleShowCandy(IEntity e, ISignal s)
 {
     return !s.source.identWith(e) &&
         !e.context.as!MadMonkeyContext.isKo
         ? new GoMad : null;
 }
 
-Object handleNotifyNoKo(IEntity e, IFlowSignal s)
+Object handleNotifyNoKo(IEntity e, ISignal s)
 {
     return !s.source.identWith(e) &&
         !e.context.as!MadMonkeyContext.isKo ?
         new GoMad : null;
 }
 
-Object handleDropCandy(IEntity e, IFlowSignal s)
+Object handleDropCandy(IEntity e, ISignal s)
 {
     return !s.source.identWith(e) &&
         !e.context.as!MadMonkeyContext.isKo ?

@@ -65,7 +65,7 @@ class Stop : Tick
     }
 }
 
-bool canTrainedKick(IEntity e, IFlowSignal s)
+bool canTrainedKick(IEntity e, ISignal s)
 {
     auto c = e.context.as!KickerContext;
     auto acceptable = s.source.type == "flow.example.base.trainingkicker.trainedkicker.TrainedKicker";

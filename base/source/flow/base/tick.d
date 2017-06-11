@@ -22,9 +22,9 @@ class Ticker : Thread, ITicker
     @property UUID id() {return this._id;}
     @property void id(UUID id) {throw new Exception("cannot set id of ticker");}
 
-    private IFlowSignal _trigger;
-    @property IFlowSignal trigger() {return this._trigger;}
-    @property void trigger(IFlowSignal value) {this._trigger = value;}
+    private ISignal _trigger;
+    @property ISignal trigger() {return this._trigger;}
+    @property void trigger(ISignal value) {this._trigger = value;}
 
     private bool _isSuspended = false;
     @property bool isSuspended() {return this._isSuspended;}
@@ -150,7 +150,7 @@ class Ticker : Thread, ITicker
         this.fork(this._last);
     }
     
-    UUID beginListen(string s, Object function(IEntity, IFlowSignal) h)
+    UUID beginListen(string s, Object function(IEntity, ISignal) h)
     {
         return this._entity.beginListen(s, h);
     }
@@ -179,7 +179,7 @@ class Ticker : Thread, ITicker
             {
                 this.writeDebug("{RUN} tick("~fqnOf(t)~")", 4);
                 
-                if(this._entity.process.tracing &&
+                if(this._entity.hull.tracing &&
                     this._entity.as!IStealth is null &&
                     t.as!IStealth is null)
                 {
@@ -198,7 +198,7 @@ class Ticker : Thread, ITicker
                     ts.data.ticker = this.id;
                     ts.data.seq = this._seq;
                     ts.data.tick = t.__fqn;
-                    this._entity.process.send(ts);
+                    this._entity.hull.send(ts);
                 }
 
                 if(t.as!ISync !is null)
@@ -215,7 +215,7 @@ class Ticker : Thread, ITicker
                     {t.error(exc);}
                 }
                 
-                if(this._entity.process.tracing &&
+                if(this._entity.hull.tracing &&
                     this._entity.as!IStealth is null &&
                     t.as!IStealth is null)
                 {
@@ -234,7 +234,7 @@ class Ticker : Thread, ITicker
                     ts.data.ticker = this.id;
                     ts.data.seq = this._seq++;
                     ts.data.tick = t.__fqn;
-                    this._entity.process.send(ts);
+                    this._entity.hull.send(ts);
                 }
             }
             else break;
@@ -309,9 +309,9 @@ abstract class Tick : ITick
     @property ITick previous() {return this._previous;}
     @property void previous(ITick value) {this._previous = value;}
 
-    private IFlowSignal _trigger;
-    @property IFlowSignal trigger() {return this._trigger;}
-    @property void trigger(IFlowSignal value) {this._trigger = value;}
+    private ISignal _trigger;
+    @property ISignal trigger() {return this._trigger;}
+    @property void trigger(ISignal value) {this._trigger = value;}
 
     private IData _data;
     @property IData data() {return this._data;}
@@ -341,7 +341,7 @@ abstract class Tick : ITick
     }
 
     /// answers a signal into the swarm
-    bool answer(IFlowSignal s)
+    bool answer(ISignal s)
     {
         if(s.as!IUnicast !is null)
             s.as!IUnicast.destination = this.trigger.source;
@@ -351,7 +351,7 @@ abstract class Tick : ITick
     }
 
     /// sends a signal into the swarm
-    bool send(IFlowSignal s)
+    bool send(ISignal s)
     {
         auto success = false;
 
@@ -368,13 +368,13 @@ abstract class Tick : ITick
             s.as!IMulticast.domain = this.entity.info.domain;
 
         if(s.as!IUnicast !is null)
-            success = this.entity.process.send(s.as!IUnicast);
+            success = this.entity.hull.send(s.as!IUnicast);
         else if(s.as!IMulticast !is null)
-            success = this.entity.process.send(s.as!IMulticast);
+            success = this.entity.hull.send(s.as!IMulticast);
         else if(s.as!IAnycast !is null)
-            success = this.entity.process.send(s.as!IAnycast);
+            success = this.entity.hull.send(s.as!IAnycast);
 
-        if(this._entity.process.tracing &&
+        if(this._entity.hull.tracing &&
             s.as!IStealth is null)
         {
             auto td = new TraceSignalData;
@@ -393,7 +393,7 @@ abstract class Tick : ITick
             ts.data.id = s.id;
             ts.data.time = Clock.currTime.toUTC();
             ts.data.type = s.type;
-            this.entity.process.send(ts);
+            this.entity.hull.send(ts);
         }
 
         return success;

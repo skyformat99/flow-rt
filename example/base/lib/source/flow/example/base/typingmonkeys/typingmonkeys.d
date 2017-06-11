@@ -39,12 +39,12 @@ class TypingMonkeys : Organ
         auto overseer = new Overseer(c.domain);
         // we need her context later in this scope
         overseer.context.as!OverseerContext.search = c.search;
-        this.process.add(overseer);
+        this.hull.add(overseer);
         d.overseer = overseer.id;
 
         // create and add a translator
         auto translator = new Translator(c.domain);
-        this.process.add(translator);
+        this.hull.add(translator);
         d.translator = translator.id;
 
         // create and add the monekeys
@@ -53,12 +53,12 @@ class TypingMonkeys : Organ
         for(auto i = 0; i < c.amount; i++)
         {
             auto monkey = new Monkey(c.domain);
-            this.process.add(monkey);
+            this.hull.add(monkey);
             d.monkeys.put(monkey.id);
         }
             
         // bring god signal into game to activate the swarm
-        this.process.send(new Whisper);
+        this.hull.send(new Whisper);
 
         return d;
     }
@@ -68,10 +68,10 @@ class TypingMonkeys : Organ
         auto d = context.as!TypingMonkeysContext;
 
         foreach(id; d.monkeys)
-            this.process.remove(id);
+            this.hull.remove(id);
         
-        this.process.remove(d.translator);
-        this.process.remove(d.overseer);
+        this.hull.remove(d.translator);
+        this.hull.remove(d.overseer);
     }
 
     override @property bool finished()
@@ -81,9 +81,9 @@ class TypingMonkeys : Organ
         import std.algorithm.searching;
         auto d = context.as!TypingMonkeysContext;
 
-        auto c = this.process.get(d.overseer).context.as!OverseerContext;
+        auto c = this.hull.get(d.overseer).context.as!OverseerContext;
         auto overseerFoundBible = c.found;
-        auto allMonkeyStoppedTyping = d.monkeys.array.map!(m=>this.process.get(m))
+        auto allMonkeyStoppedTyping = d.monkeys.array.map!(m=>this.hull.get(m))
             .all!(m=>m.context.as!MonkeyContext.state != MonkeyEmotionalState.Calm);
                 
         return overseerFoundBible && allMonkeyStoppedTyping;

@@ -2,6 +2,7 @@ module flow.causal.main;
 
 import flow.blocks;
 import flow.dev;
+import flow.data;
 import flow.util.web, flow.util.memory;
 
 int main(string[] args)
@@ -10,7 +11,7 @@ int main(string[] args)
 
     version(windows)
     {
-        //import std.process;
+        //import std.flow;
         //dataDir = environment.get("APPDATA");
         writeln("this software doesn't support windows based systems yet!");
         return -1;
@@ -45,18 +46,20 @@ int main(string[] args)
     auto wc = Data.fromJson(wcFile.readText);
     auto cc = Data.fromJson(ccFile.readText);
 
-    auto process = new Process;
-    process.tracing = true;
+    auto fc = new FlowConfig;
+    fc.tracing = true;
+
+    auto flow = new Flow(fc);
 
     auto wo = Organ.create(wc);
-    process.add(wo);
+    flow.add(wo);
 
     auto so = Organ.create(cc);
-    process.add(so);
+    flow.add(so);
 
-    process.wait();
+    flow.wait();
 
-    process.stop();
+    flow.stop();
 
     return 0;
 }

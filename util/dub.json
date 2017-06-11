@@ -6,10 +6,10 @@
 		"source/"
 	],
 	"dependencies": {
-		"flow-base": "==0.1.1"
+		"flow-base": "==0.2.0"
 	},
 	"name": "flow-util",
-	"version": "0.1.1",
+	"version": "0.2.0",
 	"license": "GPL-3.0",
 	"targetName": "flow-util",
 	"targetType": "library",

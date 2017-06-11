@@ -3,7 +3,7 @@ module flow.blocks;
 import std.traits, std.uuid, std.datetime, std.range.primitives;
 
 static import flow.base.type;
-import flow.base.tick, flow.base.data, flow.base.organ, flow.base.entity, flow.base.process, flow.base.signal;
+import flow.base.tick, flow.base.data, flow.base.organ, flow.base.entity, flow.base.signal;
 import flow.interfaces;
 
 // maybe an idea
@@ -44,7 +44,8 @@ static import flow.base.organ;
 alias Organ = flow.base.organ.Organ;
 alias organ = TOrgan;
 
-alias Process = FlowProcess;
+static import flow.base.process;
+alias Flow = flow.base.process.Flow;
 
 /// check if two identifyables share their identity
 bool identWith(IIdentified id1, IIdentified id2)

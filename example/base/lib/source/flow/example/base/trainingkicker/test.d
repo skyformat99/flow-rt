@@ -24,16 +24,16 @@ void run(uint times, uint amount)
         }";
         auto config = Data.fromJson(configStr);
 
-        // create a new process the local swarm runs in
-        auto process = new Process;
+        // create a new flow the local swarm runs in
+        auto flow = new Flow;
         
-        process.add(Organ.create(config));
+        flow.add(Organ.create(config));
 
         // wait for an event indicating that swarm can be shut down
-        process.wait();
+        flow.wait();
 
         // shut down local swarm
-        process.stop();
+        flow.stop();
     };
 
     

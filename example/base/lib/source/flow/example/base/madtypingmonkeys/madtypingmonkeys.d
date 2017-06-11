@@ -34,11 +34,11 @@ class MadTypingMonkeys : Organ
         auto overseer = new Overseer(c.domain);
         // we need her context later in this scope
         overseer.context.as!OverseerContext.search = c.search;
-        d.overseer = this.process.add(overseer);
+        d.overseer = this.hull.add(overseer);
 
         // create and add a translator
         auto translator = new Translator(c.domain);
-        d.translator = this.process.add(translator);
+        d.translator = this.hull.add(translator);
         auto am = c.amount;
         auto se = c.search;
         // create and add the monekeys
@@ -47,11 +47,11 @@ class MadTypingMonkeys : Organ
         for(auto i = 0; i < c.amount; i++)
         {
             auto monkey = new MadMonkey(c.domain);
-            d.monkeys.put(this.process.add(monkey));
+            d.monkeys.put(this.hull.add(monkey));
         }
             
         // bring god signal into game to activate the swarm
-        this.process.send(new Whisper);
+        this.hull.send(new Whisper);
 
         return d;
     }
@@ -61,10 +61,10 @@ class MadTypingMonkeys : Organ
         auto d = context.as!TypingMonkeysContext;
 
         foreach(id; d.monkeys)
-            this.process.remove(id);
+            this.hull.remove(id);
         
-        this.process.remove(d.translator);
-        this.process.remove(d.overseer);
+        this.hull.remove(d.translator);
+        this.hull.remove(d.overseer);
     }
 
     override @property bool finished()
@@ -73,14 +73,14 @@ class MadTypingMonkeys : Organ
 
         auto tmp = this.context; 
         auto d = this.context.as!MadTypingMonkeysContext;
-        auto c = this.process.get(d.overseer).context.as!OverseerContext;
+        auto c = this.hull.get(d.overseer).context.as!OverseerContext;
 
         auto overseerFoundBible = c.found;
         auto didOneHideCandy = false;
         auto amountOfActive = d.monkeys.length;
         foreach(id; d.monkeys)
         {
-            auto m = this.process.get(id);
+            auto m = this.hull.get(id);
             auto mc = m.context.as!MadMonkeyContext;
 
             if(!didOneHideCandy)

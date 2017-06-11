@@ -1,5 +1,7 @@
 module flow.base.organ;
 
+import std.uuid;
+
 import flow.blocks, flow.interfaces;
 
 mixin template TOrgan(F)
@@ -45,9 +47,11 @@ abstract class Organ : IOrgan
 			return null;
 	}
 
-    private IFlowProcess _process;
-    @property IFlowProcess process() {return this._process;}
-    @property void process(IFlowProcess value) {this._process = value;}
+    private UUID _id;
+    @property UUID id() {return this._id;}
+    private IHull _hull;
+    @property IHull hull() {return this._hull;}
+    @property void hull(IHull value) {this._hull = value;}
 
     protected IData _config;
     @property IData config() {return this._config;}

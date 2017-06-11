@@ -134,14 +134,14 @@ private bool onWebRequestSession(IEntity e, WebRequest req)
         if(existing != UUID.init && c.sessions.array.any!(i=>i.session.id == existing))
         {
             auto session = c.sessions.array.filter!(i=>i.session.id == existing).front;
-            e.process.remove(existing);
+            e.hull.remove(existing);
             c.sessions.remove(session);
         }
 
         auto sc = new WebSessionContext;
         sc.service = e.info.reference;
         auto session = new WebSession(randomUUID, e.info.domain, e.info.availability, sc);
-        e.process.add(session);
+        e.hull.add(session);
 
         auto info = new WebSessionInfo;
         info.session = session.info.reference;
@@ -210,9 +210,9 @@ private bool onWebRequestEndSession(IEntity e, WebRequest req)
         if(existing != UUID.init && c.sessions.array.any!(i=>i.session.id == existing))
         {
             auto info = c.sessions.array.filter!(i=>i.session.id == existing).front;
-            auto session = e.process.get(existing);
+            auto session = e.hull.get(existing);
 
-            e.process.remove(existing);
+            e.hull.remove(existing);
             c.sessions.remove(info);
             req.setCookie("flowsession", null);
             debugMsg("web request \""~req.url~"\" removed web session with id \""~existing.toString()~"\"", 2);
@@ -230,10 +230,10 @@ private bool onWebRequestEndSession(IEntity e, WebRequest req)
     return false;
 }
 
-private Object webListenHandler(IEntity e, IFlowSignal s)
+private Object webListenHandler(IEntity e, ISignal s)
 {
     debugMsg("web session received \""~s.type~"\"", 2);
-    auto service = e.process.get(e.context.as!WebSessionContext.service.id);
+    auto service = e.hull.get(e.context.as!WebSessionContext.service.id);
     auto c = service.context.as!WebServiceContext;
     auto info = c.sessions.array.filter!(i => i.session.id == e.id).front;
     foreach(l; info.listenings.array.filter!(l => l.signal == s.type))
@@ -272,7 +272,8 @@ private bool onWebRequestAddListenSource(IEntity e, WebRequest req)
             if(!info.listenings.array.any!(l => l.signal == signal))
             {
                 debugMsg(existing.to!string~" listening to \""~signal~"\"", 2);
-                auto lid = e.process.get(existing).beginListen(signal, (e, s) => webListenHandler(e, s));
+
+                auto lid = e.hull.get(existing).beginListen(signal, (e, s) => webListenHandler(e, s));
                 auto listening = new WebSessionListening;
                 listening.id = lid;
                 listening.signal = signal;
@@ -327,7 +328,7 @@ private bool onWebRequestRemoveListenSource(IEntity e, WebRequest req)
                 if(listening.sources.length == 0)
                 {
                     info.listenings.remove(listening);
-                    e.process.get(existing).endListen(listening.id);
+                    e.hull.get(existing).endListen(listening.id);
                 }
 
                 req.sendText("true");
@@ -400,13 +401,13 @@ private bool onWebRequestSend(IEntity e, WebRequest req)
     {
         auto se = c.sessions.array.filter!(i=>i.session.id == existing).front;
         auto data = req.rawData.strip();
-        IFlowSignal s;
+        ISignal s;
         try
         {
-            s = Data.fromJson(data).as!IFlowSignal;
+            s = Data.fromJson(data).as!ISignal;
             if(s !is null)
             {
-                s.source = e.process.get(se.session.id).info.reference;
+                s.source = e.hull.get(se.session.id).info.reference;
                 s.type = s.dataType;
                 if(s.group == UUID.init) s.group = randomUUID;
             }
@@ -421,14 +422,14 @@ private bool onWebRequestSend(IEntity e, WebRequest req)
         {
             auto success = false;
             if(s.as!IUnicast !is null)
-                success = e.process.send(s.as!IUnicast);
+                success = e.hull.send(s.as!IUnicast);
             else if(s.as!IMulticast !is null)
-                success = e.process.send(s.as!IMulticast);
+                success = e.hull.send(s.as!IMulticast);
             else if(s.as!IAnycast !is null)
-                success = e.process.send(s.as!IAnycast);
+                success = e.hull.send(s.as!IAnycast);
             
-            auto session = e.process.get(existing);
-            if(e.process.tracing &&
+            auto session = e.hull.get(existing);
+            if(e.hull.tracing &&
                 s.as!IStealth is null)
             {
                 auto tsd = new TraceSignalData;
@@ -449,7 +450,7 @@ private bool onWebRequestSend(IEntity e, WebRequest req)
                 tss.data.time = Clock.currTime.toUTC();
                 tss.data.id = s.id;
                 tss.data.type = s.type;
-                e.process.send(tss);
+                e.hull.send(tss);
 
                 auto ttd = new TraceTickData;
                 auto tts = new TraceEndTick;
@@ -461,7 +462,7 @@ private bool onWebRequestSend(IEntity e, WebRequest req)
                 tts.data.entityType = session.__fqn;
                 tts.data.entityId = session.id;
                 tts.data.tick = session.__fqn;
-                e.process.send(tts);
+                e.hull.send(tts);
             }                
                 
             req.sendText(success ? "true" : "false");
@@ -610,7 +611,7 @@ class WebServiceAlreadyStopped : Tick
     }
 }
 
-private Object onStartWebService(IEntity entity, IFlowSignal s)
+private Object onStartWebService(IEntity entity, ISignal s)
 {
     auto c = entity.context.as!WebServiceContext;
 
@@ -638,7 +639,7 @@ private Object onStartWebService(IEntity entity, IFlowSignal s)
     return new WebServiceAlreadyStarted;
 }
 
-private Object onStopWebService(IEntity entity, IFlowSignal s)
+private Object onStopWebService(IEntity entity, ISignal s)
 {
     auto c = entity.context.as!WebServiceContext;
 
@@ -672,8 +673,8 @@ class PullWebSignal : Tick
         if(c.sessions.array.any!(i=>i.session.id == s.source.id))
         {
             auto info = c.sessions.array.filter!(i=>i.session.id == s.source.id).front;
-            auto session = this.entity.process.get(s.source.id);
-            if(this.entity.process.tracing && s.as!IStealth is null)
+            auto session = this.entity.hull.get(s.source.id);
+            if(this.entity.hull.tracing && s.as!IStealth is null)
             {
                 auto td = new TraceTickData;
                 auto ts = new TraceBeginTick;
@@ -685,14 +686,14 @@ class PullWebSignal : Tick
                 ts.data.entityType = session.__fqn;
                 ts.data.entityId = session.id;
                 ts.data.tick = session.__fqn;
-                this.entity.process.send(ts);
+                this.entity.hull.send(ts);
             }
 
             info.inQueue.put(s);
         }
         else // this session should not exist, so kill it
         {
-            this.entity.process.remove(s.source.id);
+            this.entity.hull.remove(s.source.id);
         }
     }
 }
@@ -769,10 +770,10 @@ class Web : Organ
         sc.root = conf.root;
         auto webService = new WebService(sc);
         
-        c.service = this.process.add(webService);
-        this.process.send(new StartWebService, webService.info.reference);
+        c.service = this.hull.add(webService);
+        this.hull.send(new StartWebService, webService.info.reference);
 
-        this.process.wait(()=>sc.server != UUID.init);
+        this.hull.wait(()=>sc.server != UUID.init);
 
         return c;
     }
@@ -780,18 +781,18 @@ class Web : Organ
     override void stop()
     {
         auto c = context.as!WebContext;
-        auto sc = this.process.get(c.service).context.as!WebServiceContext;
+        auto sc = this.hull.get(c.service).context.as!WebServiceContext;
 
-        this.process.send(new StopWebService, this.process.get(c.service).info.reference);
-        this.process.wait(()=>sc.server == UUID.init);
+        this.hull.send(new StopWebService, this.hull.get(c.service).info.reference);
+        this.hull.wait(()=>sc.server == UUID.init);
 
-        this.process.remove(c.service);
+        this.hull.remove(c.service);
     }
 
     override @property bool finished()
     {
         auto c = context.as!WebContext;
-        auto sc = this.process.get(c.service).context.as!WebServiceContext;
+        auto sc = this.hull.get(c.service).context.as!WebServiceContext;
 
         return sc.server == UUID.init;
     }

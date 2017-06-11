@@ -35,8 +35,10 @@ Throwable
 
 class NotImplementedError : Error
 {
-    this()
-    {
-        super("");
-    }
+    this() { super("");}
+}
+
+class UnsupportedObjectTypeException : Exception
+{
+    this() { super("");}
 }

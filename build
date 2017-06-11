@@ -24,6 +24,11 @@ buildLib util &&
 buildLib util-ui &&
 buildLib alien &&
 buildLib alien-ui &&
+buildLib example/base/lib &&
 
+buildBin example/base/simplekicker &&
+buildBin example/base/trainingkicker &&
+buildBin example/base/typingmonkeys &&
+buildBin example/base/madtypingmonkeys &&
 buildBin causal
 #buildBin hive/experiments/take01

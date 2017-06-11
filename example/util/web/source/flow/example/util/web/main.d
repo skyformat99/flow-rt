@@ -60,7 +60,7 @@ class Search : Tick
     }
 }
 
-Object handleFoundNotify(IEntity e, IFlowSignal s)
+Object handleFoundNotify(IEntity e, ISignal s)
 {
     return e.identWith(s.source) ? new NotifyThatFound : null;
 }

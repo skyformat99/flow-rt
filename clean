@@ -11,11 +11,16 @@ function cleanBin {
     rm -fr $rootDir/$1/bin
 }
 
+cleanBin example/base/simplekicker
+cleanBin example/base/trainingkicker
+cleanBin example/base/typingmonkeys
+cleanBin example/base/madtypingmonkeys
 cleanBin hive/experiments/take01
 cleanBin causal
 
+cleanLib example/base/lib
 cleanLib alien
-clearLib alien-ui
+cleanLib alien-ui
 cleanLib util
 cleanLib util-ui
 cleanLib base

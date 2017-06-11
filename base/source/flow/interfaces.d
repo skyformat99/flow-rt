@@ -22,7 +22,6 @@ interface ISync{}
 interface IIdentified
 {
     @property UUID id();
-    @property void id(UUID);
 }
 
 interface IGrouped
@@ -63,15 +62,17 @@ interface IData : __IFqn
 
 /** describes the abstract basic signal
 please see <a href="https://github.com/RalphBariz/flow/blob/master/doc/specification.md#signal">specification - signaling</a>*/
-interface IFlowSignal : IData, IIdentified, IGrouped, ITyped
+interface ISignal : IData, IGrouped, ITyped
 {
+    @property UUID id();
+    @property void id(UUID);
     @property EntityRef source();
     @property void source(EntityRef);
 }
 
 /** describes a multicast signal (for broadcasting leave domain empty)
 please see <a href="https://github.com/RalphBariz/flow/blob/master/doc/specification.md#signal">specification - signaling</a>*/
-interface IMulticast : IFlowSignal
+interface IMulticast : ISignal
 {
     @property string domain();
     @property void domain(string);
@@ -79,14 +80,14 @@ interface IMulticast : IFlowSignal
 
 /** describes an anycast signal
 please see <a href="https://github.com/RalphBariz/flow/blob/master/doc/specification.md#signal">specification - signaling</a>*/
-interface IAnycast : IFlowSignal
+interface IAnycast : ISignal
 {
     @property string domain();
 }
 
 /** describes an unicast signal
 please see <a href="https://github.com/RalphBariz/flow/blob/master/doc/specification.md#signal">specification - signaling</a>*/
-interface IUnicast : IFlowSignal
+interface IUnicast : ISignal
 {
     @property EntityRef destination();
     @property void destination(EntityRef);
@@ -94,9 +95,9 @@ interface IUnicast : IFlowSignal
 
 interface ITriggerAware
 {
-    @property IFlowSignal trigger();
+    @property ISignal trigger();
     //@property T trigger(T)();
-    @property void trigger(IFlowSignal);
+    @property void trigger(ISignal);
 }
 
 /// describes a ticker executing tchains of ticks
@@ -112,7 +113,7 @@ interface ITicker : IIdentified, ITriggerAware
     void next(string tick, IData data = null);
 
     // entity starts listen at
-    UUID beginListen(string s, Object function(IEntity, IFlowSignal) h);
+    UUID beginListen(string s, Object function(IEntity, ISignal) h);
     // entity stops listen at
     void endListen(UUID id);
 
@@ -158,16 +159,16 @@ interface ITick : __IFqn, IIdentified, IGrouped, ITriggerAware
     bool send(IUnicast, IEntity);
 
     /// sends a signal into the swarm
-    bool answer(IFlowSignal);
+    bool answer(ISignal);
 
     /// sends a signal into the swarm
-    bool send(IFlowSignal);
+    bool send(ISignal);
 }
 
 /// scopes an entity can have
 enum EntityScope
 {
-    Process,
+    Local,
     Global
 }
 
@@ -192,14 +193,12 @@ interface IEntity : __IFqn, IIdentified
     @property Object context();
     
     // entity starts listen at
-    UUID beginListen(string s, Object function(IEntity, IFlowSignal) h);
+    UUID beginListen(string s, Object function(IEntity, ISignal) h);
     // entity stops listen at
     void endListen(UUID id);
 
-    /// gets process the entity runs in
-    @property IFlowProcess process();
-    /// sets process the entity runs in
-    @property void process(IFlowProcess);
+    /// gets hull the entity runs in
+    @property IHull hull();
 
     void create();
     void dispose();
@@ -216,7 +215,7 @@ interface IEntity : __IFqn, IIdentified
     /** recieve a signal and pass it to the adequate listener
     (usually called by a process)
     returns if signal was accepted */
-    bool receive(IFlowSignal);
+    bool receive(ISignal);
 }
 
 /// describes an entity able to invoke
@@ -237,10 +236,10 @@ interface ITickingEntity : IInvokingEntity
 }
 
 /// describes a tick
-interface IOrgan
+interface IOrgan : IIdentified
 {
-    @property IFlowProcess process();
-    @property void process(IFlowProcess);
+    @property IHull hull();
+    @property void hull(IHull);
 
     @property IData config();
     @property IData context();
@@ -251,46 +250,19 @@ interface IOrgan
     bool finished();
 }
 
-/// describes a flow process
-interface IFlowProcess
+interface IHull
 {
     /// reference of the process
-    @property ProcessRef reference();
-
+    @property FlowRef flow();
     /// get if tracing is enabled
     @property bool tracing();
-    /// enable/disable tracing
-    @property void tracing(bool);
-    
+
     /// adds an entity
     UUID add(IEntity);
-    
-    /// adds an organ
-    void add(IOrgan);
-
     /// removes an entity
     void remove(UUID);
-
-    /// removes an organ
-    void remove(IOrgan);
-
     /// gets the entity with [id]
     IEntity get(UUID id);
-
-    /// process recieves a certain {signal] for a certain [entity] 
-    bool receive(IFlowSignal, EntityRef);
-
-    /** process delivers a certain [signal]
-    to a certain interceptor and/or [entity] */
-    bool deliver(IUnicast, EntityRef);
-
-    /** process delivers a certain [signal]
-    to a certain interceptor and/or [entity] */
-    void deliver(IMulticast, EntityRef);
-
-    /** process delivers a certain [signal]
-    to a certain interceptor and/or [entity] */
-    bool deliver(IAnycast, EntityRef);
     
     /** process sends a [signal] into the swarm
     returns true if destination found */
@@ -305,30 +277,62 @@ interface IFlowProcess
     /** process sends a [signal] into the swarm
     returns true if destination found */
     bool send(IUnicast);
-
     /** process sends a [signal] into the swarm
     returns true if any destination found */
     bool send(IMulticast);
-
     /** process sends a [signal] into the swarm
     returns true if any destination accepted
     (take care, blocks until anyone accepted it
     or noone was found or willing) */
     bool send(IAnycast);
 
-    /// stops process
-    void stop();
+    // wait for finishing something
+    void wait(bool delegate() expr);
+}
+
+/// describes a flow process
+interface IFlow
+{
+    /// reference of the process
+    @property FlowRef reference();
+
+    /// get if tracing is enabled
+    @property bool tracing();
+       
+    /// adds an organ
+    void add(IOrgan);
+
+    /// removes an organ
+    void remove(IOrgan);
+
+    /// process recieves a certain {signal] for a certain [entity] 
+    //bool receive(ISignal, EntityRef);
+
+    /** process delivers a certain [signal]
+    to a certain interceptor and/or [entity] */
+    //bool deliver(IUnicast, EntityRef);
+
+    /** process delivers a certain [signal]
+    to a certain interceptor and/or [entity] */
+    //void deliver(IMulticast, EntityRef);
+
+    /** process delivers a certain [signal]
+    to a certain interceptor and/or [entity] */
+    //bool deliver(IAnycast, EntityRef);
+
+    // wait for finishing something
+    void wait(bool delegate() expr);
 
     // wait for finish
     void wait();
 
-    // wait for finish
-    void wait(bool delegate() expr);
+    /// stops process
+    void stop();
 
     /// gets possible receivers for a certain [signal]
-    InputRange!EntityInfo getReceiver(string);
+    //InputRange!EntityInfo getReceiver(string);
 
     /** gets the local entities/interceptors
     listening to a [signal] */
-    EntityInfo[] getListener(string);
+    //EntityInfo[] getListener(string);
 }

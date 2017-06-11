@@ -2,6 +2,6 @@
     "version": "0.1.0",
     "command": "./build",
     "isShellCommand": true,
-    "args": ["debug", "--force"],
+    "args": ["debug"],
     "showOutput": "always"
 }
