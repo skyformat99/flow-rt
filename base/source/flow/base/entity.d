@@ -31,7 +31,7 @@ struct entityProps
 }
 
 mixin template TEntity(T = void)
-    if(is(T == void) || is(T : Object))
+    if(is(T == void) || is(T : IData))
 {
     import std.uuid;
     import flow.interfaces;
@@ -48,23 +48,23 @@ mixin template TEntity(T = void)
     }
     else
     {
-        protected Object _context;
-        override @property Object context() {return this._context;}
+        protected IData _context;
+        override @property IData context() {return this._context;}
     }
 
     this()
     {this(randomUUID, "", EntityScope.Local, null, null, null);}
 
-    this(Object context)
+    this(IData context)
     {this(randomUUID, "", EntityScope.Local, null, context, null);}
 
-    this(string domain, Object context)
+    this(string domain, IData context)
     {this(randomUUID, domain, EntityScope.Local, null, context, null);}
 
-    this(Object context, Data settings)
+    this(IData context, Data settings)
     {this(randomUUID, "", EntityScope.Local, null, context, settings);}
 
-    this(string domain, Object context, Data settings)
+    this(string domain, IData context, Data settings)
     {this(randomUUID, domain, EntityScope.Local, null, context, settings);}
 
     this(string domain)
@@ -76,10 +76,10 @@ mixin template TEntity(T = void)
     this(UUID id, string domain, EntityScope availability, ListenerMeta[] fListen)
     {this(id, domain, availability, fListen, null, null);}
     
-    this(UUID id, string domain, EntityScope availability, Object context)
+    this(UUID id, string domain, EntityScope availability, IData context)
     {this(id, domain, availability, null, context, null);}
 
-    this(UUID id, string domain, EntityScope availability, ListenerMeta[] fListen, Object context, Data settings)
+    this(UUID id, string domain, EntityScope availability, ListenerMeta[] fListen, IData context, Data settings)
     {
         static if(!is(T == void))
             this._context = context.as!T !is null ? context.as!T : new T;
@@ -230,7 +230,7 @@ abstract class Entity : IInvokingEntity, ITickingEntity
     @property UUID id() {return this.info.reference.id;}
     @property void id(UUID id) {throw new Exception("cannot set id of entity");}
 
-    abstract @property Object context();
+    abstract @property IData context();
     
     @property bool running(){return !this._isStopped;}
     @property size_t count() {return this._ticker.length;}

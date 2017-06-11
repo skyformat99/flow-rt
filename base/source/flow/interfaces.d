@@ -190,7 +190,7 @@ interface IEntity : __IFqn, IIdentified
     @property Mutex lock();
     
     /// the entities context
-    @property Object context();
+    @property IData context();
     
     // entity starts listen at
     UUID beginListen(string s, Object function(IEntity, ISignal) h);
@@ -206,7 +206,10 @@ interface IEntity : __IFqn, IIdentified
     /// starts up entity
     void start();
 
-    /// stops entity
+    /** stops an entity. be cautious.
+        the philosophy is, stopping an entity does not change it.
+        as soon as it gets started, it should continue to do whatever it did.
+        it "memory" is its context which is serialized and stored*/
     void stop();
 
     /// info to the entity
