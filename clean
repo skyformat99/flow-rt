@@ -4,19 +4,19 @@ rootDir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 function cleanLib {
     dub remove-local $rootDir/$1
-    rm -fr $rootDir/$1/lib
+    rm -fr $rootDir/$1/lib/*
 }
 
 function cleanBin {
-    rm -fr $rootDir/$1/bin
+    rm -fr $rootDir/$1/bin/*
 }
 
 cleanBin example/base/simplekicker
 cleanBin example/base/trainingkicker
 cleanBin example/base/typingmonkeys
 cleanBin example/base/madtypingmonkeys
-cleanBin hive/experiments/take01
 cleanBin causal
+#cleanBin hive/experiments/take01
 
 cleanLib example/base/lib
 cleanLib alien

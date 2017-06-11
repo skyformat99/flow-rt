@@ -37,7 +37,7 @@ mixin template TEntity(T = void)
     import flow.interfaces;
     import flow.base.entity, flow.base.type;
 
-    static ListenerMeta[] Listener; 
+    static ListenerMeta[] Listener;
 
     override @property string __fqn() {return fqn!(typeof(this));}
 

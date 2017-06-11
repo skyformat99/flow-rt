@@ -17,6 +17,8 @@ mixin template TOrgan(F)
         });
     }
 
+    override @property string __fqn() {return fqn!(typeof(this));}
+
     @property F tconfig(){return this.context.as!F;}
 
     this(F config)
@@ -46,7 +48,8 @@ abstract class Organ : IOrgan
 		else
 			return null;
 	}
-
+    
+    abstract @property string __fqn();
     private UUID _id;
     @property UUID id() {return this._id;}
     private IHull _hull;
@@ -58,6 +61,8 @@ abstract class Organ : IOrgan
 
     protected IData _context;
     @property IData context() {return this._context;}
+
+    this(UUID id = randomUUID) { this._id = id;}
 
     void create()
     {

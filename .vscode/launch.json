@@ -1,5 +1,5 @@
 {
-    "version": "0.2.0"/*,
+    "version": "0.2.0",/*,
     "configurations": [
         {
             "name": "flow-base",
@@ -13,7 +13,7 @@
             "target": "flow-base-test-library",
             "cwd": "${workspaceRoot}/base/lib"
         }
-    ]*//*,
+    ],
     "configurations": [
         {
             "name": "flow-util",
@@ -27,7 +27,7 @@
             "target": "flow-util-test-library",
             "cwd": "${workspaceRoot}/util/lib"
         }
-    ]*//*,
+    ],
     "configurations": [
         {
             "name": "flow-alien",
@@ -41,7 +41,7 @@
             "target": "flow-alien-test-library",
             "cwd": "${workspaceRoot}/alien/lib"
         }
-    ]*/,
+    ],
     "configurations": [
         {
             "name": "flow-causal",
@@ -52,6 +52,18 @@
                 "handle SIGUSR2 nostop noprint",
                 "break onInvalidMemoryOperationError"
             ],
+            "target": "flow-causal",
+            "cwd": "${workspaceRoot}/causal/bin"
+        }
+    ]
+    */
+
+    "configurations": [
+        {
+            "name": "flow-causal",
+            "type": "gdb",
+            "request": "launch",
+            "autorun": [ ],
             "target": "flow-causal",
             "cwd": "${workspaceRoot}/causal/bin"
         }

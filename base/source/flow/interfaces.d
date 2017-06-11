@@ -236,7 +236,7 @@ interface ITickingEntity : IInvokingEntity
 }
 
 /// describes a tick
-interface IOrgan : IIdentified
+interface IOrgan : __IFqn, IIdentified
 {
     @property IHull hull();
     @property void hull(IHull);

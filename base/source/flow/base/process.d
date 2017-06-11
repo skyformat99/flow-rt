@@ -148,8 +148,18 @@ class Flow : IFlow
             synchronized(this._lock)
             {
                 auto m = new Hull!Organ(this, obj);
-                m.obj.create();
-                this._organs[obj.id] = m;
+
+                try
+                {
+                    m.obj.create();
+                    this._organs[obj.id] = m;
+                }
+                catch(Exception exc)
+                {
+                    this.writeDebug("{ADD FAILED} organ("~fqnOf(o)~", "~o.id.toString~") ["~exc.msg~"]", 0);
+                    if(obj.id in this._organs)
+                        this._organs.remove(obj.id);
+                }
             }
         }
     }
@@ -166,16 +176,18 @@ class Flow : IFlow
             {
                 this.writeDebug("{ADD} entity("~fqnOf(e)~", "~e.id.toString~")", 2);
                 auto m = new Hull!Entity(this, obj);
-                this._local[obj.id] = m;
                 obj.info.reference.process = this.reference;
 
                 try
                 {
                     e.create();
+                    this._local[obj.id] = m;
                 }
                 catch(Exception exc)
                 {
                     this.writeDebug("{ADD FAILED} entity("~fqnOf(e)~", "~e.id.toString~") ["~exc.msg~"]", 0);
+                    if(obj.id in this._local)
+                        this._local.remove(obj.id);
                 }
             }
 
@@ -216,7 +228,8 @@ class Flow : IFlow
         if(!this._shouldStop)
             synchronized(this._lock)
                 return this._local[id].obj;
-        else return null;
+        
+        return null;
     }
 
     private bool allFinished()
@@ -233,7 +246,7 @@ class Flow : IFlow
     {
         if(!this._shouldStop)
         {
-            while(!allFinished)
+            while(!allFinished())
                 Thread.sleep(WAITINGTIME);
         }
     }
@@ -242,7 +255,7 @@ class Flow : IFlow
     {
         if(!this._shouldStop)
         {
-            while(!allFinished || !expr())
+            while(!allFinished() || !expr())
                 Thread.sleep(WAITINGTIME);
         }
     }
