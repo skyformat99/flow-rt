@@ -1,20 +1,21 @@
 #!/bin/bash
 
-
-if [ $1 ]; then buildBinType=$1; else buildBinType=debug; fi
+compiler=dmd
+defBuildParams="-v --compiler=$compiler"
+if [ $1 ]; then buildType=$1; else buildType=debug; fi
 buildBinParams=${@:2}
 rootDir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 function buildLib {
     dub remove-local $rootDir/$1
     cd $rootDir/$1 &&
-    dub test -v --compiler=ldc --build $buildBinType $buildBinParams &&
+    dub test --build $buildType $defBuildParams $buildParams &&
     dub add-local ./
 }
 
 function buildBin {
     cd $rootDir/$1 &&
-    dub build -v --compiler=ldc --build $buildBinType $buildBinParams
+    dub build --compiler=ldc --build $buildType $defBuildParams $buildParams
 }
 
 $rootDir/clean
