@@ -3,7 +3,7 @@ module flow.example.base.typingmonkeys.signals;
 it has to be in the first line */
 
 // some imports
-import flow.blocks, flow.data;
+import flow.base.blocks, flow.base.data;
 
 // for monkey
 /** a so called god signal,

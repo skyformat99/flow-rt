@@ -1,7 +1,7 @@
 module flow.example.base.typingmonkeys.overseer;
 import flow.example.base.typingmonkeys.signals;
 
-import flow.blocks, flow.interfaces;
+import flow.base.blocks, flow.base.interfaces;
 
 // just an internal signal, therefor located here
 class FoundNotify : Unicast{mixin signal!(GermanPage);}
@@ -26,7 +26,7 @@ class Search : Tick
 	override void run()
 	{
         import std.algorithm, std.conv;
-        import flow.dev;
+        import flow.base.dev;
 
         auto c = this.entity.context.as!OverseerContext;
         auto s = this.trigger.as!GermanText;

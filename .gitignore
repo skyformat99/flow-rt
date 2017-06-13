@@ -17,7 +17,8 @@ hive
 # Executables
 *.exe
 base/lib
-util/lib
+data/lib
+net/lib
 alien/lib
 causal/bin
 example/base/lib/lib
@@ -25,7 +26,7 @@ example/base/madtypingmonkeys/bin
 example/base/simplekicker/bin
 example/base/trainingkicker/bin
 example/base/typingmonkeys/bin
-example/util/web/bin
+example/net/httpBeacon/bin
 
 # DUB
 .dub

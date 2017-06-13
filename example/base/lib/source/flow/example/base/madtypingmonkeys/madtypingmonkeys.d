@@ -7,7 +7,7 @@ import flow.example.base.typingmonkeys.translator;
 
 import std.uuid;
 
-import flow.blocks;
+import flow.base.blocks;
 
 class MadTypingMonkeysConfig : TypingMonkeysConfig
 {

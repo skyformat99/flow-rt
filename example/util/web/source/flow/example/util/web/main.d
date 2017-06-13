@@ -3,8 +3,8 @@ module flow.example.util.web.main;
 import core.thread;
 import core.time;
 import std.stdio, std.file, std.path, std.uuid;
-import flow.blocks, flow.data, flow.interfaces;
-import flow.dev;
+import flow.base.blocks, flow.base.data, flow.base.interfaces;
+import flow.base.dev;
 import flow.util.web;
 
 import flow.example.base.typingmonkeys.signals;
@@ -181,7 +181,7 @@ void main(string[] args)
     
     auto fc = new FlowConfig;
     fc.tracing = true;
-    fc.preventIdTheft = false;
+    fc.preventIdTheft = true;
     
     // create a new process hosting the local swarm
     auto flow = new Flow(fc);

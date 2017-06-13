@@ -7,7 +7,7 @@ void run(uint times, uint amount)
 {
     import core.time;
     import std.datetime, std.conv, std.stdio;
-    import flow.dev, flow.blocks;
+    import flow.base.dev, flow.base.blocks;
 
     debugMsg("#######################################", 0);
     debugMsg("#######################################", 0);

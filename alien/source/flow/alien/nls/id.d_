@@ -2,8 +2,8 @@ module flow.alien.nls.id.legacy;
 // interaction based non linear system
 
 import std.uuid, std.traits;
-import flow.blocks, flow.data, flow.interfaces;
-import flow.util.memory;
+import flow.base.blocks, flow.base.data, flow.base.interfaces;
+import flow.data.memory;
 import flow.alien.data;
 
 private immutable string clTemplate = 

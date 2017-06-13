@@ -20,7 +20,6 @@ cleanBin causal
 
 cleanLib example/base/lib
 cleanLib alien
-cleanLib alien-ui
-cleanLib util
-cleanLib util-ui
+cleanLib net
+cleanLib data
 cleanLib base

@@ -6,7 +6,7 @@ import flow.example.base.simplekicker.kicker;
 
 import std.uuid;
 
-import flow.blocks;
+import flow.base.blocks;
 
 class TrainingKickerConfig : Data
 {

@@ -7,9 +7,12 @@
 	],
 	"dependencies": {
 		"flow-base": "==0.2.0",
-		"flow-util": "==0.2.0",
-		"flow-util-ui": "==0.2.0",
+		"flow-data": "==0.2.0",
+		"flow-net": "==0.2.0",
 		"flow-alien": "==0.2.0",
+		
+		"flow-base-ui": "==0.2.0",
+		"flow-data-ui": "==0.2.0",
 		"flow-alien-ui": "==0.2.0"
 	},
 	"name": "flow-causal",

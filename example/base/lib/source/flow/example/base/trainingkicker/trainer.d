@@ -4,7 +4,7 @@ import flow.example.base.simplekicker.kicker;
 
 import std.uuid;
 
-import flow.blocks;
+import flow.base.blocks;
 
 class TrainerContext : Data
 {
@@ -21,7 +21,7 @@ class ListenToTheWhispering : Tick
 
 	override void run()
 	{
-        import flow.dev;
+        import flow.base.dev;
 
         auto c = this.entity.context.as!TrainerContext;
         auto s = this.trigger.as!Whisper;
@@ -40,7 +40,7 @@ class CollectAndControl : Tick
 	override void run()
 	{
         import std.conv;
-        import flow.dev;
+        import flow.base.dev;
 
         auto c = this.entity.context.as!TrainerContext;
         c.counter = c.counter + 1;
@@ -68,7 +68,7 @@ class TakeBall : Tick
 
 	override void run()
 	{
-        import flow.dev;
+        import flow.base.dev;
         
         auto c = this.entity.context.as!TrainerContext;
         debugMsg(fqnOf(this.entity) ~ " (" ~ this.entity.id.toString

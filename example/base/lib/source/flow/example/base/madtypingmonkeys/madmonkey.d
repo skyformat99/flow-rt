@@ -2,7 +2,7 @@ module flow.example.base.madtypingmonkeys.madmonkey;
 import flow.example.base.typingmonkeys.signals;
 import flow.example.base.typingmonkeys.monkey;
 
-import flow.blocks, flow.data, flow.interfaces;
+import flow.base.blocks, flow.base.data, flow.base.interfaces;
 
 class Punch : Unicast{mixin signal!();}
 class KoInfo : Data
@@ -32,7 +32,7 @@ class GoMad : Tick
 
 	override void run()
 	{
-        import flow.dev;
+        import flow.base.dev;
 
         auto s = this.trigger;
         auto c = this.entity.context.as!MadMonkeyContext;
@@ -54,7 +54,7 @@ class Punched : Tick
 	override void run()
 	{
         import std.random;
-        import flow.dev;
+        import flow.base.dev;
 
         auto s = this.trigger.as!Punch;
         auto c = this.entity.context.as!MadMonkeyContext;
@@ -96,7 +96,7 @@ class CatchCandy : Tick
 	override void run()
 	{
         import std.random;
-        import flow.dev;
+        import flow.base.dev;
 
         auto c = this.entity.context.as!MadMonkeyContext;
         
@@ -128,7 +128,7 @@ class CatchCandy : Tick
 private Object onPunch(IEntity e, ISignal signal)
 {
     import std.conv, std.random;
-    import flow.dev;
+    import flow.base.dev;
     
     auto s = signal.as!Punch;
     auto c = e.context.as!MadMonkeyContext;

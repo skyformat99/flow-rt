@@ -2,7 +2,7 @@ module flow.alien.data;
 
 import std.uuid;
 
-import flow.blocks, flow.data;
+import flow.base.blocks, flow.base.data;
 
 class ComputingDevice : IdData
 {

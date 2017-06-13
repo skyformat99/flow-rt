@@ -1,8 +1,8 @@
 module flow.alien.nls.ad.cl;
 
 import std.uuid;
-import flow.blocks, flow.data;
-import flow.util.memory;
+import flow.base.blocks, flow.base.data;
+import flow.data.memory;
 
 // data
 class Description : Data

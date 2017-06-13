@@ -8,7 +8,7 @@
 	"dependencies": {
 		"derelict-cl": "~>2.0.0",
 		"flow-base": "==0.2.0",
-		"flow-util": "==0.2.0"
+		"flow-data": "==0.2.0"
 	},
 	"name": "flow-alien",
 	"version": "0.2.0",

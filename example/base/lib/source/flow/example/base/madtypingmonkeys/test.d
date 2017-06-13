@@ -8,7 +8,7 @@ void run(uint amount, string search)
 {
     import core.time;
     import std.datetime, std.conv;
-    import flow.dev, flow.blocks;
+    import flow.base.dev, flow.base.blocks;
 
     debugMsg("#######################################", 0);
     debugMsg("#######################################", 0);

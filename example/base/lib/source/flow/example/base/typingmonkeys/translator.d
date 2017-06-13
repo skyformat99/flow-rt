@@ -1,7 +1,7 @@
 module flow.example.base.typingmonkeys.translator;
 import flow.example.base.typingmonkeys.signals;
 
-import flow.blocks;
+import flow.base.blocks;
 
 class TranslatorContext : Data
 {
@@ -34,7 +34,7 @@ class Translate : Tick
 	override void run()
 	{
         import std.conv;
-        import flow.dev;
+        import flow.base.dev;
         
         auto c = this.entity.context.as!TranslatorContext;
 

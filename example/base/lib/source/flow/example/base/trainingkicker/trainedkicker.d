@@ -4,7 +4,7 @@ import flow.example.base.simplekicker.kicker;
 
 import std.uuid;
 
-import flow.blocks, flow.signals, flow.interfaces;
+import flow.base.blocks, flow.base.signals, flow.base.interfaces;
 
 class TrainedKickerContext : KickerContext
 {
@@ -20,7 +20,7 @@ class TrainedKick : Tick
 	override void run()
 	{
         import std.conv;
-        import flow.dev;
+        import flow.base.dev;
 
         auto c = this.entity.context.as!KickerContext;
 
@@ -39,7 +39,7 @@ class TrainedReceipt : Tick, ISync
 
 	override void run()
 	{
-        import flow.dev;
+        import flow.base.dev;
 
         auto c = this.entity.context.as!KickerContext;
         if(!this.entity.context.as!TrainedKickerContext.stop)
@@ -58,7 +58,7 @@ class Stop : Tick
 
 	override void run()
 	{
-        import flow.dev;
+        import flow.base.dev;
         
         debugMsg(fqnOf(this.entity) ~ " (" ~ this.entity.id.toString
             ~ ") stopped kicking", 1);

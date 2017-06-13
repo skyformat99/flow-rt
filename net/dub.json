@@ -1,0 +1,22 @@
+{
+	"authors": [
+		"Ralph Alexander Bariz"
+	],
+	"importPaths": [
+		"source/"
+	],
+	"dependencies": {
+		"flow-base": "==0.2.0"
+	},
+	"name": "flow-net",
+	"version": "0.2.0",
+	"license": "GPL-3.0",
+	"targetName": "flow-net",
+	"targetType": "library",
+	"targetPath": "lib",
+	"description": "FLOW runtime - net modules",
+	"homepage": "https://github.com/RalphBariz/flow",
+	"sourcePaths": [
+		"source/"
+	]
+}

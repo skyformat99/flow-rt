@@ -1,6 +1,6 @@
 module flow.example.base.trainingkicker.signals;
 
-import flow.blocks, flow.data;
+import flow.base.blocks, flow.base.data;
 
 class Whisper : Unicast{mixin signal!(EntityRef);}
 class BallKicked : Multicast{mixin signal!();}

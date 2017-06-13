@@ -1,7 +1,7 @@
 module flow.example.base.typingmonkeys.monkey;
 import flow.example.base.typingmonkeys.signals;
 
-import flow.blocks, flow.interfaces;
+import flow.base.blocks, flow.base.interfaces;
 
 enum MonkeyEmotionalState
 {
@@ -41,7 +41,7 @@ class Write : Tick
         /* some imports necessary
         for the d and phobos functionality used */
         import std.random, std.conv;
-        import flow.dev;
+        import flow.base.dev;
 
         /* sadly at the moment the context has
         to be casted to its type or interface */
@@ -86,7 +86,7 @@ class GetCandy : Tick
 
 	override void run()
 	{
-        import flow.dev;
+        import flow.base.dev;
 
         auto c = this.entity.context.as!MonkeyContext;
 
@@ -107,7 +107,7 @@ class SeeCandy : Tick
 
 	override void run()
 	{
-        import flow.dev;
+        import flow.base.dev;
 
         auto c = this.entity.context.as!MonkeyContext;
 

@@ -1,6 +1,6 @@
 module flow.example.base.simplekicker.kicker;
 
-import flow.blocks, flow.signals, flow.interfaces;
+import flow.base.blocks, flow.base.signals, flow.base.interfaces;
 
 class Ball : Unicast{mixin signal!();}
 
@@ -20,7 +20,7 @@ class WatchOut : Tick
 
 	override void run()
 	{
-        import flow.signals;
+        import flow.base.signals;
 
         auto c = this.entity.context.as!KickerContext;
         c.targetLocked = false;
@@ -35,7 +35,7 @@ class Receipt : Tick, ISync
 	override void run()
 	{
         import std.conv;
-        import flow.dev;
+        import flow.base.dev;
 
         auto c = this.entity.context.as!KickerContext;
         if(c.counter < c.times)
@@ -51,7 +51,7 @@ class Kick : Tick
 	override void run()
 	{
         import std.conv;
-        import flow.dev;
+        import flow.base.dev;
 
         auto c = this.entity.context.as!KickerContext;
 

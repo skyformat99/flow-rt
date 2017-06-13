@@ -2,14 +2,14 @@ module flow.example.base.typingmonkeys.test;
 import flow.example.base.typingmonkeys.typingmonkeys;
 import flow.example.base.typingmonkeys.overseer;
 
-import flow.blocks;
+import flow.base.blocks;
 
 /// finally we run that
 void run(uint amount, string search)
 {
     import core.time;
     import std.datetime, std.conv;
-    import flow.dev;
+    import flow.base.dev;
 
     debugMsg("#######################################", 0);
     debugMsg("#######################################", 0);

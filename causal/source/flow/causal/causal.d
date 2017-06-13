@@ -2,7 +2,7 @@ module flow.causal.causal;
 
 import std.uuid;
 
-import flow.blocks;
+import flow.base.blocks;
 import flow.util.memory;
 import flow.alien.nls.ad.cl;
 
