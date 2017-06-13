@@ -110,10 +110,10 @@ class CommTypingMonkeys : Organ
         auto c = config.as!CommTypingMonkeysConfig;
 
         // create and add the overseer
-        d.overseer = this.process.add(new CommunicatingOverseer);
+        d.overseer = this.hull.add(new CommunicatingOverseer);
 
         // create and add a translator
-        d.translator = this.process.add(new Translator);
+        d.translator = this.hull.add(new Translator);
 
         // create and add the monekeys
         // also their contexts we give
@@ -123,7 +123,7 @@ class CommTypingMonkeys : Organ
         {
             auto m = c.useMad ? new MadMonkey : new Monkey;
             monkeys ~= m;
-            d.monkeys.put(this.process.add(m));
+            d.monkeys.put(this.hull.add(m));
         }
 
         return d;
@@ -134,16 +134,27 @@ class CommTypingMonkeys : Organ
         auto d = context.as!CommTypingMonkeysContext;
 
         foreach(m; d.monkeys)
-            this.process.remove(m);
+            this.hull.remove(m);
         
-        this.process.remove(d.translator);
-        this.process.remove(d.overseer);
+        this.hull.remove(d.translator);
+        this.hull.remove(d.overseer);
     }
+}
+
+version(posix) import core.sys.posix.signal;
+
+bool stopped = false;
+
+void stop()
+{
+    stopped = true;
 }
 
 void main(string[] args)
 {
     import std.conv;
+
+    version(posix) sigset(SIGINT, &stop);
 
     auto port = args.length > 2 ? args[1].to!ushort : 1234;
     auto amount = 3;
@@ -167,21 +178,26 @@ void main(string[] args)
         \"domain\": \"example.web\"
     }";
     auto mc = Data.fromJson(mcStr);
-
+    
+    auto fc = new FlowConfig;
+    fc.tracing = true;
+    fc.preventIdTheft = false;
+    
     // create a new process hosting the local swarm
-    auto process = new Process;
-    process.tracing = true;
+    auto flow = new Flow(fc);
 
     // add web organ
     auto wo = Organ.create(wc);
-    process.add(wo);
+    flow.add(wo);
 
     // add comm typing monkeys organ
     auto mo = Organ.create(mc);
-    process.add(mo);
+    flow.add(mo);
 
-    process.wait();
+    //flow.wait();
+    while(!stopped)
+        Thread.sleep(dur!("msecs")(100));
 
     // shut down local swarm
-    process.stop();
+    flow.stop();
 }

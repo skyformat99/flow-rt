@@ -55,17 +55,35 @@
             "target": "flow-causal",
             "cwd": "${workspaceRoot}/causal/bin"
         }
-    ]
-    */
-
+    ],
     "configurations": [
         {
             "name": "flow-causal",
             "type": "gdb",
             "request": "launch",
-            "autorun": [ ],
+            "autorun": [
+                "handle SIGUSR1 nostop noprint",
+                "handle SIGUSR2 nostop noprint",
+                "break onInvalidMemoryOperationError"
+            ],
             "target": "flow-causal",
             "cwd": "${workspaceRoot}/causal/bin"
+        }
+    ]
+    */
+
+    "configurations": [
+        {
+            "name": "flow-example-util.web",
+            "type": "gdb",
+            "request": "launch",
+            "autorun": [
+                "handle SIGUSR1 nostop noprint",
+                "handle SIGUSR2 nostop noprint",
+                "break onInvalidMemoryOperationError"
+            ],
+            "target": "flow-example-util-web",
+            "cwd": "${workspaceRoot}/example/util/web/bin"
         }
     ]
 }

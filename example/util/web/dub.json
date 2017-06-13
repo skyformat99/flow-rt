@@ -8,6 +8,7 @@
 	"dependencies": {
 		"flow-base": "==0.2.0",
 		"flow-util": "==0.2.0",
+		"flow-util-ui": "==0.2.0",
 		"flow-example-base-lib": "==0.2.0"
 	},
 	"name": "flow-example-util-web",
