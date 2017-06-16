@@ -69,7 +69,7 @@ class Found : Tick
     }
 }
 
-Object handleFoundNotify(IEntity e, ISignal s)
+Object handleFoundNotify(IEntity e, Signal s)
 {
     return e.identWith(s.source) ? new Found : null;
 }

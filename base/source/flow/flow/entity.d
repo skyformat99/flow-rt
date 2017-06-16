@@ -11,11 +11,11 @@ import flow.base.dev, flow.base.interfaces, flow.base.signals, flow.base.data, f
 struct ListenerMeta
 {
     string signal;
-    Object function(IEntity, ISignal) handle;
+    Object function(IEntity, Signal) handle;
 }
 
 /// generates listener meta informations to use by an entity
-mixin template TListen(string signal, Object function(IEntity, ISignal) handle)
+mixin template TListen(string signal, Object function(IEntity, Signal) handle)
 {
     import flow.flow.entity;
     
@@ -31,7 +31,7 @@ struct entityProps
 }
 
 mixin template TEntity(T = void)
-    if(is(T == void) || is(T : IData))
+    if(is(T == void) || is(T : Data))
 {
     import std.uuid;
     import flow.base.interfaces;
@@ -64,39 +64,21 @@ mixin template TEntity(T = void)
     }
     else
     {
-        protected IData _context;
-        override @property IData context() {return this._context;}
+        protected Data _context;
+        override @property Data context() {return this._context;}
     }
 
-    this()
-    {this(randomUUID, "", EntityScope.Local, null, null);}
-
-    this(IData context)
-    {this(randomUUID, "", EntityScope.Local, null, context);}
-
-    this(string domain)
-    {this(randomUUID, domain, EntityScope.Local, null, null);}
-
-    this(string domain, IData context)
-    {this(randomUUID, domain, EntityScope.Local, null, context);}
-    
-    this(UUID id, string domain, EntityScope availability)
-    {this(id, domain, availability, null, null);}
-    
-    this(UUID id, string domain, EntityScope availability, IData context)
-    {this(id, domain, availability, null, context);}
-
-    this(UUID id, string domain, EntityScope availability, ListenerMeta[] fListen, IData context)
+    this(EntityMeta m, ListenerMeta[] fListen)
     {
         static if(!is(T == void))
             this._context = context.as!T !is null ? context.as!T : new T;
         else
             this._context = context;
 
-        this(id, domain, availability, fListen);
+        this(m, fListen);
     }
 
-    this(UUID id, string domain, EntityScope availability, ListenerMeta[] fListen)
+    this(EntityMeta m, ListenerMeta[] fListen)
     {
         super(id, domain, availability, fListen !is null ? Listener ~ fListen : Listener);
     }
@@ -105,7 +87,7 @@ mixin template TEntity(T = void)
 class Listener
 {
     private Mutex _lock;
-    private Object function(IEntity, ISignal)[UUID] _handles;
+    private Object function(IEntity, Signal)[UUID] _handles;
 
     private string _signal;
     @property string signal() {return this._signal;}
@@ -125,7 +107,7 @@ class Listener
         debugMsg("listener("~this._signal~", "~this.entity.id.toString~");"~msg, level);
     }
 
-    UUID add(Object function(IEntity, ISignal) handle)
+    UUID add(Object function(IEntity, Signal) handle)
     {
         synchronized(this._lock)
         {
@@ -151,7 +133,7 @@ class Listener
     }
 
     /// receive and handle a signal
-    bool receive(ISignal s)
+    bool receive(Signal s)
     {
         if(s.source is null)
             this.writeDebug("{RECEIVE} signal("~s.type~", "~s.id.toString~") FROM entity(GOD)", 3);
@@ -180,15 +162,15 @@ class Listener
                     auto ts = new TraceReceive;
                     ts.id = s.id;
                     ts.type = ts.dataType;
-                    ts.source = this._entity.info.reference;
+                    ts.source = this._entity.info.ptr;
                     ts.data = td;
                     if(s.source !is null)
                         ts.data.trigger = s.source.id;
                     ts.data.group = s.group;
                     ts.data.success = true;
-                    ts.data.nature = s.as!IUnicast !is null ?
+                    ts.data.nature = s.as!Unicast !is null ?
                         "Unicast" : (
-                            s.as!IMulticast !is null ? "Multicast" :
+                            s.as!Multicast !is null ? "Multicast" :
                             "Anycast"
                         );
                     ts.data.id = s.id;
@@ -209,7 +191,7 @@ class Listener
     }
 }
 
-    private Object handlePing(IEntity e, ISignal s)
+    private Object handlePing(IEntity e, Signal s)
     {
         if(s.as!UPing !is null || (s.as!Ping !is null && s.source !is null && e.id != s.source.id))
             return new SendPong;
@@ -219,14 +201,14 @@ class Listener
 
 abstract class Entity : IInvokingEntity, ITickingEntity
 {
-    private static IEntity function(IData, UUID, string, EntityScope)[string] _reg;
+    private static IEntity function(EntityInfo, Data)[string] _reg;
     
-    static void register(string dataType, IEntity function(IData, UUID, string, EntityScope) creator)
+    static void register(string dataType, IEntity function(Data, UUID, string, EntityScope) creator)
 	{
         _reg[dataType] = creator;
 	}
 
-	static bool can(IData context)
+	static bool can(Data context)
 	{
 		return context !is null && context.dataType in _reg ? true : false;
 	}
@@ -236,24 +218,21 @@ abstract class Entity : IInvokingEntity, ITickingEntity
 		return name in _reg ? true : false;
 	}
 
-    static IEntity create(IData context, UUID id = randomUUID, string domain = "", EntityScope availability = EntityScope.Local)
+    static IEntity create(EntityMeta m)
     {
-        return Entity.create(context, "", id, domain, availability);
-    }
-
-    static IEntity create(string name, UUID id = randomUUID, string domain = "", EntityScope availability = EntityScope.Local)
-    {
-        return Entity.create(null, name, id, domain, availability);
+        return Entity.create(m.info, m.context);
     } 
 
-	static IEntity create(IData context, string name = "", UUID id = randomUUID, string domain = "", EntityScope availability = EntityScope.Local)
-	{
+    static IEntity create(EntityInfo i, EntityContext c)
+    {
+        IEntity e = null;
 		if(context !is null && context.dataType in _reg )
-			return _reg[context.dataType](context, id, domain, availability);
+			return _reg[context.dataType](i, c);
         else if(name in _reg)
             return _reg[name](context, id, domain, availability);
-		else
-			return null;
+
+        if(e !is null)
+            e.create();
 	}
 
     private Mutex _lock;
@@ -271,15 +250,15 @@ abstract class Entity : IInvokingEntity, ITickingEntity
 
     private EntityInfo _info;
     @property EntityInfo info() {return this._info;}
-    @property UUID id() {return this.info.reference.id;}
+    @property UUID id() {return this.info.ptr.id;}
     @property void id(UUID id) {throw new Exception("cannot set id of entity");}
 
-    abstract @property IData context();
+    abstract @property Data context();
     
     @property bool running(){return !this._isStopped;}
     @property size_t count() {return this._ticker.length;}
             
-    this(UUID id, string domain, EntityScope availability, ListenerMeta[] fListen)
+    this(EntityInfo info, Signal inbound, ListenerMeta[] fListen)
     {
         this._lock = new Mutex;
         this._ticker = new flow.flow.type.List!(Ticker);
@@ -301,9 +280,9 @@ abstract class Entity : IInvokingEntity, ITickingEntity
         }
         
         this._info = new EntityInfo;
-        this._info.reference = new EntityRef;
-        this._info.reference.id = id;
-        this._info.reference.type = this.__fqn;
+        this._info.ptr = new EntityPtr;
+        this._info.ptr.id = id;
+        this._info.ptr.type = this.__fqn;
         this._info.domain = domain;
         this._info.availability = availability;
 
@@ -359,7 +338,7 @@ abstract class Entity : IInvokingEntity, ITickingEntity
             this._info.signals.put(this._listeners.values.map!(l=>l.signal).array);
     }
     
-    UUID beginListen(string s, Object function(IEntity, ISignal) h)
+    UUID beginListen(string s, Object function(IEntity, Signal) h)
     {
         synchronized(this._lock)
         {
@@ -397,7 +376,7 @@ abstract class Entity : IInvokingEntity, ITickingEntity
         }
     }
     
-    bool receive(ISignal s)
+    bool receive(Signal s)
     {
         if(!this._isStopped)
         {

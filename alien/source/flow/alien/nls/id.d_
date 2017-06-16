@@ -524,8 +524,8 @@ class SessionContext : Data
 	mixin data;
 
     mixin field!(SessionState, "state");
-    mixin field!(EntityRef, "creator");
-    mixin field!(EntityRef, "owner");
+    mixin field!(EntityPtr, "creator");
+    mixin field!(EntityPtr, "owner");
     mixin field!(Description, "description");
     mixin field!(Compilation, "compilation");
     mixin field!(UUID, "clContext");

@@ -28,7 +28,7 @@ class BeaconSessionContext : Data
 {
 	mixin data;
 
-    mixin field!(EntityRef, "beacon");
+    mixin field!(EntityPtr, "beacon");
 }
 
 class BeaconSessionListening : IdData
@@ -43,7 +43,7 @@ class BeaconSessionInfo : Data
 {
 	mixin data;
 
-    mixin field!(EntityRef, "session");
+    mixin field!(EntityPtr, "session");
     mixin field!(DateTime, "lastActivity");
     mixin list!(BeaconSessionListening, "listenings");
     mixin list!(WrappedSignal, "inQueue");
@@ -67,7 +67,7 @@ class PullWrappedSignal : Tick
                 auto td = new TraceTickData;
                 auto ts = new TraceBeginTick;
                 ts.type = ts.dataType;
-                ts.source = session.info.reference;
+                ts.source = session.info.ptr;
                 ts.data = td;
                 ts.data.id = session.id;
                 ts.data.time = Clock.currTime.toUTC();
@@ -144,6 +144,6 @@ class Beacon : Entity, IStealth, IQuiet
         (e, s) => e.as!Beacon.onStopBeacon(s)
     );
 
-    protected Object onStartBeacon(ISignal s) {return null;} 
-    protected Object onStopBeacon(ISignal s) {return null;} 
+    protected Object onStartBeacon(Signal s) {return null;} 
+    protected Object onStopBeacon(Signal s) {return null;} 
 }

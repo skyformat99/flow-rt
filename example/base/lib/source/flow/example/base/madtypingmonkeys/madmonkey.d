@@ -9,7 +9,7 @@ class KoInfo : Data
 {
 	mixin data;
 
-    mixin field!(EntityRef, "raider");
+    mixin field!(EntityPtr, "raider");
 }
 class NotifyKo : Multicast{mixin signal!(KoInfo);}
 class NotifyNoKo : Unicast{mixin signal!();}
@@ -125,7 +125,7 @@ class CatchCandy : Tick
     }
 }
 
-private Object onPunch(IEntity e, ISignal signal)
+private Object onPunch(IEntity e, Signal signal)
 {
     import std.conv, std.random;
     import flow.base.dev;
@@ -153,21 +153,21 @@ private Object onPunch(IEntity e, ISignal signal)
     } else return null;
 }
 
-Object handleShowCandy(IEntity e, ISignal s)
+Object handleShowCandy(IEntity e, Signal s)
 {
     return !s.source.identWith(e) &&
         !e.context.as!MadMonkeyContext.isKo
         ? new GoMad : null;
 }
 
-Object handleNotifyNoKo(IEntity e, ISignal s)
+Object handleNotifyNoKo(IEntity e, Signal s)
 {
     return !s.source.identWith(e) &&
         !e.context.as!MadMonkeyContext.isKo ?
         new GoMad : null;
 }
 
-Object handleDropCandy(IEntity e, ISignal s)
+Object handleDropCandy(IEntity e, Signal s)
 {
     return !s.source.identWith(e) &&
         !e.context.as!MadMonkeyContext.isKo ?

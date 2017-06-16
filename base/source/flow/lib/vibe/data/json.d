@@ -1883,7 +1883,7 @@ struct JsonStringSerializer(R, bool pretty = false)
 	The output size is thus minimized, at the cost of bad human readability.
 
 	Params:
-		dst   = References the string output range to which the result is written.
+		dst   = addrs the string output range to which the result is written.
 		json  = Specifies the JSON value that is to be stringified.
 
 	See_Also: Json.toString, writePrettyJsonString
@@ -2029,7 +2029,7 @@ unittest {
 	The output will contain newlines and indents to make the output human readable.
 
 	Params:
-		dst   = References the string output range to which the result is written.
+		dst   = addrs the string output range to which the result is written.
 		json  = Specifies the JSON value that is to be stringified.
 		level = Specifies the base amount of indentation for the output. Indentation  is always
 				done using tab characters.

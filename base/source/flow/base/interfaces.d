@@ -21,116 +21,7 @@ interface ISync{}
 
 interface IIdentified
 {
-    @property UUID id();
-}
-
-interface IGrouped
-{
-    @property UUID group();
-    @property void group(UUID);
-}
-
-/// data property informations
-struct PropertyInfo
-{
-	TypeInfo typeInfo;
-	bool isList;
-	bool isData;
-}
-
-/// interface describing data objects
-interface IData : __IFqn
-{
-	@property string dataType();
-	@property shared(PropertyInfo[string]) dataProperties();
-
-	@property EPropertyChanging propertyChanging();
-	@property EPropertyChanged propertyChanged();
-
-	/// get the value of a data field by its name
-	Object getGeneric(string);
-
-	/// set the value of a data field by its name
-	bool setGeneric(string, Object);
-
-	string toJson();
-
-	void fillFromJson(Json j);
-
-	IData clone();
-}
-
-/** describes the abstract basic signal
-please see <a href="https://github.com/RalphBariz/flow/blob/master/doc/specification.md#signal">specification - signaling</a>*/
-interface ISignal : IData, IGrouped, ITyped
-{
-    @property UUID id();
-    @property void id(UUID);
-    @property EntityRef source();
-    @property void source(EntityRef);
-}
-
-/** describes a multicast signal (for broadcasting leave domain empty)
-please see <a href="https://github.com/RalphBariz/flow/blob/master/doc/specification.md#signal">specification - signaling</a>*/
-interface IMulticast : ISignal
-{
-    @property string domain();
-    @property void domain(string);
-}
-
-/** describes an anycast signal
-please see <a href="https://github.com/RalphBariz/flow/blob/master/doc/specification.md#signal">specification - signaling</a>*/
-interface IAnycast : ISignal
-{
-    @property string domain();
-}
-
-/** describes an unicast signal
-please see <a href="https://github.com/RalphBariz/flow/blob/master/doc/specification.md#signal">specification - signaling</a>*/
-interface IUnicast : ISignal
-{
-    @property EntityRef destination();
-    @property void destination(EntityRef);
-}
-
-interface ITriggerAware
-{
-    @property ISignal trigger();
-    //@property T trigger(T)();
-    @property void trigger(ISignal);
-}
-
-/// describes a ticker executing tchains of ticks
-interface ITicker : IIdentified, ITriggerAware
-{
-    /// creates a new ticker initialized with given tick
-    void fork(string tick, IData data = null);
-
-    /// creates a new ticker initialized with given tick
-    void fork(ITick);
-
-    /// enques next tick in the chain
-    void next(string tick, IData data = null);
-
-    // entity starts listen at
-    UUID beginListen(string s, Object function(IEntity, ISignal) h);
-    // entity stops listen at
-    void endListen(UUID id);
-
-    /// enques next tick in the chain
-    //void next(ITick);
-
-    /// enques same tick in the chain
-    void repeat();
-
-    /// creates a new ticker initialized with same tick
-    void repeatFork();
-
-    /// starts ticker
-    void start();
-
-    /// stops ticker
-    void stop();
+    @property string id();
 }
 
 /// describes a tick
@@ -152,17 +43,17 @@ interface ITick : __IFqn, IIdentified, IGrouped, ITriggerAware
     void error(Exception);
     
     /// sends a unicast signal to a specific receiver
-    bool send(IUnicast, EntityRef);
+    bool send(Unicast, EntityPtr);
     /// sends a unicast signal to a specific receiver
-    bool send(IUnicast, EntityInfo);
+    bool send(Unicast, EntityInfo);
     /// sends a unicast signal to a specific receiver
-    bool send(IUnicast, IEntity);
+    bool send(Unicast, IEntity);
 
     /// sends a signal into the swarm
-    bool answer(ISignal);
+    bool answer(Signal);
 
     /// sends a signal into the swarm
-    bool send(ISignal);
+    bool send(Signal);
 }
 
 /// scopes an entity can have
@@ -193,7 +84,7 @@ interface IEntity : __IFqn, IIdentified
     @property IData context();
     
     // entity starts listen at
-    UUID beginListen(string s, Object function(IEntity, ISignal) h);
+    UUID beginListen(string s, Object function(IEntity, Signal) h);
     // entity stops listen at
     void endListen(UUID id);
 
@@ -218,7 +109,7 @@ interface IEntity : __IFqn, IIdentified
     /** recieve a signal and pass it to the adequate listener
     (usually called by a process)
     returns if signal was accepted */
-    bool receive(ISignal);
+    bool receive(Signal);
 }
 
 /// describes an entity able to invoke
@@ -238,104 +129,58 @@ interface ITickingEntity : IInvokingEntity
     void invokeTick(ITick);
 }
 
-/// describes a tick
-interface IOrgan : __IFqn, IIdentified
-{
-    @property IHull hull();
-    @property void hull(IHull);
-
-    @property IData config();
-    @property IData context();
-
-    void create();
-    void dispose();
-    
-    bool finished();
-}
-
 interface IHull
 {
-    /// reference of the process
-    @property FlowRef flow();
+    /// ptr of the process
+    @property FlowPtr flow();
     /// get if tracing is enabled
     @property bool tracing();
 
     /// adds an entity
-    UUID add(IEntity);
+    EntityInfo spawn(EntityInfo, IData);
     /// removes an entity
-    void remove(UUID);
+    IData kill(EntityInfo);
     /// gets the entity with [id]
-    IEntity get(UUID id);
+    IEntity get(EntityInfo);
     
     /** process sends a [signal] into the swarm
     returns true if destination found */
-    bool send(IUnicast, EntityRef);
-    /** process sends a [signal] into the swarm
-    returns true if destination found */
-    bool send(IUnicast, EntityInfo);
-    /** process sends a [signal] into the swarm
-    returns true if destination found */
-    bool send(IUnicast, IEntity);
+    bool send(Unicast, EntityPtr);
 
     /** process sends a [signal] into the swarm
     returns true if destination found */
-    bool send(IUnicast);
+    bool send(Unicast);
     /** process sends a [signal] into the swarm
     returns true if any destination found */
-    bool send(IMulticast);
+    bool send(Multicast);
     /** process sends a [signal] into the swarm
     returns true if any destination accepted
     (take care, blocks until anyone accepted it
     or noone was found or willing) */
-    bool send(IAnycast);
+    bool send(Anycast);
 
-    // wait for finishing something
+    /// wait for something
     void wait(bool delegate() expr);
+
+    /// freeze communication
+    void freeze();
+
+    /// unfreeze communication
+    void unfreeze();
 }
 
 /// describes a flow process
 interface IFlow
 {
-    /// reference of the process
-    @property FlowRef reference();
+    /// ptr of the process
+    @property FlowPtr ptr();
 
     /// get if tracing is enabled
     @property bool tracing();
-       
-    /// adds an organ
-    void add(IOrgan);
-
-    /// removes an organ
-    void remove(IOrgan);
-
-    /// process recieves a certain {signal] for a certain [entity] 
-    //bool receive(ISignal, EntityRef);
-
-    /** process delivers a certain [signal]
-    to a certain interceptor and/or [entity] */
-    //bool deliver(IUnicast, EntityRef);
-
-    /** process delivers a certain [signal]
-    to a certain interceptor and/or [entity] */
-    //void deliver(IMulticast, EntityRef);
-
-    /** process delivers a certain [signal]
-    to a certain interceptor and/or [entity] */
-    //bool deliver(IAnycast, EntityRef);
 
     // wait for finishing something
     void wait(bool delegate() expr);
 
-    // wait for finish
-    void wait();
-
     /// stops process
     void stop();
-
-    /// gets possible receivers for a certain [signal]
-    //InputRange!EntityInfo getReceiver(string);
-
-    /** gets the local entities/interceptors
-    listening to a [signal] */
-    //EntityInfo[] getListener(string);
 }

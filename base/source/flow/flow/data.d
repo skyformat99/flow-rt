@@ -38,8 +38,16 @@ struct PropertyMeta
 	string refPostfix = "";
 }
 
+/// data property informations
+struct PropertyInfo
+{
+	TypeInfo typeInfo;
+	bool isList;
+	bool isData;
+}
+
 /// get the value of a data field by its name
-T get(T)(IData obj, string name) if(is(T : IData))
+T get(T)(Data obj, string name) if(is(T : Data))
 {
 	if(name !in obj.dataProperties)
 		throw new DataingException("no data property named \""~name~"\" found");
@@ -48,7 +56,7 @@ T get(T)(IData obj, string name) if(is(T : IData))
 }
 
 /// get the value of a data field by its name
-T get(T)(IData obj, string name) if(isScalarType!T || is(T == UUID) || is(T == SysTime) || is(T == DateTime) || (isArray!T && isScalarType!(ElementType!T)))
+T get(T)(Data obj, string name) if(isScalarType!T || is(T == UUID) || is(T == SysTime) || is(T == DateTime) || (isArray!T && isScalarType!(ElementType!T)))
 {
 	if(name !in obj.dataProperties)
 		throw new DataingException("no data property named \""~name~"\" found");
@@ -57,7 +65,7 @@ T get(T)(IData obj, string name) if(isScalarType!T || is(T == UUID) || is(T == S
 }
 
 /// set the value of a data property by its name
-IData set(T)(IData obj, string name, T value) if(is(T : IData))
+Data set(T)(Data obj, string name, T value) if(is(T : Data))
 {
 	if(name !in obj.dataProperties)
 		throw new DataingException("no data property named \""~name~"\" found");
@@ -74,7 +82,7 @@ IData set(T)(IData obj, string name, T value) if(is(T : IData))
 }
 
 /// set the value of a data property by its name
-IData set(T)(IData obj, string name, T value) if(isScalarType!T || is(T == UUID) || is(T == SysTime) || is(T == DateTime) || (isArray!T && isScalarType!(ElementType!T)))
+Data set(T)(Data obj, string name, T value) if(isScalarType!T || is(T == UUID) || is(T == SysTime) || is(T == DateTime) || (isArray!T && isScalarType!(ElementType!T)))
 {
 	if(name !in obj.dataProperties)
 		throw new DataingException("no data property named \""~name~"\" found");
@@ -87,13 +95,13 @@ IData set(T)(IData obj, string name, T value) if(isScalarType!T || is(T == UUID)
 	return obj;
 }
 
-abstract class Data : IData
+abstract class Data : __IFqn
 {
 	import flow.flow.event;
 
-	private shared static IData function()[string] _reg;
+	private shared static Data function()[string] _reg;
 
-	static void register(string dataType, IData function() creator)
+	static void register(string dataType, Data function() creator)
 	{
 		_reg[dataType] = creator;
 	}
@@ -103,7 +111,7 @@ abstract class Data : IData
 		return dataType in _reg ? true : false;
 	}
 
-	static IData create(string dataType)
+	static Data create(string dataType)
 	{
 		if(dataType in _reg)
 			return _reg[dataType]();
@@ -111,13 +119,13 @@ abstract class Data : IData
 			return null;
 	}
 
-	static IData fromJson(string s)
+	static Data fromJson(string s)
 	{
 		auto j = parseJsonString(s);
 		return fromJson(j);
 	}
 
-	static IData fromJson(Json j)
+	static Data fromJson(Json j)
 	{
 		auto type = j["dataType"].deserializeJson!string;
 		auto obj = create(type);
@@ -150,7 +158,7 @@ abstract class Data : IData
 		this._propertyChanged = new EPropertyChanged();
 	}
 
-	IData clone()
+	Data clone()
 	{
 		return this.dup;
 	}
@@ -158,7 +166,7 @@ abstract class Data : IData
 	string toJson(){return this.toJsonStruct().toString();}
 
 	abstract Data dup();
-	abstract protected void dupInternal(IData c);
+	abstract protected void dupInternal(Data c);
 	abstract Object getGeneric(string name);
 	abstract bool setGeneric(string name, Object value);
 	abstract Json toJsonStruct();
@@ -183,7 +191,7 @@ mixin template TData()
 	private shared static void function(typeof(this), Json)[] _toJsons;
 	private shared static void function(typeof(this), Json)[] _fromJsons;
 
-	static IData create() {return new typeof(this);}
+	static Data create() {return new typeof(this);}
 
 	shared static this()
 	{
@@ -244,7 +252,7 @@ mixin template TData()
 		return c;
 	}
 
-	override protected void dupInternal(IData c)
+	override protected void dupInternal(Data c)
 	{
 		static if(fqn!(typeof(super)) != "flow.flow.data.Data")
 			super.dupInternal(c);
@@ -519,7 +527,7 @@ template TListHelper(PropertyMeta p)
 
 /// creates a field property
 mixin template TField(T, string name)
-	if ((is(T : IData) || isScalarType!T || is(T == UUID) || is(T == SysTime) || is(T == DateTime) || (isArray!T && isScalarType!(ElementType!T))))
+	if ((is(T : Data) || isScalarType!T || is(T == UUID) || is(T == SysTime) || is(T == DateTime) || (isArray!T && isScalarType!(ElementType!T))))
 {
 	import core.sync.rwmutex;
 	import std.traits, std.array, std.conv;
@@ -527,7 +535,7 @@ mixin template TField(T, string name)
 	import flow.flow.event, flow.flow.type, flow.flow.data;
 	import flow.base.interfaces;
 
-	enum isData = is(T : IData);
+	enum isData = is(T : Data);
 	enum p = PropertyMeta(
 		T.stringof,
 		name,
@@ -556,7 +564,7 @@ mixin template TField(T, string name)
 
 /// creates a list property
 mixin template TList(T, string name)
-	if ((is(T : IData) || isScalarType!T || is(T == UUID) || is(T == SysTime) || is(T == DateTime) || (isArray!T && isScalarType!(ElementType!T))))
+	if ((is(T : Data) || isScalarType!T || is(T == UUID) || is(T == SysTime) || is(T == DateTime) || (isArray!T && isScalarType!(ElementType!T))))
 {
 	import core.sync.rwmutex;
 	import std.traits, std.array, std.conv;
@@ -564,13 +572,13 @@ mixin template TList(T, string name)
 	import flow.flow.event, flow.flow.type, flow.flow.data;
 	import flow.base.interfaces;
 
-	enum isData = is(T : IData);
+	enum isData = is(T : Data);
 	enum p = PropertyMeta(
 		T.stringof,
 		name,
 		true,
 		isData,
-		isArray!T || is(T : IData),
+		isArray!T || is(T : Data),
 		isArray!T,
 		!isData && !isArray!T);
 	

@@ -45,13 +45,13 @@ int main(string[] args)
 
     if(!wcFile.exists)
     {
-        writeln("could not find web organ configuration \"web.json\" in configuration directory -> exiting");
+        writeln("could not find web configuration \"web.json\" in configuration directory -> exiting");
         return -1;
     }
 
     if(!ccFile.exists)
     {
-        writeln("could not find causal organ configuration \"causal.json\" in configuration directory -> exiting");
+        writeln("could not find causal configuration \"causal.json\" in configuration directory -> exiting");
         return -1;
     }
 
@@ -64,12 +64,6 @@ int main(string[] args)
 
     writeln("creating swarm...");
     auto flow = new Flow(fc);
-
-    auto wo = Organ.create(wc);
-    flow.add(wo);
-
-    auto so = Organ.create(cc);
-    flow.add(so);
 
     //flow.wait();
     while(!stopped)

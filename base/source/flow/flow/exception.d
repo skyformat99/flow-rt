@@ -30,7 +30,7 @@ Throwable
         TimeException (core.time)
         StdioException (std.stdio)
         StringException (std.string)
-        AddressException, HostException, SocketException, ... (std.socket)
+        ptressException, HostException, SocketException, ... (std.socket)
 */
 
 class NotImplementedError : Error

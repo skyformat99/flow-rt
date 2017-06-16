@@ -3,7 +3,7 @@ module flow.base.blocks;
 import std.traits, std.uuid, std.datetime, std.range.primitives;
 
 static import flow.flow.type;
-import flow.flow.tick, flow.flow.data, flow.flow.organ, flow.flow.entity, flow.flow.signal;
+import flow.flow.tick, flow.flow.data, flow.flow.entity, flow.flow.signal;
 import flow.base.interfaces;
 
 // maybe an idea
@@ -20,7 +20,7 @@ static import flow.flow.data;
 alias Data = flow.flow.data.Data;
 
 import flow.base.interfaces;
-alias IData = flow.base.interfaces.IData;
+alias Data = flow.base.interfaces.Data;
 
 static import flow.flow.signal;
 alias Multicast = flow.flow.signal.Multicast;
@@ -38,11 +38,6 @@ static import flow.flow.entity;
 alias Entity = flow.flow.entity.Entity;
 alias entity = TEntity;
 alias listen = TListen;
-
-/// generates an organ
-static import flow.flow.organ;
-alias Organ = flow.flow.organ.Organ;
-alias organ = TOrgan;
 
 static import flow.flow.process;
 alias Flow = flow.flow.process.Flow;

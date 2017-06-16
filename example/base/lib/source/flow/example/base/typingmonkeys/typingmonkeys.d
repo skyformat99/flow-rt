@@ -30,7 +30,7 @@ class TypingMonkeys : Organ
 {
     mixin organ!(TypingMonkeysConfig);
 
-    override IData start()
+    override Data start()
     {
         auto c = config.as!TypingMonkeysConfig;
         auto d = new TypingMonkeysContext;

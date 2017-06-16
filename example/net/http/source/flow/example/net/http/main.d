@@ -21,7 +21,7 @@ class OverseerSearchData : Data
 }
 class OverseerSearch : Unicast{mixin signal!(OverseerSearchData);}
 class OverseerFound : Multicast{mixin signal!(GermanPage);}
-class OverseerGiveCandy : Unicast{mixin signal!(EntityRef);}
+class OverseerGiveCandy : Unicast{mixin signal!(EntityPtr);}
 
 class NotifyThatFound : Tick
 {
@@ -60,7 +60,7 @@ class Search : Tick
     }
 }
 
-Object handleFoundNotify(IEntity e, ISignal s)
+Object handleFoundNotify(IEntity e, Signal s)
 {
     return e.identWith(s.source) ? new NotifyThatFound : null;
 }
@@ -104,7 +104,7 @@ class CommTypingMonkeys : Organ
 {
     mixin organ!(CommTypingMonkeysConfig);
 
-    override IData start()
+    override Data start()
     {
         auto d = new CommTypingMonkeysContext;
         auto c = config.as!CommTypingMonkeysConfig;

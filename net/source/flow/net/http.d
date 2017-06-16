@@ -125,7 +125,7 @@ class HttpBeacon : Beacon, IStealth, IQuiet
         (e, s) => new PullWrappedSignal
     );
 
-    override Object onStartBeacon(ISignal s)
+    override Object onStartBeacon(Signal s)
     {
         auto c = this.context;
         if(c.server == UUID.init)
@@ -152,7 +152,7 @@ class HttpBeacon : Beacon, IStealth, IQuiet
         return new BeaconAlreadyStarted;
     } 
 
-    override Object onStopBeacon(ISignal s)
+    override Object onStopBeacon(Signal s)
     {
         if(this.context.server != UUID.init)
         {
@@ -190,12 +190,12 @@ class HttpBeacon : Beacon, IStealth, IQuiet
             }
 
             auto sc = new BeaconSessionContext;
-            sc.beacon = this.info.reference;
+            sc.beacon = this.info.ptr;
             auto session = new BeaconSession(randomUUID, this.info.domain, this.info.availability, sc);
             this.hull.add(session);
 
             auto info = new BeaconSessionInfo;
-            info.session = session.info.reference;
+            info.session = session.info.ptr;
             info.lastActivity = Clock.currTime.toUTC().as!DateTime;
             c.sessions.put(info);
             req.setCookie("flowsession", session.id.toString);
@@ -281,7 +281,7 @@ class HttpBeacon : Beacon, IStealth, IQuiet
         return false;
     }
 
-    private static Object httpListenHandler(IEntity e, ISignal s)
+    private static Object httpListenHandler(IEntity e, Signal s)
     {
         debugMsg("session received \""~s.type~"\"", 2);
         auto beacon = e.hull.get(e.context.as!BeaconSessionContext.beacon.id);
@@ -453,13 +453,13 @@ class HttpBeacon : Beacon, IStealth, IQuiet
         {
             auto se = c.sessions.array.filter!(i=>i.session.id == existing).front;
             auto data = req.rawData.strip();
-            ISignal s;
+            Signal s;
             try
             {
-                s = Data.fromJson(data).as!ISignal;
+                s = Data.fromJson(data).as!Signal;
                 if(s !is null)
                 {
-                    s.source = this.hull.get(se.session.id).info.reference;
+                    s.source = this.hull.get(se.session.id).info.ptr;
                     s.type = s.dataType;
                     if(s.group == UUID.init) s.group = randomUUID;
                 }
@@ -473,12 +473,12 @@ class HttpBeacon : Beacon, IStealth, IQuiet
             if(s !is null)
             {
                 auto success = false;
-                if(s.as!IUnicast !is null)
-                    success = this.hull.send(s.as!IUnicast);
-                else if(s.as!IMulticast !is null)
-                    success = this.hull.send(s.as!IMulticast);
-                else if(s.as!IAnycast !is null)
-                    success = this.hull.send(s.as!IAnycast);
+                if(s.as!Unicast !is null)
+                    success = this.hull.send(s.as!Unicast);
+                else if(s.as!Multicast !is null)
+                    success = this.hull.send(s.as!Multicast);
+                else if(s.as!Anycast !is null)
+                    success = this.hull.send(s.as!Anycast);
                 
                 auto session = this.hull.get(existing);
                 if(this.hull.tracing &&
@@ -491,14 +491,14 @@ class HttpBeacon : Beacon, IStealth, IQuiet
                     tss.data = tsd;
                     tss.data.success = success;
                     tss.data.group = s.group;
-                    tss.data.nature = s.as!IUnicast !is null ?
+                    tss.data.nature = s.as!Unicast !is null ?
                         "Unicast" : (
-                            s.as!IMulticast !is null ? "Multicast" :
+                            s.as!Multicast !is null ? "Multicast" :
                             "Anycast"
                         );
                     tss.data.trigger = existing;
-                    if(s.as!IUnicast !is null)
-                        tss.data.destination = s.as!IUnicast.destination;
+                    if(s.as!Unicast !is null)
+                        tss.data.destination = s.as!Unicast.destination;
                     tss.data.time = Clock.currTime.toUTC();
                     tss.data.id = s.id;
                     tss.data.type = s.type;
@@ -507,7 +507,7 @@ class HttpBeacon : Beacon, IStealth, IQuiet
                     auto ttd = new TraceTickData;
                     auto tts = new TraceEndTick;
                     tts.type = tts.dataType;
-                    tts.source = session.info.reference;
+                    tts.source = session.info.ptr;
                     tts.data = ttd;
                     tts.data.id = session.id;
                     tts.data.time = Clock.currTime.toUTC();
@@ -600,64 +600,5 @@ class HttpBeacon : Beacon, IStealth, IQuiet
     private bool onWebMessage(WebRequest req, string msg)
     {
         return true;
-    }
-}
-
-class HttpConfig : Data
-{
-	mixin data;
-
-    mixin field!(ushort, "port");
-    mixin field!(ushort, "listenerAmount");
-    mixin field!(string, "root");
-}
-
-class HttpContext : Data
-{
-	mixin data;
-
-    mixin field!(UUID, "beacon");
-}
-
-class Http : Organ
-{
-    mixin organ!(HttpConfig);
-
-    override IData start()
-    {
-        auto c = new HttpContext;
-        auto conf = config.as!HttpConfig;
-
-        auto bc = new HttpBeaconContext;
-        bc.port = conf.port;
-        bc.listenerAmount = conf.listenerAmount > 0 ? conf.listenerAmount : 10;
-        bc.root = conf.root;
-        auto httpBeacon = new HttpBeacon(bc);
-        
-        c.beacon = this.hull.add(httpBeacon);
-        this.hull.send(new StartBeacon, httpBeacon.info.reference);
-
-        this.hull.wait(()=>bc.server != UUID.init);
-
-        return c;
-    }
-
-    override void stop()
-    {
-        auto c = this.context.as!HttpContext;
-        auto bc = this.hull.get(c.beacon).context.as!HttpBeaconContext;
-
-        this.hull.send(new StopBeacon, this.hull.get(c.beacon).info.reference);
-        this.hull.wait(()=>bc.server == UUID.init);
-
-        this.hull.remove(c.beacon);
-    }
-
-    override @property bool finished()
-    {
-        auto c = this.context.as!HttpContext;
-        auto sc = this.hull.get(c.beacon).context.as!HttpBeaconContext;
-
-        return sc.server == UUID.init;
     }
 }

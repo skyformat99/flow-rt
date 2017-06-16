@@ -62,7 +62,7 @@ class Write : Tick
             auto s = new HebrewText;
             s.data = new HebrewPage;
             s.data.text = arr;
-            s.data.author = entity.info.reference;
+            s.data.author = entity.info.ptr;
             // send multicast
             this.send(s);
 
@@ -119,7 +119,7 @@ class SeeCandy : Tick
     }
 }
 
-Object handleShowCandy(IEntity e, ISignal s)
+Object handleShowCandy(IEntity e, Signal s)
 {
     return !s.source.identWith(e) ? new SeeCandy : null;
 }

@@ -22,21 +22,22 @@ class FlowConfig : Data
     mixin TField!(bool, "preventIdTheft");
 }
 
-/// referencing a specific process having an unique address like udp://hostname:port
-class FlowRef : Data
+/// referencing a specific process having an unique ptress like udp://hostname:port
+class FlowPtr : Data
 {
     mixin TData;
 
-    mixin TField!(string, "address");
+    mixin TField!(string, "ptress");
 }
 
 /// referencing a specific entity 
-class EntityRef : IdData
+class EntityPtr : IdData
 {
     mixin TData;
 
     mixin TField!(string, "type");
-    mixin TField!(FlowRef, "process");
+    mixin TField!(string, "domain");
+    mixin TField!(FlowPtr, "process");
 }
 
 /// referencing a specific entity 
@@ -44,12 +45,30 @@ class EntityInfo : Data
 {
     mixin TData;
 
-    mixin TField!(EntityRef, "reference");
-    mixin TField!(string, "domain");
+    mixin TField!(EntityPtr, "ptr");
     mixin TField!(EntityScope, "availability");
 
     mixin TList!(string, "signals");
 }
+
+class EntityMeta : Data
+{
+    mixin TData;
+
+    mixin TField!(EntityInfo, "info");
+    mixin TField!(Data, "context");
+    mixin TList!(Data, "inbound");
+    mixin TList!(Data, "outbound");
+    mixin TList!(Data, "ticks");
+}
+
+class TickRequest : Data
+{
+    mixin TData;
+
+    mixin TField!()
+}
+
 
 class TraceSignalData : IdData
 {
@@ -58,7 +77,7 @@ class TraceSignalData : IdData
     mixin TField!(UUID, "group");
     mixin TField!(SysTime, "time");
     mixin TField!(UUID, "trigger");
-    mixin TField!(EntityRef, "destination");
+    mixin TField!(EntityPtr, "destination");
     mixin TField!(string, "type");
     mixin TField!(bool, "success");
     mixin TField!(string, "nature");
@@ -83,5 +102,5 @@ class WrappedSignalData : Data
 {
 	mixin TData;
 
-    mixin TField!(string, "signal");
+    mixin TField!(Data, "signal");
 }

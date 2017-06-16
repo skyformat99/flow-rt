@@ -90,13 +90,13 @@ class PropertyChangedEventArgs : EventArgs
 }
 
 /// argument you get from a TypedPropertyChangingSignal
-class TypedPropertyChangingEventArgs(T) : CancelableEventArgs if (is(T : IData) || is(T : IDataList!A,A) || is(T : Ref!A,A) || isScalarType!T || is(T == UUID) || is(T == SysTime) || is(T == DateTime) || (isArray!T && isScalarType!(ElementType!T)))
+class TypedPropertyChangingEventArgs(T) : CancelableEventArgs if (is(T : Data) || is(T : DataList!A,A) || is(T : Ref!A,A) || isScalarType!T || is(T == UUID) || is(T == SysTime) || is(T == DateTime) || (isArray!T && isScalarType!(ElementType!T)))
 {
 	mixin TTypedPropertyEventArgs!T;
 }
 
 /// argument you get from a TypedPropertyChangedSignal
-class TypedPropertyChangedEventArgs(T) : EventArgs if (is(T : IData) || is(T : IDataList!A,A) || is(T : Ref!A,A) || isScalarType!T || is(T == UUID) || is(T == SysTime) || is(T == DateTime) || (isArray!T && isScalarType!(ElementType!T)))
+class TypedPropertyChangedEventArgs(T) : EventArgs if (is(T : Data) || is(T : DataList!A,A) || is(T : Ref!A,A) || isScalarType!T || is(T == UUID) || is(T == SysTime) || is(T == DateTime) || (isArray!T && isScalarType!(ElementType!T)))
 {
 	mixin TTypedPropertyEventArgs!T;
 }
@@ -114,13 +114,13 @@ class EPropertyChanged
 }
 
 /// signal notifying when a property is about to change; this signal is cancelable
-class ETypedPropertyChanging(T) if (is(T : IData) || is(T : IDataList!A,A) || is(T : Ref!A,A) || isScalarType!T || is(T == UUID) || is(T == SysTime) || is(T == DateTime) || (isArray!T && isScalarType!(ElementType!T)))
+class ETypedPropertyChanging(T) if (is(T : Data) || is(T : DataList!A,A) || is(T : Ref!A,A) || isScalarType!T || is(T == UUID) || is(T == SysTime) || is(T == DateTime) || (isArray!T && isScalarType!(ElementType!T)))
 {
 	mixin TEvent!(Object, TypedPropertyChangingEventArgs!T);
 }
 
 /// signal notifying when a property changed
-class ETypedPropertyChanged(T) if (is(T : IData) || is(T : IDataList!A,A) || is(T : Ref!A,A) || isScalarType!T || is(T == UUID) || is(T == SysTime) || is(T == DateTime) || (isArray!T && isScalarType!(ElementType!T)))
+class ETypedPropertyChanged(T) if (is(T : Data) || is(T : DataList!A,A) || is(T : Ref!A,A) || isScalarType!T || is(T == UUID) || is(T == SysTime) || is(T == DateTime) || (isArray!T && isScalarType!(ElementType!T)))
 {
 	mixin TEvent!(Object, TypedPropertyChangedEventArgs!T);
 }

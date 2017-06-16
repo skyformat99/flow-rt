@@ -1,5 +1,5 @@
 {
-	"dataType": "flow.util.web.WebConfig",
+	"dataType": "flow.net.http.Http",
         "port": 1234,
         "listenerAmount": 10,
         "root": "public",

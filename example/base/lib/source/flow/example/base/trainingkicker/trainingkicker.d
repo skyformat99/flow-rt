@@ -29,7 +29,7 @@ class TrainingKicker : Organ
 {
     mixin organ!(TrainingKickerConfig);
 
-    override IData start()
+    override Data start()
     {
         auto c = config.as!TrainingKickerConfig;
         auto d = new TrainingKickerContext;
@@ -50,7 +50,7 @@ class TrainingKicker : Organ
 
         // bring god signal into game to activate the swarm
         auto s = new Whisper;
-        s.data = this.hull.get(d.kicker.front).info.reference;
+        s.data = this.hull.get(d.kicker.front).info.ptr;
         this.hull.send(s, trainer);
 
         return d;

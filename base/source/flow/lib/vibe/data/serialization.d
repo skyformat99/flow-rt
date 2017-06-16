@@ -43,7 +43,7 @@
 				corresponding field (can be overridden using the `@name`
 				attribute). If the struct/class is annotated with `@asArray`,
 				it will instead be serialized as a flat array of values in the
-				order of declaration. Null class references will be serialized
+				order of declaration. Null class addrs will be serialized
 				as `null`.)
 			$(LI Pointer types will be serialized as either `null`, or as
 				the value they point to.)
@@ -53,7 +53,7 @@
 		)
 
 		Note that no aliasing detection is performed, so that pointers, class
-		references and arrays referencing the same memory will be serialized
+		addrs and arrays referencing the same memory will be serialized
 		as multiple copies. When in turn deserializing the data, they will also
 		end up as separate copies in memory.
 

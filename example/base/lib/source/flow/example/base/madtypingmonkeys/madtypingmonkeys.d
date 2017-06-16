@@ -21,11 +21,11 @@ class MadTypingMonkeysContext : TypingMonkeysContext
     mixin field!(ulong, "active");
 }
 
-class MadTypingMonkeys : Organ
+class MadTypingMonkeys : Entity
 {
-    mixin organ!(MadTypingMonkeysConfig);
+    mixin entity!(MadTypingMonkeysConfig);
 
-    override IData start()
+    override Data start()
     {
         auto c = config.as!TypingMonkeysConfig;
         auto d = new MadTypingMonkeysContext;

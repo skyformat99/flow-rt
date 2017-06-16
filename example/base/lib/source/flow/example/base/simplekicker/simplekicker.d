@@ -25,7 +25,7 @@ class SimpleKicker : Organ
 {
     mixin organ!(SimpleKickerConfig);
 
-    override IData start()
+    override Data start()
     {
         auto c = config.as!SimpleKickerConfig;
         auto d = new SimpleKickerContext;

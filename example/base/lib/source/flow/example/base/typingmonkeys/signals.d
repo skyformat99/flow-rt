@@ -22,14 +22,14 @@ class ShowCandy : Multicast{mixin signal!();}
 // for translator
 /** well, the original bible is in hebrew
 the monkeys are typing on hebrew type writers
-* EntityRef is a reference to an entity
+* EntityPtr is a ptr to an entity
 * entity refs are never matched e == e but always e.identWith(e) */
 class HebrewPage : Data
 {
 	mixin data;
 
     mixin field!(byte[], "text");
-    mixin field!(EntityRef, "author");
+    mixin field!(EntityPtr, "author");
 }
 /** the data belongs to a multicast
 * the data carrying field: data */
@@ -43,7 +43,7 @@ class GermanPage : Data
 	mixin data;
 
     mixin field!(string, "text");
-    mixin field!(EntityRef, "author");
+    mixin field!(EntityPtr, "author");
 }
 /** which belongs to a signal */
 class GermanText : Multicast{mixin signal!(GermanPage);}

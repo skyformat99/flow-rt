@@ -125,7 +125,7 @@ interface IList(E) : ICollection!E
 /** list allowing only flow compatible data types.
  *  if you want to transport collections of data inside flow, this descripes what you need
  */
-interface IDataList(T) : IList!T if (is(T : IData) || isScalarType!T || is(T == UUID) || is(T == SysTime) || is(T == DateTime) || (isArray!T && isScalarType!(ElementType!T)))
+interface DataList(T) : IList!T if (is(T : Data) || isScalarType!T || is(T == UUID) || is(T == SysTime) || is(T == DateTime) || (isArray!T && isScalarType!(ElementType!T)))
 {
 }
 
@@ -510,7 +510,7 @@ mixin template TMainOfList(E)
     }
 }
 
-/// mask scalar, uuid and string types into nullable reference types
+/// mask scalar, uuid and string types into nullable ptr types
 class Ref(T) if ((isArray!T && isScalarType!(ElementType!T)))
 {
 	T value;
@@ -528,7 +528,7 @@ class Ref(T) if ((isArray!T && isScalarType!(ElementType!T)))
     }
 }
 
-/// mask scalar, uuid and string types into nullable reference types
+/// mask scalar, uuid and string types into nullable ptr types
 class Ref(T) if (isScalarType!T || is(T == UUID) || is(T == SysTime) || is(T == DateTime))
 {
 	T value;
@@ -574,7 +574,7 @@ class List(E) : IList!E
  * Bugs:
  *  - critical reading non writing operations are blocking each other
  */
-class DataList(E) : IDataList!E
+class DataList(E) : DataList!E
 {
     mixin TInputRangeOfList!E;
     mixin TForwardRangeOfList!E;
