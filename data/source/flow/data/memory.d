@@ -50,6 +50,8 @@ class MemoryContext : Data
 {
     mixin data;
 
+    mixin field!(MemorySettings, "settings");
+
     mixin field!(MemoryInfos, "infos");
 }
 
@@ -434,7 +436,7 @@ class FileMemoryStorage : MemoryStorage
         import std.file, std.path, std.algorithm.searching;
 
         auto c = this._memory.context.as!MemoryContext;
-        auto se = this._memory.info.settings.as!FileMemorySettings;
+        auto se = c.settings.as!FileMemorySettings;
 
         if(se.url.isValidPath && se.url.isDir)
         {
@@ -453,7 +455,7 @@ class FileMemoryStorage : MemoryStorage
                 {
                     c.infos = Data.fromJson(listFileContent).as!MemoryInfos;
 
-                    if(!c.infos.types.array.all!(t1 => se.types.array.any!(t2 => t2 == t1)))
+                    if(!c.settings.types.array.all!(t1 => se.types.array.any!(t2 => t2 == t1)))
                         throw new UrlContainsUnknownMemoriesException("\""~se.url~"\" memory doesn't manage one or more contained data types");
                 }
             }
@@ -464,8 +466,8 @@ class FileMemoryStorage : MemoryStorage
 
     override protected MemoryContainer get(UUID id, long revId)
     {
-        auto se = this._memory.info.settings.as!FileMemorySettings;
         auto c = this._memory.context.as!MemoryContext;
+        auto se = c.settings.as!FileMemorySettings;
         import std.file, std.path, std.conv, std.algorithm.iteration, std.algorithm.searching;
         import flow.base.dev;
 
@@ -488,8 +490,8 @@ class FileMemoryStorage : MemoryStorage
     override protected StoreType store(MemoryContainer mc)
     {
         import std.file, std.path, std.conv;
-        auto se = this._memory.info.settings.as!FileMemorySettings;
         auto c = this._memory.context.as!MemoryContext;
+        auto se = c.settings.as!FileMemorySettings;
         auto dataPath = se.url.buildPath(mc.id.toString);
         auto exists = dataPath.exists;
         if(!exists)
@@ -508,8 +510,8 @@ class FileMemoryStorage : MemoryStorage
     override protected void remove(UUID id)
     {
         import std.file, std.path;
-        auto se = this._memory.info.settings.as!FileMemorySettings;
         auto c = this._memory.context.as!MemoryContext;
+        auto se = c.settings.as!FileMemorySettings;
         auto dataPath = se.url.buildPath(id.toString);
         dataPath.rmdirRecurse();
 
@@ -567,7 +569,7 @@ class Memory : Entity
     private Object handleStoreRequest(StoreRequest s)
     {
         auto c = this.context;
-        auto se = this.info.settings.as!MemorySettings;
+        auto se = c.settings.as!MemorySettings;
 
         if(se.canStore(s.data))
             return new Store;

@@ -14,6 +14,7 @@ class BeaconContext : Data
 
     mixin field!(string, "error");
     mixin list!(BeaconSessionInfo, "sessions");
+    mixin field!(string, "defSession");
 }
 
 class BeaconSessionRequestData : Data
@@ -127,7 +128,7 @@ class BeaconSession : Entity, IQuiet
     );*/
 }
 
-abstract class Beacon : Entity, IStealth, IQuiet
+class Beacon : Entity, IStealth, IQuiet
 {
     mixin entity;
 
@@ -137,12 +138,12 @@ abstract class Beacon : Entity, IStealth, IQuiet
     
     mixin listen!(fqn!WrappedSignal,
         (e, s) => new PullWrappedSignal
-    );
+    ); 
 
     mixin listen!(fqn!StopBeacon,
         (e, s) => e.as!Beacon.onStopBeacon(s)
     );
 
-    protected abstract Object onStartBeacon(ISignal s);
-    protected abstract Object onStopBeacon(ISignal s);
+    protected Object onStartBeacon(ISignal s) {return null;} 
+    protected Object onStopBeacon(ISignal s) {return null;} 
 }

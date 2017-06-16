@@ -39,6 +39,22 @@ mixin template TEntity(T = void)
 
     static ListenerMeta[] Listener;
 
+    shared static this()
+    {
+        static if(!is(T == void))
+        {
+            Entity.register(fqn!T, (context, id, domain, availability){
+                auto c = context.as!T;
+                return new typeof(this)(id, domain, availability, c);
+            });
+        }
+        
+        Entity.register(fqn!(typeof(this)), (context, id, domain, availability){
+            return new typeof(this)(id, domain, availability);
+        });
+        
+    }
+
     override @property string __fqn() {return fqn!(typeof(this));}
 
     static if(!is(T == void))
@@ -53,45 +69,36 @@ mixin template TEntity(T = void)
     }
 
     this()
-    {this(randomUUID, "", EntityScope.Local, null, null, null);}
+    {this(randomUUID, "", EntityScope.Local, null, null);}
 
     this(IData context)
-    {this(randomUUID, "", EntityScope.Local, null, context, null);}
-
-    this(string domain, IData context)
-    {this(randomUUID, domain, EntityScope.Local, null, context, null);}
-
-    this(IData context, Data settings)
-    {this(randomUUID, "", EntityScope.Local, null, context, settings);}
-
-    this(string domain, IData context, Data settings)
-    {this(randomUUID, domain, EntityScope.Local, null, context, settings);}
+    {this(randomUUID, "", EntityScope.Local, null, context);}
 
     this(string domain)
-    {this(randomUUID, domain, EntityScope.Local, null, null, null);}
+    {this(randomUUID, domain, EntityScope.Local, null, null);}
+
+    this(string domain, IData context)
+    {this(randomUUID, domain, EntityScope.Local, null, context);}
     
     this(UUID id, string domain, EntityScope availability)
-    {this(id, domain, availability, null, null, null);}
-    
-    this(UUID id, string domain, EntityScope availability, ListenerMeta[] fListen)
-    {this(id, domain, availability, fListen, null, null);}
+    {this(id, domain, availability, null, null);}
     
     this(UUID id, string domain, EntityScope availability, IData context)
-    {this(id, domain, availability, null, context, null);}
+    {this(id, domain, availability, null, context);}
 
-    this(UUID id, string domain, EntityScope availability, ListenerMeta[] fListen, IData context, Data settings)
+    this(UUID id, string domain, EntityScope availability, ListenerMeta[] fListen, IData context)
     {
         static if(!is(T == void))
             this._context = context.as!T !is null ? context.as!T : new T;
         else
             this._context = context;
 
-        this(id, domain, availability, fListen, settings);
+        this(id, domain, availability, fListen);
     }
 
-    this(UUID id, string domain, EntityScope availability, ListenerMeta[] fListen, Data settings)
+    this(UUID id, string domain, EntityScope availability, ListenerMeta[] fListen)
     {
-        super(id, domain, availability, fListen !is null ? Listener ~ fListen : Listener, settings);
+        super(id, domain, availability, fListen !is null ? Listener ~ fListen : Listener);
     }
 }
 
@@ -212,6 +219,43 @@ class Listener
 
 abstract class Entity : IInvokingEntity, ITickingEntity
 {
+    private static IEntity function(IData, UUID, string, EntityScope)[string] _reg;
+    
+    static void register(string dataType, IEntity function(IData, UUID, string, EntityScope) creator)
+	{
+        _reg[dataType] = creator;
+	}
+
+	static bool can(IData context)
+	{
+		return context !is null && context.dataType in _reg ? true : false;
+	}
+
+	static bool can(string name)
+	{
+		return name in _reg ? true : false;
+	}
+
+    static IEntity create(IData context, UUID id = randomUUID, string domain = "", EntityScope availability = EntityScope.Local)
+    {
+        return Entity.create(context, "", id, domain, availability);
+    }
+
+    static IEntity create(string name, UUID id = randomUUID, string domain = "", EntityScope availability = EntityScope.Local)
+    {
+        return Entity.create(null, name, id, domain, availability);
+    } 
+
+	static IEntity create(IData context, string name = "", UUID id = randomUUID, string domain = "", EntityScope availability = EntityScope.Local)
+	{
+		if(context !is null && context.dataType in _reg )
+			return _reg[context.dataType](context, id, domain, availability);
+        else if(name in _reg)
+            return _reg[name](context, id, domain, availability);
+		else
+			return null;
+	}
+
     private Mutex _lock;
     IHull _hull;
     private flow.flow.type.List!(Ticker) _ticker;
@@ -235,7 +279,7 @@ abstract class Entity : IInvokingEntity, ITickingEntity
     @property bool running(){return !this._isStopped;}
     @property size_t count() {return this._ticker.length;}
             
-    this(UUID id, string domain, EntityScope availability, ListenerMeta[] fListen, Data settings)
+    this(UUID id, string domain, EntityScope availability, ListenerMeta[] fListen)
     {
         this._lock = new Mutex;
         this._ticker = new flow.flow.type.List!(Ticker);
@@ -257,7 +301,6 @@ abstract class Entity : IInvokingEntity, ITickingEntity
         }
         
         this._info = new EntityInfo;
-        this._info.settings = settings;
         this._info.reference = new EntityRef;
         this._info.reference.id = id;
         this._info.reference.type = this.__fqn;

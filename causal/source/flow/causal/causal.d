@@ -36,13 +36,13 @@ class Causal : Organ
         if(!conf.descriptionMemoryUrl.exists)
             conf.descriptionMemoryUrl.mkdirRecurse();
 
-        auto memorySettings = new FileMemorySettings;
+        auto memorySettings = new FileMemorySettings;        
         memorySettings.url = conf.descriptionMemoryUrl;
         memorySettings.format = conf.descriptionMemoryFormat;
         memorySettings.types.put(fqn!Description);
-
         auto memoryContext = new MemoryContext;
-        auto memory = new Memory(memoryContext, memorySettings);
+        memoryContext.settings = memorySettings;
+        auto memory = new Memory(memoryContext);
         memory.storage = new FileMemoryStorage(memory);
         c.memory = this.hull.add(memory);
 

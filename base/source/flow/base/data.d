@@ -49,8 +49,6 @@ class EntityInfo : Data
     mixin TField!(EntityScope, "availability");
 
     mixin TList!(string, "signals");
-
-    mixin TField!(Data, "settings");
 }
 
 class TraceSignalData : IdData

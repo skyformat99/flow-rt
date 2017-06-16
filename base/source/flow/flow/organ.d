@@ -4,24 +4,24 @@ import std.uuid;
 
 import flow.base.blocks, flow.base.interfaces;
 
-mixin template TOrgan(F)
-    if(is(F : IData))
+mixin template TOrgan(T)
+    if(is(T : IData))
 {
     import flow.base.interfaces;
 
     shared static this()
     {
-        Organ.register(fqn!F, (config){
-            auto c = config.as!F;
+        Organ.register(fqn!T, (config){
+            auto c = config.as!T;
             return new typeof(this)(c);
         });
     }
 
     override @property string __fqn() {return fqn!(typeof(this));}
 
-    @property F tconfig(){return this.context.as!F;}
+    @property T tconfig(){return this.context.as!T;}
 
-    this(F config)
+    this(T config)
     {
         this._config = config;
     }
@@ -38,12 +38,12 @@ abstract class Organ : IOrgan
 
 	static bool can(IData config)
 	{
-		return config.dataType in _reg ? true : false;
+		return config !is null && config.dataType in _reg ? true : false;
 	}
 
 	static IOrgan create(IData config)
 	{
-		if(config.dataType in _reg)
+		if(config !is null && config.dataType in _reg)
 			return _reg[config.dataType](config);
 		else
 			return null;
