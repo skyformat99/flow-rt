@@ -1,4 +1,4 @@
-module flow.net.web;
+module flow.net.http;
 
 import std.uuid, std.array, std.string, std.datetime, std.conv, std.algorithm.searching, std.algorithm.iteration, std.file, std.path;
 
@@ -6,49 +6,9 @@ import flow.sws.webServer, flow.sws.webRequest;
 import flow.flow.entity;
 import flow.base.dev, flow.base.blocks, flow.base.data, flow.base.interfaces, flow.base.signals;
 
-class StartWebService : Unicast{mixin signal!();}
-class StopWebService : Unicast{mixin signal!();}
-class WebSignalData : Data
-{
-	mixin data;
+import flow.net.beacon;
 
-    mixin field!(string, "signal");
-}
-class WebSignal : Unicast, IStealth {mixin signal!(WebSignalData);}
-
-class WebSessionRequestData : Data
-{
-	mixin data;
-
-    mixin list!(string, "listenings");
-}
-
-class WebSessionContext : Data
-{
-	mixin data;
-
-    mixin field!(EntityRef, "service");
-}
-
-class WebSessionListening : IdData
-{
-    mixin data;
-
-    mixin field!(string, "signal");
-    mixin list!(UUID, "sources");
-}
-
-class WebSessionInfo : Data
-{
-	mixin data;
-
-    mixin field!(EntityRef, "session");
-    mixin field!(DateTime, "lastActivity");
-    mixin list!(WebSessionListening, "listenings");
-    mixin list!(WebSignal, "inQueue");
-}
-
-class WebServiceContext : Data
+class HttpBeaconContext : BeaconContext
 {
 	mixin data;
 
@@ -56,15 +16,13 @@ class WebServiceContext : Data
     mixin field!(ushort, "port");
     mixin field!(ushort, "listenerAmount");
     mixin field!(string, "root");
-    mixin field!(string, "error");
-    mixin list!(WebSessionInfo, "sessions");
 }
 
-private class WebServiceServer : WebServer
+private class HttpBeaconService : WebServer
 {
     import core.sync.mutex;
     private static Mutex _lock;
-    private static WebServiceServer[UUID] _listenerReg;
+    private static HttpBeaconService[UUID] _listenerReg;
 
     shared static this()
     {
@@ -76,7 +34,7 @@ private class WebServiceServer : WebServer
         synchronized(_lock)
         {
             auto id = randomUUID;
-            _listenerReg[id] = new WebServiceServer(entity, port, handleReq, handleMsg);
+            _listenerReg[id] = new HttpBeaconService(entity, port, handleReq, handleMsg);
             _listenerReg[id].listenerAmount = listenerAmount;
             _listenerReg[id].start();
             return id;
@@ -121,625 +79,531 @@ private class WebServiceServer : WebServer
     }
 }
 
-private bool onWebRequestSession(IEntity e, WebRequest req)
+class HttpBeaconStart : Tick
 {
-    auto c = e.context.as!WebServiceContext;
+	mixin tick;
 
-    debugMsg("web request \""~req.url~"\" is a session request", 2);
-    
-    try
-    {
-        UUID existing;
-        try{existing = parseUUID(req.getCookie("flowsession"));}catch(Exception exc){}
-        if(existing != UUID.init && c.sessions.array.any!(i=>i.session.id == existing))
-        {
-            auto session = c.sessions.array.filter!(i=>i.session.id == existing).front;
-            e.hull.remove(existing);
-            c.sessions.remove(session);
-        }
-
-        auto sc = new WebSessionContext;
-        sc.service = e.info.reference;
-        auto session = new WebSession(randomUUID, e.info.domain, e.info.availability, sc);
-        e.hull.add(session);
-
-        auto info = new WebSessionInfo;
-        info.session = session.info.reference;
-        info.lastActivity = Clock.currTime.toUTC().as!DateTime;
-        c.sessions.put(info);
-        req.setCookie("flowsession", session.id.toString);
-        debugMsg("web request \""~req.url~"\" added web session with id \""~session.id.toString()~"\"", 2);
-
-        req.sendText("true");
-        return true;
+	override void run()
+	{
     }
-    catch(Exception exc)
-    {
-        debugMsg("web request \""~req.url~"\" caused an exception \""~exc.msg~"\"", 2);
-    }
-    
-    req.sendText("false");
-    return false;
 }
 
-private bool onWebRequestValidateSession(IEntity e, WebRequest req)
+class HttpBeaconStop : Tick
 {
-    auto c = e.context.as!WebServiceContext;
+	mixin tick;
 
-    debugMsg("web request \""~req.url~"\" is a validate session request", 2);
-    
-    try
-    {
-        UUID existing;
-        try{existing = parseUUID(req.getCookie("flowsession"));}catch(Exception exc){}
-
-        if(existing != UUID.init && c.sessions.array.any!(i=>i.session.id == existing))
-        {
-            req.sendText("true");
-            return true;
-        }
-        else
-        {
-            req.setCookie("flowsession", null);
-        }
+	override void run()
+	{
+        auto c = this.entity.context.as!HttpBeaconContext;
+        c.server = UUID.init;
     }
-    catch(Exception exc)
-    {
-        debugMsg("web request \""~req.url~"\" caused an exception \""~exc.msg~"\"", 2);
-    }
-    
-    req.sendText("false");
-    return false;
 }
 
-private bool onWebRequestEndSession(IEntity e, WebRequest req)
+class HttpBeaconStartError : Tick
 {
-    debugMsg("web request \""~req.url~"\" is a end session request", 2);
+	mixin tick;
 
-    try
-    {
-        UUID existing;
-        try{existing = parseUUID(req.getCookie("flowsession"));}
-        catch(Exception exc)
-        {
-            debugMsg("web request \""~req.url~"\" contains has no valid session id \""~req.getCookie("flowsession")~"\"", 3);
-            req.sendError(400, "no valid session id<br>"~req.getCookie("flowsession"));
-        }
-
-        auto c = e.context.as!WebServiceContext;
-        if(existing != UUID.init && c.sessions.array.any!(i=>i.session.id == existing))
-        {
-            auto info = c.sessions.array.filter!(i=>i.session.id == existing).front;
-            auto session = e.hull.get(existing);
-
-            e.hull.remove(existing);
-            c.sessions.remove(info);
-            req.setCookie("flowsession", null);
-            debugMsg("web request \""~req.url~"\" removed web session with id \""~existing.toString()~"\"", 2);
-
-            req.sendText("true");
-            return true;
-        }
+	override void run()
+	{
     }
-    catch(Exception exc)
-    {
-        debugMsg("web request \""~req.url~"\" caused an exception \""~exc.msg~"\"", 2);
+}
+
+class HttpBeaconStopError : Tick
+{
+	mixin tick;
+
+	override void run()
+	{
     }
+}
+
+class HttpBeacon : Beacon, IStealth, IQuiet
+{
+    mixin entity!(HttpBeaconContext);
     
-    req.sendText("false");
-    return false;
-}
+    mixin listen!(fqn!WrappedSignal,
+        (e, s) => new PullWrappedSignal
+    );
 
-private Object webListenHandler(IEntity e, ISignal s)
-{
-    debugMsg("web session received \""~s.type~"\"", 2);
-    auto service = e.hull.get(e.context.as!WebSessionContext.service.id);
-    auto c = service.context.as!WebServiceContext;
-    auto info = c.sessions.array.filter!(i => i.session.id == e.id).front;
-    foreach(l; info.listenings.array.filter!(l => l.signal == s.type))
+    override Object onStartBeacon(ISignal s)
     {
-        foreach(src; l.sources.array.filter!(src => src == UUID.init || src == s.source.id))
-            return new PushWebSignal;
-            
-        break;
-    }
-
-    return null;
-}
-
-private bool onWebRequestAddListenSource(IEntity e, WebRequest req)
-{
-    debugMsg("web request \""~req.url~"\" is an add listen source request", 2);
-    try
-    {
-        UUID existing;
-        try{existing = parseUUID(req.getCookie("flowsession"));}
-        catch(Exception exc)
+        auto c = this.context;
+        if(c.server == UUID.init)
         {
-            debugMsg("web request \""~req.url~"\" contains has no valid session id \""~req.getCookie("flowsession")~"\"", 3);
-            req.sendError(400, "no valid session id<br>"~req.getCookie("flowsession"));
+            try
+            {
+                c.server = HttpBeaconService.add(
+                    this, 
+                    c.port,
+                    c.listenerAmount,
+                    (e, req) => this.onWebRequest(req), 
+                    (e, req, msg) => this.onWebMessage(req, msg)
+                );
+                
+                return new HttpBeaconStart;
+            }
+            catch(Exception exc)
+            {
+                c.error= exc.toString();
+                return new HttpBeaconStartError;
+            }
         }
         
-        auto c = e.context.as!WebServiceContext;
-        if(existing != UUID.init && c.sessions.array.any!(i => i.session.id == existing))
-        {
-            auto data = req.rawData.strip();
-            auto signal = data.split(";")[0];
-            auto source = data.split(";")[1];
-            auto id = source == "*" ? UUID.init : parseUUID(source);
-            auto info = c.sessions.array.filter!(i => i.session.id == existing).front;
-            
-            if(!info.listenings.array.any!(l => l.signal == signal))
-            {
-                debugMsg(existing.to!string~" listening to \""~signal~"\"", 2);
+        return new BeaconAlreadyStarted;
+    } 
 
-                auto lid = e.hull.get(existing).beginListen(signal, (e, s) => webListenHandler(e, s));
-                auto listening = new WebSessionListening;
-                listening.id = lid;
-                listening.signal = signal;
-                info.listenings.put(listening);
+    override Object onStopBeacon(ISignal s)
+    {
+        if(this.context.server != UUID.init)
+        {
+            try
+            {
+                HttpBeaconService.remove(this.context.server);
+                
+                return new HttpBeaconStop;
+            }
+            catch(Exception exc)
+            {
+                this.context.error= exc.toString();
+                return new HttpBeaconStopError;
+            }
+        }
+    
+        return new BeaconAlreadyStopped;
+    }
+
+    private bool onHttpRequestSession(WebRequest req)
+    {
+        auto c = this.context;
+
+        debugMsg("http request \""~req.url~"\" is a session request", 2);
+        
+        try
+        {
+            UUID existing;
+            try{existing = parseUUID(req.getCookie("flowsession"));}catch(Exception exc){}
+            if(existing != UUID.init && c.sessions.array.any!(i=>i.session.id == existing))
+            {
+                auto session = c.sessions.array.filter!(i=>i.session.id == existing).front;
+                this.hull.remove(existing);
+                c.sessions.remove(session);
             }
 
-            debugMsg(existing.to!string~" allowing \""~id.to!string~"\" for \""~signal~"\"", 2);
-            auto listening = info.listenings.array.filter!(l => l.signal == signal).front;
-            if(!listening.sources.array.any!(src => src == id))
-                listening.sources.put(id);
+            auto sc = new BeaconSessionContext;
+            sc.beacon = this.info.reference;
+            auto session = new BeaconSession(randomUUID, this.info.domain, this.info.availability, sc);
+            this.hull.add(session);
+
+            auto info = new BeaconSessionInfo;
+            info.session = session.info.reference;
+            info.lastActivity = Clock.currTime.toUTC().as!DateTime;
+            c.sessions.put(info);
+            req.setCookie("flowsession", session.id.toString);
+            debugMsg("http request \""~req.url~"\" added session with id \""~session.id.toString()~"\"", 2);
 
             req.sendText("true");
             return true;
         }
-    }
-    catch(Exception exc)
-    {
-        debugMsg("web request \""~req.url~"\" caused an exception \""~exc.msg~"\"", 2);
-    }
-    
-    req.sendText("false");
-    return false;
-}
-
-private bool onWebRequestRemoveListenSource(IEntity e, WebRequest req)
-{
-    debugMsg("web request \""~req.url~"\" is a remove listen source request", 2);
-    try
-    {
-        UUID existing;
-        try{existing = parseUUID(req.getCookie("flowsession"));}
         catch(Exception exc)
         {
-            debugMsg("web request \""~req.url~"\" contains has no valid session id \""~req.getCookie("flowsession")~"\"", 3);
-            req.sendError(400, "no valid session id<br>"~req.getCookie("flowsession"));
+            debugMsg("http request \""~req.url~"\" caused an exception \""~exc.msg~"\"", 2);
         }
         
-        auto c = e.context.as!WebServiceContext;
-        if(existing != UUID.init && c.sessions.array.any!(i => i.session.id == existing))
-        {
-            auto data = req.rawData.strip();
-            auto signal = data.split(";")[0];
-            auto source = data.split(";")[1];
-            auto id = source == "*" ? UUID.init : parseUUID(source);
-            auto info = c.sessions.array.filter!(i => i.session.id == existing).front;
-            if(info.listenings.array.any!(l => l.signal == signal))
-            {
-                auto listening = info.listenings.array.filter!(l => l.signal == signal).front;
-                if(listening.sources.array.any!(src => src == id))
-                    listening.sources.remove(id);
+        req.sendText("false");
+        return false;
+    }
 
-                if(listening.sources.length == 0)
-                {
-                    info.listenings.remove(listening);
-                    e.hull.get(existing).endListen(listening.id);
-                }
+    private bool onHttpRequestValidateSession(WebRequest req)
+    {
+        auto c = this.context;
+
+        debugMsg("http request \""~req.url~"\" is a validate session request", 2);
+        
+        try
+        {
+            UUID existing;
+            try{existing = parseUUID(req.getCookie("flowsession"));}catch(Exception exc){}
+
+            if(existing != UUID.init && c.sessions.array.any!(i=>i.session.id == existing))
+            {
+                req.sendText("true");
+                return true;
+            }
+            else
+            {
+                req.setCookie("flowsession", null);
+            }
+        }
+        catch(Exception exc)
+        {
+            debugMsg("http request \""~req.url~"\" caused an exception \""~exc.msg~"\"", 2);
+        }
+        
+        req.sendText("false");
+        return false;
+    }
+
+    private bool onHttpRequestEndSession(WebRequest req)
+    {
+        debugMsg("http request \""~req.url~"\" is a end session request", 2);
+
+        try
+        {
+            UUID existing;
+            try{existing = parseUUID(req.getCookie("flowsession"));}
+            catch(Exception exc)
+            {
+                debugMsg("http request \""~req.url~"\" contains has no valid session id \""~req.getCookie("flowsession")~"\"", 3);
+                req.sendError(400, "no valid session id<br>"~req.getCookie("flowsession"));
+            }
+
+            auto c = this.context;
+            if(existing != UUID.init && c.sessions.array.any!(i=>i.session.id == existing))
+            {
+                auto info = c.sessions.array.filter!(i=>i.session.id == existing).front;
+                auto session = this.hull.get(existing);
+
+                this.hull.remove(existing);
+                c.sessions.remove(info);
+                req.setCookie("flowsession", null);
+                debugMsg("http request \""~req.url~"\" removed session with id \""~existing.toString()~"\"", 2);
 
                 req.sendText("true");
                 return true;
             }
         }
-    }
-    catch(Exception exc)
-    {
-        debugMsg("web request \""~req.url~"\" caused an exception \""~exc.msg~"\"", 2);
-    }
-    
-    req.sendText("false");
-    return false;    
-}
-
-private bool onWebRequestReceive(IEntity e, WebRequest req)
-{
-    debugMsg("web request \""~req.url~"\" is a receive request", 2);
-
-    UUID existing;
-    try{existing = parseUUID(req.getCookie("flowsession"));}
-    catch(Exception exc)
-    {
-        debugMsg("web request \""~req.url~"\" contains has no valid session id \""~req.getCookie("flowsession")~"\"", 3);
-        req.sendError(400, "no valid session id<br>"~req.getCookie("flowsession"));
-    }
-
-    auto c = e.context.as!WebServiceContext;
-    if(existing != UUID.init && c.sessions.array.any!(i=>i.session.id == existing))
-    {
-        auto info = c.sessions.array.filter!(i=>i.session.id == existing).front;
-        WebSignal[] signals;
-        synchronized
+        catch(Exception exc)
         {
-            signals ~= info.inQueue.array;
-            info.inQueue.clear();
+            debugMsg("http request \""~req.url~"\" caused an exception \""~exc.msg~"\"", 2);
         }
-    
-        debugMsg("web request \""~req.url~"\" found "~signals.length.to!string~" new signals", 3);
-        auto signalsString = "[";
-        foreach(ws; signals)
-            signalsString ~= ws.data.signal~",";
-        if(signalsString[$-1..$] == ",")
-            signalsString = signalsString[0..$-1];
-        signalsString ~= "]";
-
-        req.sendText(signalsString);
-    }
-    
-    return true;
-}
-
-private bool onWebRequestSend(IEntity e, WebRequest req)
-{
-    import flow.base.signals;
-
-    debugMsg("web request \""~req.url~"\" is a send request", 2);
-
-    UUID existing;
-    try{existing = parseUUID(req.getCookie("flowsession"));}
-    catch(Exception exc)
-    {
-        debugMsg("web request \""~req.url~"\" has no valid session id \""~req.getCookie("flowsession")~"\"", 3);
-        req.sendError(400, "no valid session id<br>"~req.getCookie("flowsession"));
+        
+        req.sendText("false");
+        return false;
     }
 
-    auto c = e.context.as!WebServiceContext;
-    if(existing != UUID.init && c.sessions.array.any!(i=>i.session.id == existing))
+    private static Object httpListenHandler(IEntity e, ISignal s)
     {
-        auto se = c.sessions.array.filter!(i=>i.session.id == existing).front;
-        auto data = req.rawData.strip();
-        ISignal s;
+        debugMsg("session received \""~s.type~"\"", 2);
+        auto beacon = e.hull.get(e.context.as!BeaconSessionContext.beacon.id);
+        
+        auto c = beacon.context.as!HttpBeaconContext;
+        auto info = c.sessions.array.filter!(i => i.session.id == e.id).front;
+        foreach(l; info.listenings.array.filter!(l => l.signal == s.type))
+        {
+            foreach(src; l.sources.array.filter!(src => src == UUID.init || src == s.source.id))
+                return new PushWrappedSignal;
+                
+            break;
+        }
+
+        return null;
+    }
+
+    private bool onHttpRequestAddListenSource(WebRequest req)
+    {
+        debugMsg("http request \""~req.url~"\" is an add listen source request", 2);
         try
         {
-            s = Data.fromJson(data).as!ISignal;
-            if(s !is null)
+            UUID existing;
+            try{existing = parseUUID(req.getCookie("flowsession"));}
+            catch(Exception exc)
             {
-                s.source = e.hull.get(se.session.id).info.reference;
-                s.type = s.dataType;
-                if(s.group == UUID.init) s.group = randomUUID;
+                debugMsg("http request \""~req.url~"\" contains has no valid session id \""~req.getCookie("flowsession")~"\"", 3);
+                req.sendError(400, "no valid session id<br>"~req.getCookie("flowsession"));
+            }
+            
+            auto c = this.context;
+            if(existing != UUID.init && c.sessions.array.any!(i => i.session.id == existing))
+            {
+                auto data = req.rawData.strip();
+                auto signal = data.split(";")[0];
+                auto source = data.split(";")[1];
+                auto id = source == "*" ? UUID.init : parseUUID(source);
+                auto info = c.sessions.array.filter!(i => i.session.id == existing).front;
+                
+                if(!info.listenings.array.any!(l => l.signal == signal))
+                {
+                    debugMsg(existing.to!string~" listening to \""~signal~"\"", 2);
+
+                    auto lid = this.hull.get(existing).beginListen(signal, (e, s) => httpListenHandler(e, s));
+                    auto listening = new BeaconSessionListening;
+                    listening.id = lid;
+                    listening.signal = signal;
+                    info.listenings.put(listening);
+                }
+
+                debugMsg(existing.to!string~" allowing \""~id.to!string~"\" for \""~signal~"\"", 2);
+                auto listening = info.listenings.array.filter!(l => l.signal == signal).front;
+                if(!listening.sources.array.any!(src => src == id))
+                    listening.sources.put(id);
+
+                req.sendText("true");
+                return true;
             }
         }
         catch(Exception exc)
         {
-            debugMsg("web request \""~req.url~"\" contains malformed data \""~data~"\" \""~exc.msg~"\"", 3);
-            req.sendError(400, "malformed send request<br>"~exc.msg);
+            debugMsg("http request \""~req.url~"\" caused an exception \""~exc.msg~"\"", 2);
         }
-
-        if(s !is null)
-        {
-            auto success = false;
-            if(s.as!IUnicast !is null)
-                success = e.hull.send(s.as!IUnicast);
-            else if(s.as!IMulticast !is null)
-                success = e.hull.send(s.as!IMulticast);
-            else if(s.as!IAnycast !is null)
-                success = e.hull.send(s.as!IAnycast);
-            
-            auto session = e.hull.get(existing);
-            if(e.hull.tracing &&
-                s.as!IStealth is null)
-            {
-                auto tsd = new TraceSignalData;
-                auto tss = new TraceSend;
-                tss.type = tss.dataType;
-                tss.source = s.source;
-                tss.data = tsd;
-                tss.data.success = success;
-                tss.data.group = s.group;
-                tss.data.nature = s.as!IUnicast !is null ?
-                    "Unicast" : (
-                        s.as!IMulticast !is null ? "Multicast" :
-                        "Anycast"
-                    );
-                tss.data.trigger = existing;
-                if(s.as!IUnicast !is null)
-                    tss.data.destination = s.as!IUnicast.destination;
-                tss.data.time = Clock.currTime.toUTC();
-                tss.data.id = s.id;
-                tss.data.type = s.type;
-                e.hull.send(tss);
-
-                auto ttd = new TraceTickData;
-                auto tts = new TraceEndTick;
-                tts.type = tts.dataType;
-                tts.source = session.info.reference;
-                tts.data = ttd;
-                tts.data.id = session.id;
-                tts.data.time = Clock.currTime.toUTC();
-                tts.data.entityType = session.__fqn;
-                tts.data.entityId = session.id;
-                tts.data.tick = session.__fqn;
-                e.hull.send(tts);
-            }                
-                
-            req.sendText(success ? "true" : "false");
-        }
-        else
-        {
-            debugMsg("web request \""~req.url~"\" contains malformed data \""~data~"\"", 3);
-            req.sendError(400, "malformed send request<br>"~data);
-        }
+        
+        req.sendText("false");
+        return false;
     }
-    
-    return true;
-}
 
-private bool onWebRequestFile(IEntity e, WebRequest req)
-{
-    debugMsg("web request \""~req.url~"\" is a file request", 2);
-
-    auto c = e.context.as!WebServiceContext;
-    auto file = req.url;
-
-    if(file[0..1] == dirSeparator)
-        file = file[1..$];
-
-    if(file == "")
-        file = "index.html";
-
-    file = file.replace("/", dirSeparator);
-
-    file = c.root.buildPath(file);
-
-    if(file.isValidPath && file.exists && file.isFile)
+    private bool onHttpRequestRemoveListenSource(WebRequest req)
     {
-        req.sendFile(file);
+        debugMsg("http request \""~req.url~"\" is a remove listen source request", 2);
+        try
+        {
+            UUID existing;
+            try{existing = parseUUID(req.getCookie("flowsession"));}
+            catch(Exception exc)
+            {
+                debugMsg("http request \""~req.url~"\" contains has no valid session id \""~req.getCookie("flowsession")~"\"", 3);
+                req.sendError(400, "no valid session id<br>"~req.getCookie("flowsession"));
+            }
+            
+            auto c = this.context;
+            if(existing != UUID.init && c.sessions.array.any!(i => i.session.id == existing))
+            {
+                auto data = req.rawData.strip();
+                auto signal = data.split(";")[0];
+                auto source = data.split(";")[1];
+                auto id = source == "*" ? UUID.init : parseUUID(source);
+                auto info = c.sessions.array.filter!(i => i.session.id == existing).front;
+                if(info.listenings.array.any!(l => l.signal == signal))
+                {
+                    auto listening = info.listenings.array.filter!(l => l.signal == signal).front;
+                    if(listening.sources.array.any!(src => src == id))
+                        listening.sources.remove(id);
+
+                    if(listening.sources.length == 0)
+                    {
+                        info.listenings.remove(listening);
+                        this.hull.get(existing).endListen(listening.id);
+                    }
+
+                    req.sendText("true");
+                    return true;
+                }
+            }
+        }
+        catch(Exception exc)
+        {
+            debugMsg("http request \""~req.url~"\" caused an exception \""~exc.msg~"\"", 2);
+        }
+        
+        req.sendText("false");
+        return false;    
+    }
+
+    private bool onHttpRequestReceive(WebRequest req)
+    {
+        debugMsg("http request \""~req.url~"\" is a receive request", 2);
+
+        UUID existing;
+        try{existing = parseUUID(req.getCookie("flowsession"));}
+        catch(Exception exc)
+        {
+            debugMsg("http request \""~req.url~"\" contains has no valid session id \""~req.getCookie("flowsession")~"\"", 3);
+            req.sendError(400, "no valid session id<br>"~req.getCookie("flowsession"));
+        }
+
+        auto c = this.context;
+        if(existing != UUID.init && c.sessions.array.any!(i=>i.session.id == existing))
+        {
+            auto info = c.sessions.array.filter!(i=>i.session.id == existing).front;
+            WrappedSignal[] signals;
+            synchronized
+            {
+                signals ~= info.inQueue.array;
+                info.inQueue.clear();
+            }
+        
+            debugMsg("http request \""~req.url~"\" found "~signals.length.to!string~" new signals", 3);
+            auto signalsString = "[";
+            foreach(ws; signals)
+                signalsString ~= ws.data.signal~",";
+            if(signalsString[$-1..$] == ",")
+                signalsString = signalsString[0..$-1];
+            signalsString ~= "]";
+
+            req.sendText(signalsString);
+        }
+        
         return true;
     }
-    else
+
+    private bool onHttpRequestSend(WebRequest req)
     {
-        debugMsg("\""~file~"\" not found", 3);
-        req.sendError(404, "file not found");
-    }
+        import flow.base.signals;
 
-    return false;
-}
+        debugMsg("http request \""~req.url~"\" is a send request", 2);
 
-private bool onWebRequest(IEntity e, WebRequest req)
-{
-    debugMsg("got web request \""~req.url~"\"", 1);
-    auto ret = false;
-    if(req.matchUrl("\\/::flow::.*"))
-    {
-        debugMsg("web request \""~req.url~"\" is a flow request", 2);
-        if(req.url == "/::flow::requestSession")
-            ret = onWebRequestSession(e, req);
-        else if(req.url == "/::flow::validateSession")
-            ret = onWebRequestValidateSession(e, req);
-        else if(req.url == "/::flow::destroySession")
-            ret = onWebRequestEndSession(e, req);
-        else if(req.url == "/::flow::addListenSource")
-            ret = onWebRequestAddListenSource(e, req);
-        else if(req.url == "/::flow::removeListenSource")
-            ret = onWebRequestRemoveListenSource(e, req);
-        else if(req.url == "/::flow::receive")
-            ret = onWebRequestReceive(e, req);
-        else if(req.url == "/::flow::send")
-            ret = onWebRequestSend(e, req);
-        else
-        {
-            debugMsg("web request \""~req.url~"\" is unknown'", 3);
-            req.sendError(400, "unknown request");
-        }
-    }
-    else
-    {
-        ret = onWebRequestFile(e, req);
-    }
-
-    req.flush;
-    debugMsg("web request \""~req.url~"\" flushed'", 3);
-    return ret;
-}
-
-private bool onWebMessage(IEntity e, WebRequest req, string msg)
-{
-    return true;
-}
-
-class WebServiceStart : Tick
-{
-	mixin tick;
-
-	override void run()
-	{
-        //this.ticker.fork(new CheckSessions);
-    }
-}
-
-class WebServiceStop : Tick
-{
-	mixin tick;
-
-	override void run()
-	{
-        auto c = this.entity.context.as!WebServiceContext;
-        c.server = UUID.init;
-    }
-}
-
-class WebServiceStartError : Tick
-{
-	mixin tick;
-
-	override void run()
-	{
-
-    }
-}
-
-class WebServiceStopError : Tick
-{
-	mixin tick;
-
-	override void run()
-	{
-
-    }
-}
-
-class WebServiceAlreadyStarted : Tick
-{
-	mixin tick;
-
-	override void run()
-	{
-
-    }
-}
-
-class WebServiceAlreadyStopped : Tick
-{
-	mixin tick;
-
-	override void run()
-	{
-
-    }
-}
-
-private Object onStartWebService(IEntity entity, ISignal s)
-{
-    auto c = entity.context.as!WebServiceContext;
-
-    if(c.server == UUID.init)
-    {
-        try
-        {
-            c.server = WebServiceServer.add(
-                entity, 
-                c.port,
-                c.listenerAmount,
-                (e, req) => onWebRequest(e, req), 
-                (e, req, msg) => onWebMessage(e, req, msg)
-            );
-            
-            return new WebServiceStart;
-        }
+        UUID existing;
+        try{existing = parseUUID(req.getCookie("flowsession"));}
         catch(Exception exc)
         {
-            c.error= exc.toString();
-            return new WebServiceStartError;
+            debugMsg("http request \""~req.url~"\" has no valid session id \""~req.getCookie("flowsession")~"\"", 3);
+            req.sendError(400, "no valid session id<br>"~req.getCookie("flowsession"));
         }
-    }
-    
-    return new WebServiceAlreadyStarted;
-}
 
-private Object onStopWebService(IEntity entity, ISignal s)
-{
-    auto c = entity.context.as!WebServiceContext;
-
-    if(c.server != UUID.init)
-    {
-        try
+        auto c = this.context;
+        if(existing != UUID.init && c.sessions.array.any!(i=>i.session.id == existing))
         {
-            WebServiceServer.remove(c.server);
-            
-            return new WebServiceStop;
-        }
-        catch(Exception exc)
-        {
-            c.error= exc.toString();
-            return new WebServiceStopError;
-        }
-    }
-    
-    return new WebServiceAlreadyStopped;
-}
-
-class PullWebSignal : Tick
-{
-	mixin tick;
-
-	override void run()
-	{
-        auto s = this.trigger.as!WebSignal;
-        auto c = this.entity.context.as!WebServiceContext;
-
-        if(c.sessions.array.any!(i=>i.session.id == s.source.id))
-        {
-            auto info = c.sessions.array.filter!(i=>i.session.id == s.source.id).front;
-            auto session = this.entity.hull.get(s.source.id);
-            if(this.entity.hull.tracing && s.as!IStealth is null)
+            auto se = c.sessions.array.filter!(i=>i.session.id == existing).front;
+            auto data = req.rawData.strip();
+            ISignal s;
+            try
             {
-                auto td = new TraceTickData;
-                auto ts = new TraceBeginTick;
-                ts.type = ts.dataType;
-                ts.source = session.info.reference;
-                ts.data = td;
-                ts.data.id = session.id;
-                ts.data.time = Clock.currTime.toUTC();
-                ts.data.entityType = session.__fqn;
-                ts.data.entityId = session.id;
-                ts.data.tick = session.__fqn;
-                this.entity.hull.send(ts);
+                s = Data.fromJson(data).as!ISignal;
+                if(s !is null)
+                {
+                    s.source = this.hull.get(se.session.id).info.reference;
+                    s.type = s.dataType;
+                    if(s.group == UUID.init) s.group = randomUUID;
+                }
+            }
+            catch(Exception exc)
+            {
+                debugMsg("http request \""~req.url~"\" contains malformed data \""~data~"\" \""~exc.msg~"\"", 3);
+                req.sendError(400, "malformed send request<br>"~exc.msg);
             }
 
-            info.inQueue.put(s);
+            if(s !is null)
+            {
+                auto success = false;
+                if(s.as!IUnicast !is null)
+                    success = this.hull.send(s.as!IUnicast);
+                else if(s.as!IMulticast !is null)
+                    success = this.hull.send(s.as!IMulticast);
+                else if(s.as!IAnycast !is null)
+                    success = this.hull.send(s.as!IAnycast);
+                
+                auto session = this.hull.get(existing);
+                if(this.hull.tracing &&
+                    s.as!IStealth is null)
+                {
+                    auto tsd = new TraceSignalData;
+                    auto tss = new TraceSend;
+                    tss.type = tss.dataType;
+                    tss.source = s.source;
+                    tss.data = tsd;
+                    tss.data.success = success;
+                    tss.data.group = s.group;
+                    tss.data.nature = s.as!IUnicast !is null ?
+                        "Unicast" : (
+                            s.as!IMulticast !is null ? "Multicast" :
+                            "Anycast"
+                        );
+                    tss.data.trigger = existing;
+                    if(s.as!IUnicast !is null)
+                        tss.data.destination = s.as!IUnicast.destination;
+                    tss.data.time = Clock.currTime.toUTC();
+                    tss.data.id = s.id;
+                    tss.data.type = s.type;
+                    this.hull.send(tss);
+
+                    auto ttd = new TraceTickData;
+                    auto tts = new TraceEndTick;
+                    tts.type = tts.dataType;
+                    tts.source = session.info.reference;
+                    tts.data = ttd;
+                    tts.data.id = session.id;
+                    tts.data.time = Clock.currTime.toUTC();
+                    tts.data.entityType = session.__fqn;
+                    tts.data.entityId = session.id;
+                    tts.data.tick = session.__fqn;
+                    this.hull.send(tts);
+                }                
+                    
+                req.sendText(success ? "true" : "false");
+            }
+            else
+            {
+                debugMsg("http request \""~req.url~"\" contains malformed data \""~data~"\"", 3);
+                req.sendError(400, "malformed send request<br>"~data);
+            }
         }
-        else // this session should not exist, so kill it
+        
+        return true;
+    }
+
+    private bool onWebRequestFile(WebRequest req)
+    {
+        debugMsg("http request \""~req.url~"\" is a file request", 2);
+
+        auto c = this.context;
+        auto file = req.url;
+
+        if(file[0..1] == dirSeparator)
+            file = file[1..$];
+
+        if(file == "")
+            file = "index.html";
+
+        file = file.replace("/", dirSeparator);
+
+        file = c.root.buildPath(file);
+
+        if(file.isValidPath && file.exists && file.isFile)
         {
-            this.entity.hull.remove(s.source.id);
+            req.sendFile(file);
+            return true;
         }
+        else
+        {
+            debugMsg("\""~file~"\" not found", 3);
+            req.sendError(404, "file not found");
+        }
+
+        return false;
+    }
+
+    private bool onWebRequest(WebRequest req)
+    {
+        debugMsg("got http request \""~req.url~"\"", 1);
+        auto ret = false;
+        if(req.matchUrl("\\/::flow::.*"))
+        {
+            debugMsg("http request \""~req.url~"\" is a flow request", 2);
+            if(req.url == "/::flow::requestSession")
+                ret = this.onHttpRequestSession(req);
+            else if(req.url == "/::flow::validateSession")
+                ret = this.onHttpRequestValidateSession(req);
+            else if(req.url == "/::flow::destroySession")
+                ret = this.onHttpRequestEndSession(req);
+            else if(req.url == "/::flow::addListenSource")
+                ret = this.onHttpRequestAddListenSource(req);
+            else if(req.url == "/::flow::removeListenSource")
+                ret = this.onHttpRequestRemoveListenSource(req);
+            else if(req.url == "/::flow::receive")
+                ret = this.onHttpRequestReceive(req);
+            else if(req.url == "/::flow::send")
+                ret = this.onHttpRequestSend(req);
+            else
+            {
+                debugMsg("http request \""~req.url~"\" is unknown'", 3);
+                req.sendError(400, "unknown request");
+            }
+        }
+        else
+        {
+            ret = this.onWebRequestFile(req);
+        }
+
+        req.flush;
+        debugMsg("http request \""~req.url~"\" flushed'", 3);
+        return ret;
+    }
+
+    private bool onWebMessage(WebRequest req, string msg)
+    {
+        return true;
     }
 }
 
-class PushWebSignal : Tick, IStealth
-{
-	mixin tick;
-
-	override void run()
-	{
-        auto c = this.entity.context.as!WebSessionContext;
-        auto wd = new WebSignalData;
-        wd.signal = this.trigger.toJson();
-        auto ws = new WebSignal;
-        ws.data = wd;
-        this.send(ws, c.service);
-    }
-}
-
-class WebSession : Entity, IQuiet
-{
-    mixin entity!(WebSessionContext);
-
-    /*mixin listen!(fqn!WebSignal,
-        (e, s) => new PushWebSignal
-    );*/
-}
-
-class WebService : Entity, IStealth, IQuiet
-{
-    mixin entity!(WebServiceContext);
-
-    mixin listen!(fqn!StartWebService,
-        (e, s) => onStartWebService(e, s)
-    );
-    
-    mixin listen!(fqn!WebSignal,
-        (e, s) => new PullWebSignal
-    );
-
-    mixin listen!(fqn!StopWebService,
-        (e, s) => onStopWebService(e, s)
-    );
-}
-
-class WebConfig : Data
+class HttpConfig : Data
 {
 	mixin data;
 
@@ -748,51 +612,51 @@ class WebConfig : Data
     mixin field!(string, "root");
 }
 
-class WebContext : Data
+class HttpContext : Data
 {
 	mixin data;
 
-    mixin field!(UUID, "service");
+    mixin field!(UUID, "beacon");
 }
 
-class Web : Organ
+class Http : Organ
 {
-    mixin organ!(WebConfig);
+    mixin organ!(HttpConfig);
 
     override IData start()
     {
-        auto c = new WebContext;
-        auto conf = config.as!WebConfig;
+        auto c = new HttpContext;
+        auto conf = config.as!HttpConfig;
 
-        auto sc = new WebServiceContext;
-        sc.port = conf.port;
-        sc.listenerAmount = conf.listenerAmount > 0 ? conf.listenerAmount : 10;
-        sc.root = conf.root;
-        auto webService = new WebService(sc);
+        auto bc = new HttpBeaconContext;
+        bc.port = conf.port;
+        bc.listenerAmount = conf.listenerAmount > 0 ? conf.listenerAmount : 10;
+        bc.root = conf.root;
+        auto httpBeacon = new HttpBeacon(bc);
         
-        c.service = this.hull.add(webService);
-        this.hull.send(new StartWebService, webService.info.reference);
+        c.beacon = this.hull.add(httpBeacon);
+        this.hull.send(new StartBeacon, httpBeacon.info.reference);
 
-        this.hull.wait(()=>sc.server != UUID.init);
+        this.hull.wait(()=>bc.server != UUID.init);
 
         return c;
     }
 
     override void stop()
     {
-        auto c = context.as!WebContext;
-        auto sc = this.hull.get(c.service).context.as!WebServiceContext;
+        auto c = this.context.as!HttpContext;
+        auto bc = this.hull.get(c.beacon).context.as!HttpBeaconContext;
 
-        this.hull.send(new StopWebService, this.hull.get(c.service).info.reference);
-        this.hull.wait(()=>sc.server == UUID.init);
+        this.hull.send(new StopBeacon, this.hull.get(c.beacon).info.reference);
+        this.hull.wait(()=>bc.server == UUID.init);
 
-        this.hull.remove(c.service);
+        this.hull.remove(c.beacon);
     }
 
     override @property bool finished()
     {
-        auto c = context.as!WebContext;
-        auto sc = this.hull.get(c.service).context.as!WebServiceContext;
+        auto c = this.context.as!HttpContext;
+        auto sc = this.hull.get(c.beacon).context.as!HttpBeaconContext;
 
         return sc.server == UUID.init;
     }

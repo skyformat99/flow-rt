@@ -1,0 +1,28 @@
+{
+	"authors": [
+		"Ralph Alexander Bariz"
+	],
+	"importPaths": [
+		"source/"
+	],
+	"dependencies": {
+		"flow-base": "==0.2.0",
+		"flow-base-ui": "==0.2.0",
+		"flow-net": "==0.2.0",
+		"flow-example-base-lib": "==0.2.0"
+	},
+	"name": "flow-example-net-http",
+	"version": "0.2.0",
+	"license": "GPL-3.0",
+	"targetName": "flow-example-net-http",
+	"targetType": "executable",
+	"targetPath": "bin",
+	"description": "FLOW example http beacon.",
+	"homepage": "https://github.com/RalphBariz/flow",
+	"sourcePaths": [
+		"source/"
+	],
+	"copyFiles": [
+		"public/"
+	]
+}

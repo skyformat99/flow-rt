@@ -80,3 +80,10 @@ class TraceTickData : IdData
     mixin TField!(string, "tick");
     mixin TField!(string, "nature");
 }
+
+class WrappedSignalData : Data
+{
+	mixin TData;
+
+    mixin TField!(string, "signal");
+}

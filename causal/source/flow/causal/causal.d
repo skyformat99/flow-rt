@@ -3,7 +3,7 @@ module flow.causal.causal;
 import std.uuid;
 
 import flow.base.blocks;
-import flow.util.memory;
+import flow.data.memory;
 import flow.alien.nls.ad.cl;
 
 class CausalConfig : Data

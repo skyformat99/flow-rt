@@ -37,3 +37,5 @@ class TraceEndTick : Multicast, IStealth
 {
     mixin TSignal!(TraceTickData);
 }
+
+class WrappedSignal : Unicast, IStealth {mixin TSignal!(WrappedSignalData);}

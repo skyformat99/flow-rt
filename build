@@ -3,7 +3,7 @@
 compiler=dmd
 defBuildParams="--compiler=$compiler"
 if [ $1 ]; then buildType=$1; else buildType=debug; fi
-buildBinParams=${@:2}
+buildParams=${@:2}
 rootDir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 function buildLib {
@@ -21,13 +21,13 @@ function buildBin {
 buildLib base &&
 buildLib data &&
 buildLib net &&
-buildLib alien #&&
-#buildLib example/base/lib &&
+buildLib alien &&
+buildLib example/base/lib &&
 
-#buildBin example/base/simplekicker &&
-#buildBin example/base/trainingkicker &&
-#buildBin example/base/typingmonkeys &&
-#buildBin example/base/madtypingmonkeys &&
-#buildBin example/net/web &&
-#buildBin causal
+buildBin example/base/simplekicker &&
+buildBin example/base/trainingkicker &&
+buildBin example/base/typingmonkeys &&
+buildBin example/base/madtypingmonkeys &&
+buildBin example/net/http &&
+buildBin causal #&&
 #buildBin hive/experiments/take01

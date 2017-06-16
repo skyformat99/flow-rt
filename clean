@@ -15,6 +15,7 @@ cleanBin example/base/simplekicker
 cleanBin example/base/trainingkicker
 cleanBin example/base/typingmonkeys
 cleanBin example/base/madtypingmonkeys
+cleanBin example/net/http
 cleanBin causal
 #cleanBin hive/experiments/take01
 
