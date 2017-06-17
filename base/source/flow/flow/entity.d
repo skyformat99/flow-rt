@@ -1,6 +1,6 @@
 module flow.flow.entity;
 
-import core.sync.mutex;
+import core.sync.mutex, core.sync.rwmutex;
 import std.uuid, std.array, std.datetime;
 import std.algorithm.iteration, std.algorithm.searching;
 
@@ -199,7 +199,7 @@ class Listener
         return null;
     }
 
-abstract class Entity : IInvokingEntity, ITickingEntity
+abstract class Entity : __IFqn, IIdentified
 {
     private static IEntity function(EntityInfo, Data)[string] _reg;
     
@@ -236,6 +236,7 @@ abstract class Entity : IInvokingEntity, ITickingEntity
 	}
 
     private Mutex _lock;
+    private ReadWriteMutex freeze;
     IHull _hull;
     private flow.flow.type.List!(Ticker) _ticker;
     protected bool _shouldStop;

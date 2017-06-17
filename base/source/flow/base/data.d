@@ -30,6 +30,21 @@ class FlowPtr : Data
     mixin TField!(string, "ptress");
 }
 
+/// scopes an entity can have
+enum EntityScope
+{
+    Local,
+    Global
+}
+
+// states an entity can have
+enum EntityState
+{
+    Halted,
+    Running,
+    Sleeping
+}
+
 /// referencing a specific entity 
 class EntityPtr : IdData
 {
@@ -51,22 +66,38 @@ class EntityInfo : Data
     mixin TList!(string, "signals");
 }
 
+class ListeningInfo {
+    mixin TData;
+
+    mixin TField!(string, "signal");
+    mixin TField!(TickMeta, "tick");
+}
+
 class EntityMeta : Data
 {
     mixin TData;
 
     mixin TField!(EntityInfo, "info");
     mixin TField!(Data, "context");
+    mixin TList!(ListeningInfo, "listenings");
     mixin TList!(Data, "inbound");
     mixin TList!(Data, "outbound");
     mixin TList!(Data, "ticks");
 }
 
-class TickRequest : Data
+class TickInfo : Data, IGrouped {
+    mixin TField!(string, "type");
+    mixin TField!(string, "group");
+}
+
+class TickMeta : Data
 {
     mixin TData;
 
-    mixin TField!()
+    mixin TField!(TickInfo, "info");
+    mixin TField!(Signal, "trigger");
+    mixin TField!(TickMeta, "previous");
+    mixin TField!(Data, "context");
 }
 
 

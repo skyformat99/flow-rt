@@ -19,12 +19,11 @@ mixin template TSignal(T = void)
     }
 }
 
-class Signal : Data
+class Signal : IdData, IGrouped
 {
     mixin TSignal;
 
-    mixin TField!(UUID, "id");
-    mixin TField!(UUID, "group");
+    mixin TField!(string, "group");
     mixin TField!(bool, "traceable");
     mixin TField!(string, "type");
 }
