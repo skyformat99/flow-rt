@@ -27,7 +27,7 @@ class FlowPtr : Data
 {
     mixin TData;
 
-    mixin TField!(string, "ptress");
+    mixin TField!(string, "address");
 }
 
 /// scopes an entity can have
@@ -66,11 +66,11 @@ class EntityInfo : Data
     mixin TList!(string, "signals");
 }
 
-class ListeningInfo {
+class ListeningMeta {
     mixin TData;
 
     mixin TField!(string, "signal");
-    mixin TField!(TickMeta, "tick");
+    mixin TField!(string, "tick");
 }
 
 class EntityMeta : Data
@@ -80,12 +80,14 @@ class EntityMeta : Data
     mixin TField!(EntityInfo, "info");
     mixin TField!(Data, "context");
     mixin TList!(ListeningInfo, "listenings");
-    mixin TList!(Data, "inbound");
-    mixin TList!(Data, "outbound");
-    mixin TList!(Data, "ticks");
+    mixin TList!(Signal, "inbound");
+    mixin TList!(TickMeta, "ticks");
 }
 
 class TickInfo : Data, IGrouped {
+    mixin TData;
+
+    mixin TField!(EntityPtr, "entity");
     mixin TField!(string, "type");
     mixin TField!(string, "group");
 }
@@ -105,7 +107,7 @@ class TraceSignalData : IdData
 {
     mixin TData;
 
-    mixin TField!(UUID, "group");
+    mixin TField!(string, "group");
     mixin TField!(SysTime, "time");
     mixin TField!(UUID, "trigger");
     mixin TField!(EntityPtr, "destination");

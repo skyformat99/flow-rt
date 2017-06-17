@@ -20,7 +20,9 @@ class Ticker : Thread
 
     private Entity _entity;
     @property EntityInfo entity() {return this._entity.meta.info;}
-    @property Data context() {return this._entity.meta.context;}
+
+    private Signal _trigger;
+    @property Signal trigger() {return this._trigger;}
 
     private TickMeta _next;
     @property TickMeta next() {return this._next;}
@@ -28,147 +30,135 @@ class Ticker : Thread
     private TickMeta _actual;
     @property TickMeta actual() {return this._actual;}
 
-    this(Entity entity, TickMeta initTick)
-    {
+    this(Entity entity, Signal trigger, TickInfo initTick, void delegate(Ticker) exitHandler) {
+        this._exitHandler = exitHandler;
+        
         this._lock = new Mutex;
         this._entity = entity;
+        this._trigger = trigger;
 
         this.next(initTick);
 
         super(&this.loop);
     }
-
-    this(Entity entity, TickMeta initTick, void delegate(Ticker) exitHandler)
-    {
+    
+    this(Entity entity, TickMeta initTick, void delegate(Ticker) exitHandler) {
         this._exitHandler = exitHandler;
-        this(entity, initTick);
+        
+        this._lock = new Mutex;
+        this._entity = entity;
+        this._trigger = initTick.trigger;
+
+        this._next = initTick;
+
+        super(&this.loop);
     }
 
-    ~this()
-    {
+    ~this() {
         this.stop();
     }
     
-    void start()
-    {
+    void start() {
         super.start();
     }
 
-    void stop()
-    {
-        if(!this._shouldStop)
-        {
+    void stop() {
+        if(!this._shouldStop) {
             this._shouldStop = true;
 
-            while(this.isRunning)
+            while(!this._isStopped)
                 Thread.sleep(WAITINGTIME);
-
-            this._isStopped = true;
         }
     }
 
-    private void writeDebug(string msg, uint level)
-    {
+    private void writeDebug(string msg, uint level) {
         debugMsg("ticker("~fqnOf(this._entity)~", "~this._entity.meta.info.id.toString~");"~msg, level);
     }
 
     /// suspends the chain
-    void suspend()
-    {
-        if(!this._shouldStop) synchronized(this._lock)
-        {
+    void suspend() {
+        if(!this._shouldStop) synchronized(this._lock) {
             this.writeDebug("{SUSPEND}", 3);
-            this._isSuspended = true;
+
+            // mark loop for suspend
+            this._shouldSuspend = true;
+
+            // wait until loop suspended
+            while(!this._isSuspended)
+                Thread.sleep(WAITINGTIME);
         }
     }
 
     /// resumes the chain
-    void resume()
-    {
-        if(!this._shouldStop) synchronized(this._lock)
-        {
+    void resume() {
+        if(!this._shouldStop) synchronized(this._lock) {
             this.writeDebug("{RESUME}", 3);
             this._isSuspended = false;
         }
     }
 
+    private TickMeta createTick(TickInfo i, Data c) {
+        auto m = new TickMeta;
+        m.info = i;
+        m.trigger = this.trigger;        
+        m.previous = this.actual;
+        m.context = c;
+        if(m.previous !is null) {
+        }
+
+        return m;
+    }
+
     /// creates a new ticker initialized with given tick
-    void fork(TickMeta m)
-    {
-        if(!this._shouldStop && m !is null) synchronized(this._lock)
-        {
-            this.writeDebug("{FORK} tick("~m.info.type~")", 4);
-            m.previous = this.actual;
-            this._entity.invoke(m);
+    void fork(TickInfo i, Data c = null) {
+        if(!this._shouldStop && m !is null) synchronized(this._lock) {
+            this.writeDebug("{FORK} tick("~i.type~")", 4);
+            this._entity.invoke(this.createTick(i, c));
         }
     }
 
     /// enques next tick in the chain
-    void next(TickMeta m)
-    {
-        if(!this._shouldStop) synchronized(this._lock)
-        {
-            m.previous = this.actual;
-            if(m.previous !is null) {
-                m.info.group = m.previous.info.group;
-                m.trigger = m.previous.trigger;
-            }
-            
-            if(t !is null)
-            {
-                this.writeDebug("{NEXT} tick("~m.info.type~")", 4);
-                this._next = m;
-            }
-            else
-            {
-                // THROW no next tick exception
-            }
+    void next(TickInfo i, Data c = null) {
+        if(!this._shouldStop) synchronized(this._lock) {
+            this.writeDebug("{NEXT} tick("~i.type~")", 4);
+            this._next = this.createTick(i, c);
         }
     }
 
-    void repeat()
-    {
-        this.next(this.actual.meta);
+    void repeat() {
+        this.next(this.actual);
     }
 
-    void repeatFork()
-    {
-        this.fork(this.actual.meta);
+    void repeatFork() {
+        this.fork(this.actual);
     }
     
-    UUID beginListen(string s, Object function(EntityInfo, Signal) h)
-    {
-        return this._entity.beginListen(s, h);
+    UUID beginListen(string s, TickInfo i) {
+        return this._entity.beginListen(s, i);
     }
 
-    void endListen(UUID id)
-    {
+    void endListen(UUID id) {
         this._entity.endListen(id);
     }
 
-    private void loop()
-    {
+    private void loop() {
         this.writeDebug("{START}", 3);
 
-        while(!this._shouldStop)
-        {
+        while(!this._shouldStop) {
             TickMeta m;
-            synchronized(this._lock)
-            {
+            synchronized(this._lock) {
                 m = this.next;
                 this._actual = this.next;
                 this._next = null;
             }
 
             auto t = Tick.create(m, this);
-            if(t !is null)
-            {
+            if(t !is null) {
                 this.writeDebug("{RUN} tick("~m.info.type~")", 4);
                 
                 if(this._entity.hull.tracing &&
                     this._entity.as!IStealth is null &&
-                    t.as!IStealth is null)
-                {
+                    t.as!IStealth is null) {
                     auto td = new TraceTickData;
                     auto ts = new TraceBeginTick;
                     ts.type = ts.dataType;
@@ -187,15 +177,7 @@ class Ticker : Thread
                     this._entity.hull.send(ts);
                 }
 
-                if(t.as!ISync !is null)
-                    synchronized(this._entity.lock)
-                    {
-                        try {t.run();}
-                        catch(Exception exc)
-                        {t.error(exc);}
-                    }
-                else
-                {
+                synchronized(t.as!ISync !is null ? this.entity.lock.writer : this.entity.lock.reader) {
                     try {t.run();}
                     catch(Exception exc)
                     {t.error(exc);}
@@ -203,8 +185,7 @@ class Ticker : Thread
                 
                 if(this._entity.hull.tracing &&
                     this._entity.as!IStealth is null &&
-                    t.as!IStealth is null)
-                {
+                    t.as!IStealth is null) {
                     auto td = new TraceTickData;
                     auto ts = new TraceEndTick;
                     ts.type = ts.dataType;
@@ -224,25 +205,21 @@ class Ticker : Thread
                 }
             }
             else break;
-
-            while(this._isSuspended)
-                Thread.sleep(WAITINGTIME);
         }
 
+        this._isStopped = true;
         if(this._exitHandler !is null) this._exitHandler(this);
         this.writeDebug("{END}", 3);
     }
 }
 
-mixin template TTick()
-{
+mixin template TTick() {
     import flow.flow.type;
 
     override @property string __fqn() {return fqn!(typeof(this));}
 
     static Tick create(TickMeta m, Ticker t) {return new typeof(this)(m, t);}
-    shared static this()
-    {
+    shared static this() {
         Tick.register(fqn!(typeof(this)), &create);
     }
 }
@@ -282,22 +259,12 @@ abstract class Tick : __IFqn, IIdentified {
     }
 
     abstract void run();
-    void error(Exception exc){}
+    void error(Exception exc) {}
 
     /// sends a unicast signal to a specific receiver
     bool send(Unicast s, EntityPtr e) {
         s.destination = e;
         return this.send(s);
-    }
-
-    /// sends a unicast signal to a specific receiver
-    bool send(Unicast s, EntityInfo e) {
-        return this.send(s, e.ptr);
-    }
-
-    /// sends a unicast signal to a specific receiver
-    bool send(Unicast s, IEntity e) {
-        return this.send(s, e.info.ptr);
     }
 
     /// answers a signal into the swarm

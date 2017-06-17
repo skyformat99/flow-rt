@@ -1,7 +1,7 @@
 module flow.flow.event;
 
 import std.traits, std.uuid, std.datetime, std.range.primitives;
-import flow.base.interfaces;
+import flow.base.interfaces, flow.flow.data;
 
 mixin template TEvent(T1...)
 {

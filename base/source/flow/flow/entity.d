@@ -1,33 +1,20 @@
 module flow.flow.entity;
 
-import core.sync.mutex, core.sync.rwmutex;
-import std.uuid, std.array, std.datetime;
+import core.sync.rwmutex;
+import std.array, std.datetime;
 import std.algorithm.iteration, std.algorithm.searching;
 
 import flow.flow.tick, flow.flow.type, flow.flow.data;
 import flow.base.dev, flow.base.interfaces, flow.base.signals, flow.base.data, flow.base.ticks;
 
-/// listener meta informations
-struct ListenerMeta
-{
-    string signal;
-    Object function(IEntity, Signal) handle;
-}
-
 /// generates listener meta informations to use by an entity
-mixin template TListen(string signal, Object function(IEntity, Signal) handle)
+mixin template TListen(string s, string t)
 {
     import flow.flow.entity;
     
-    shared static this()
-    {
-        Listener ~= ListenerMeta(signal, handle);
+    shared static this() {
+        _typeListenings.add(new ListeningMeta(s, t));
     }
-}
-
-struct entityProps
-{
-    bool trace = true;
 }
 
 mixin template TEntity(T = void)
@@ -36,274 +23,116 @@ mixin template TEntity(T = void)
     import std.uuid;
     import flow.base.interfaces;
     import flow.flow.entity, flow.flow.type;
-
-    static ListenerMeta[] Listener;
-
-    shared static this()
-    {
-        static if(!is(T == void))
-        {
-            Entity.register(fqn!T, (context, id, domain, availability){
-                auto c = context.as!T;
-                return new typeof(this)(id, domain, availability, c);
-            });
-        }
-        
-        Entity.register(fqn!(typeof(this)), (context, id, domain, availability){
-            return new typeof(this)(id, domain, availability);
-        });
-        
+    
+    private shared static List!ListeningMeta _typeListenings = new List!ListeningMeta;
+    protected shared static @property List!ListeningMeta typeListenings() {
+        auto l = List!ListeningMeta;
+        l.add(super.typeListenings);
+        l.add(_typeListenings);
+        return l;
     }
 
     override @property string __fqn() {return fqn!(typeof(this));}
 
     static if(!is(T == void))
-    {
-        protected T _context;
-        override @property T context() {return this._context;}
-    }
+        override @property T context() {return this.meta.context.as!T;}
     else
+        override @property Data context() {return this.meta.context;}
+
+    shared static this()
     {
-        protected Data _context;
-        override @property Data context() {return this._context;}
+        Entity.register(fqn!(typeof(this)), (m){
+            return new typeof(this)(m);
+        });
     }
 
-    this(EntityMeta m, ListenerMeta[] fListen)
-    {
-        static if(!is(T == void))
-            this._context = context.as!T !is null ? context.as!T : new T;
-        else
-            this._context = context;
-
-        this(m, fListen);
-    }
-
-    this(EntityMeta m, ListenerMeta[] fListen)
-    {
-        super(id, domain, availability, fListen !is null ? Listener ~ fListen : Listener);
+    this(EntityMeta m) {
+        super(m);
     }
 }
-
-class Listener
-{
-    private Mutex _lock;
-    private Object function(IEntity, Signal)[UUID] _handles;
-
-    private string _signal;
-    @property string signal() {return this._signal;}
-
-    private IInvokingEntity _entity;
-    @property IEntity entity() {return this._entity;}
-
-    this(IInvokingEntity entity, string signal)
-    {
-        this._lock = new Mutex;
-        this._entity = entity;
-        this._signal = signal;
-    }
-
-    protected void writeDebug(string msg, uint level)
-    {
-        debugMsg("listener("~this._signal~", "~this.entity.id.toString~");"~msg, level);
-    }
-
-    UUID add(Object function(IEntity, Signal) handle)
-    {
-        synchronized(this._lock)
-        {
-            auto id = randomUUID;
-            this._handles[id] = handle;
-            return id;
-        }
-    }
-
-    void remove(UUID id)
-    {
-        synchronized(this._lock)
-        {
-            if(id in this._handles)
-                this._handles.remove(id);
-        }
-    }
-
-    UUID[] list()
-    {
-        synchronized(this._lock)
-            return this._handles.keys;
-    }
-
-    /// receive and handle a signal
-    bool receive(Signal s)
-    {
-        if(s.source is null)
-            this.writeDebug("{RECEIVE} signal("~s.type~", "~s.id.toString~") FROM entity(GOD)", 3);
-        else
-            this.writeDebug("{RECEIVE} signal("~s.type~", "~s.id.toString~") FROM entity("~s.source.type~", "~s.source.id.toString~")", 3);
-
-        assert(s.type == this.signal);
-
-        auto handled = false;
-        foreach(handle; this._handles.values.dup)
-        {
-            Object invoking = null;
-            synchronized(this._entity.lock)
-                try {invoking = handle(this._entity, s);}
-                catch(Exception exc) {debugMsg("{EXCEPTION}", 1);}
-            if(invoking !is null)
-            {
-                this.writeDebug("{INVOKE}", 4);
-                if(invoking.as!ITriggerAware !is null)
-                    invoking.as!ITriggerAware.trigger = s;
-
-                if(this._entity.hull.tracing &&
-                    s.as!IStealth is null)
-                {
-                    auto td = new TraceSignalData;
-                    auto ts = new TraceReceive;
-                    ts.id = s.id;
-                    ts.type = ts.dataType;
-                    ts.source = this._entity.info.ptr;
-                    ts.data = td;
-                    if(s.source !is null)
-                        ts.data.trigger = s.source.id;
-                    ts.data.group = s.group;
-                    ts.data.success = true;
-                    ts.data.nature = s.as!Unicast !is null ?
-                        "Unicast" : (
-                            s.as!Multicast !is null ? "Multicast" :
-                            "Anycast"
-                        );
-                    ts.data.id = s.id;
-                    ts.data.time = Clock.currTime.toUTC();
-                    ts.data.type = s.type;
-                    this._entity.hull.send(ts);
-                }
-
-                this._entity.invoke(invoking);
-                handled = true;
-            }
-        }
-        
-        if(!handled)
-            this.writeDebug("{DENIED}", 4);
-
-        return handled;
-    }
-}
-
-    private Object handlePing(IEntity e, Signal s)
-    {
-        if(s.as!UPing !is null || (s.as!Ping !is null && s.source !is null && e.id != s.source.id))
-            return new SendPong;
-
-        return null;
-    }
 
 abstract class Entity : __IFqn, IIdentified
 {
-    private static IEntity function(EntityInfo, Data)[string] _reg;
-    
-    static void register(string dataType, IEntity function(Data, UUID, string, EntityScope) creator)
+    private static Entity function(EntityMeta)[string] _reg;
+
+    static void register(string dataType, Entity function(EntityMeta m) creator)
 	{
         _reg[dataType] = creator;
 	}
 
-	static bool can(Data context)
-	{
-		return context !is null && context.dataType in _reg ? true : false;
-	}
-
-	static bool can(string name)
+	static bool canCreate(string name)
 	{
 		return name in _reg ? true : false;
 	}
 
-    static IEntity create(EntityMeta m)
+    static Entity create(EntityMeta m)
     {
-        return Entity.create(m.info, m.context);
-    } 
-
-    static IEntity create(EntityInfo i, EntityContext c)
-    {
-        IEntity e = null;
-		if(context !is null && context.dataType in _reg )
-			return _reg[context.dataType](i, c);
-        else if(name in _reg)
-            return _reg[name](context, id, domain, availability);
-
+        Entity e = null;
+        if(canCreate(m.info.ptr.type))
+            e = _reg[m.info.ptr.type](i, c);
+        else
+            e = null;
+            
         if(e !is null)
             e.create();
-	}
-
-    private Mutex _lock;
-    private ReadWriteMutex freeze;
-    IHull _hull;
-    private flow.flow.type.List!(Ticker) _ticker;
-    protected bool _shouldStop;
-    protected bool _isStopped = true;
-    private Listener[string] _listeners;
+    }
 
     abstract @property string __fqn();
-    @property Mutex lock(){return this._lock;}
+    protected bool _shouldStop;
 
+    private ReadWriteMutex _lock;
+
+    protected bool _isStopped = true;
+    @property bool isStopped() {return this._isStopped;}
+
+    private bool _isSuspended = false;
+    @property bool isSuspended() {return this._isSuspended;}
+
+    private Hull _hull;
     @property IHull hull() {return this._hull;}
-    @property void hull(IHull value) {this._hull = value;}
+    
+    private List!Ticker _ticker;
 
-    private EntityInfo _info;
-    @property EntityInfo info() {return this._info;}
-    @property UUID id() {return this.info.ptr.id;}
-    @property void id(UUID id) {throw new Exception("cannot set id of entity");}
+    private EntityMeta _meta;
+    @property EntityMeta meta() {return this._meta;}
 
     abstract @property Data context();
-    
-    @property bool running(){return !this._isStopped;}
-    @property size_t count() {return this._ticker.length;}
-            
-    this(EntityInfo info, Signal inbound, ListenerMeta[] fListen)
-    {
-        this._lock = new Mutex;
-        this._ticker = new flow.flow.type.List!(Ticker);
 
-        auto listens = fListen;
+    protected this(EntityMeta m) {
+        this._lock = new ReadWriteMutex;
+        this._ticker = new List!Ticker;
 
-        if(this.as!IQuiet is null)
-        {
-            auto pingListener = ListenerMeta(
-                fqn!Ping,
-                (e, s) => handlePing(e, s)
-            );
-            auto uPingListener = ListenerMeta(
-                fqn!UPing,
-                (e, s) => handlePing(e, s)
-            );
+        // merge typeListenings and meta.listenings into meta
+        auto tmpListenings = m.listenings;
+        foreach(tl; typeListenings) {
+            auto found = false;
+            foreach(ml; tmpListenings) {
+                found = tl.signal == ml.signal && tl.tick == ml.tick;
+                if(found) break;
+            }
 
-            listens = [pingListener, uPingListener] ~ listens;
+            if(!found)
+                m.listenings.add(tl);
         }
-        
-        this._info = new EntityInfo;
-        this._info.ptr = new EntityPtr;
-        this._info.ptr.id = id;
-        this._info.ptr.type = this.__fqn;
-        this._info.domain = domain;
-        this._info.availability = availability;
 
-        if(listens != null)
-            foreach(l; listens)
-                this.beginListen(l.signal, l.handle);
+        // if its not quiet react at ping
+        if(this.as!IQuiet is null) {
+            this.beginListen(fqn!Ping, fqn!SendPong);
+            this.beginListen(fqn!UPing, fqn!SendPong);
+        }
+
+        this._meta = m;
     }
     
-    ~this()
-    {
+    ~this() {
         this.stop();
     }
     
-    void writeDebug(string msg, uint level)
-    {
+    void writeDebug(string msg, uint level) {
         debugMsg("entity("~fqnOf(this)~", "~this.id.toString~");"~msg, level);
     }
 
-    void create()
-    {
+    void create() {
         if(this._isStopped)
         {
             this.start();
@@ -311,98 +140,77 @@ abstract class Entity : __IFqn, IIdentified
         }
     }
     
-    void start(){}
+    void start() {}
 
-    void dispose()
-    {
+    void dispose() {
         if(!this._shouldStop && !this._isStopped)
         {
             this._shouldStop = true;
             this._listeners.clear();
 
-            auto ticker = this._ticker.array;
+            auto ticker = this._ticker.clone();
             foreach(t; ticker)
                 if(t !is null)
                     t.stop();
             
+            this.suspend();
             this.stop();
             this._isStopped = true;
         }
     }
 
-    void stop(){}
-    
-    private void reloadListenerInfo()
-    {
-        this._info.signals.clear();
-        if(this._listeners != null)
-            this._info.signals.put(this._listeners.values.map!(l=>l.signal).array);
-    }
-    
-    UUID beginListen(string s, Object function(IEntity, Signal) h)
-    {
-        synchronized(this._lock)
-        {
-            if(s !in this._listeners)
-            {
-                this.writeDebug("{LISTEN} signal("~s~")", 2);
-                this._listeners[s] = new Listener(this, s);
+    void stop() {}
 
-                this.reloadListenerInfo();
-            }
-
-            return this._listeners[s].add(h);
+    void createTicker(Signal s, string tt)
+    {
+        synchronized(this._lock.writer) {
+            auto ti = new TickInfo;
+            ti.entity = this;
+            ti.type = tt;
+            ti.group = s.group;
+            auto ticker = new Ticker(this, s, ti, (t){this._ticker.remove(t);});
+            this._ticker.add(ticker);
+            ticker.start();
         }
     }
-    
-    void endListen(UUID id)
-    {
-        synchronized(this._lock)
-        {
-            foreach(i, listener; this._listeners)
-            {
-                auto list = listener.list;
 
-                if(list.array.any!(hid => hid == id))
-                {
-                    listener.remove(id);
-                    if(listener.list.length < 1)
-                    {
-                        this._listeners.remove(i);
-                        this.reloadListenerInfo();
-                    }
-                    break;
-                }
+    void createTicker(TickMeta tm)
+    {
+        synchronized(this._lock.writer) {
+            auto ticker = new Ticker(this, tm, (t){this._ticker.remove(t);});
+            this._ticker.add(ticker);
+            ticker.start();
+        }
+    }
+
+    /// suspends the chain
+    void suspend() {
+        if(!this._shouldStop) synchronized(this._lock.writer)
+        {
+            this.writeDebug("{SUSPEND}", 3);
+            this._isSuspended = true;
+            foreach(t; this._ticker.clone()) {
+                t.stop();
+                if(t.next !is null)
+                    this.meta.ticks.add(t.next);
             }
         }
     }
-    
-    bool receive(Signal s)
-    {
-        if(!this._isStopped)
-        {
-            this.writeDebug("{RECEIVE} signal("~s.type~", "~s.id.toString~")", 2);
-            assert(s.type in this._listeners);
-            
-            return this._listeners[s.type].receive(s);
-        } else return false;
-    }
 
-    void invoke(Object tick)
-    {
-        auto t = tick.as!ITick;
-        if(t !is null)
-            this.invokeTick(t);
-    }
-            
-    void invokeTick(ITick tick)
-    {
-        auto ticker = new Ticker(this, tick.as!ITick,
-            (t){synchronized(this._lock) this._ticker.remove(t);});
+    /// resumes the chain
+    void resume() {
+        if(!this._shouldStop) {
+            synchronized(this._lock.writer) {
+                this.writeDebug("{RESUME}", 3);
 
-        synchronized(this._lock)
-            this._ticker.put(ticker);
-
-        ticker.start();
+                this._isSuspended = false;
+            }
+                
+            // resume ticks
+            foreach(tm; this.meta.ticks.clone) {
+                this.createTicker(tm);
+                this.meta.ticks.remove(tm);
+            }
+        }
     }
 }

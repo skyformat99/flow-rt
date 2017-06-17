@@ -1,6 +1,6 @@
 module flow.flow.process;
 
-import core.thread, core.sync.mutex, core.sync.rwmutex;
+import core.thread, core.sync.rwmutex;
 import std.range.interfaces, std.string;
 
 import flow.flow.exception, flow.flow.type, flow.flow.data;
@@ -8,27 +8,80 @@ import flow.flow.entity;
 import flow.base.dev, flow.base.interfaces, flow.base.data;
 
 /// a hull hosting an entity
-class Hull(T) : IHull if(is(T == Entity))
-{
-    private ReadWriteMutex frozen;
-    private Mutex op;
-    private Flow flow;
-    private string id;
-    private T entity;
+class Hull(T) : IHull if(is(T == Entity)) {
+    private ReadWriteMutex _lock;
+    private Flow _flow;
+    private string _id;
+    private T _entity;
     private List!EntityInfo _owned;
 
-    private void freezeOwned()
-    {
-        foreach(i; this._owned)
-        {
+    @property FlowPtr flow() { return this.flow.ptr; }
+    @property bool tracing() { return this.flow.tracing; }
+
+    private bool _isSuspended = false;
+    @property bool isSuspended() {return this._isSuspended;}
+
+    this(Flow f, string id, T e) {
+        this.flow = f;
+        this.id = id;
+        this.entity = e;
+        this.entity.hull = this;
+
+        this.resume();
+    }
+
+    private void suspendOwned() {
+        foreach(i; this._owned) {
             auto e = this.get(i);
             if(e !is null)
-                e.hull.freeze();
+                e.hull.suspend();
         }
     }
+
+    void suspend() {
+        synchronized(this.lock.writer) {
+            this._isSuspended = true;
+            this.suspendOwned();            
+        } 
+    } 
     
-    private List!EntityMeta snapOwned()
+    void resume() {
+        synchronized(this.lock.writer) {
+            this.resumeOwned();
+            this.entity.resume();
+
+            this._isSuspended = false;
+        }
+
+        // resume inboud signals
+        foreach(s; this.entity.meta.inbound.clone()) {
+            this.receive(s);
+            synchronized(this.lock.writer)
+                this.entity.meta.inboud.remove(s);
+        }
+    }
+
+    private void resumeOwned()
     {
+        foreach(i; this._owned) {
+            auto e = this.get(i);
+            if(e !is null)
+                e.hull.resume();
+        }
+    }
+
+    List!EntityMeta snap()
+    {
+        synchronized(this.lock.writer) {
+            auto l = List!EntityMeta;
+            auto m = new EntityMeta;
+            l.add(m);
+            l.add(this.snapOwned());
+            return l;
+        } 
+    }
+    
+    private List!EntityMeta snapOwned() {
         auto l = List!EntityMeta;
         foreach(i; this._owned)
         {
@@ -44,85 +97,95 @@ class Hull(T) : IHull if(is(T == Entity))
         return l;
     }
 
-    this(Flow f, string id, T e)
-    {
-        this.flow = f;
-        this.id = id;
-        this.entity = e;
-        this.entity.hull = this;
-    }
-
-    @property T obj() { return this.entity; }
-
-    @property FlowPtr flow() { return this.flow.ptr; }
-    @property bool tracing() { return this.flow.tracing; }
-
-    void freeze()
-    {
-        synchronized(this.op)
-        {
-            this.frozen.lock();
-            this.freezeOwned();
-        } 
-    } 
-    
-    void unfreeze()
-    {
-        synchronized(this.op)
-        {
-            this.unfreezeOwned();
-            this.frozen.unlock();
-        } 
-    }
-
-    List!EntityMeta snap()
-    {
-        synchronized(this.op)
-        {
-            auto l = List!EntityMeta;
-            auto m = new EntityMeta;
-            l.add(m);
-            l.add(this.snapOwned());
-            return l;
-        } 
-    } 
-
-    void spawn(EntityInfo i, Data c)
-    {
-        synchronized(this.op)
+    void spawn(EntityInfo i, Data c) {
+        synchronized(this.lock.writer)
         {
             auto e = Entity.create(i, c);
             this._owned.add(this.flow.add(e));
         } 
     }
 
+    
+    void beginListen(string s, string t) {
+        synchronized(this.lock.writer) {
+            auto l = new ListeningMeta;
+            l.signal = s;
+            l.tick = t;
+
+            auto found = false;
+            foreach(ml; this.entity.meta.listenings) {
+                found = l.signal == ml.signal && l.tick == ml.tick;
+                if(found) break;
+            }
+
+            if(!found)
+                this.entity.meta.listenings.add(l);
+        }
+    }
+    
+    void endListen(string s, string t) {
+        synchronized(this.lock.writer) {
+            ListeningMeta finding = null;
+            foreach(ml; this.entity.meta.listenings) {
+                if(s == ml.signal && t == ml.tick)
+                    finding = ml;
+                if(finding !is null) break;
+            }
+
+            if(finding !is null)
+                this.entity.meta.listenings.remove(finding);
+        }
+    }
+
     IEntity get(EntityInfo i) { return this.flow.get(i); }
     
-    bool send(Unicast s, EntityPtr e)
-    {
-        if(this.flow._config.preventIdTheft)
-        {
-            static if(is(T == Entity))
-                s.source = this.obj.info.ptr;
-            else
-                s.source = null;
+    bool receive(Signal s) {
+        if(!this._isStopped) {
+            this.writeDebug("{RECEIVE} signal("~s.type~", "~s.id.toString~")", 2);
+            
+            // search for listenings and start all registered for given signal type
+            auto accepted = false;
+            synchronized(this.lock.reader) {
+                foreach(l; this.entity.meta.listenings)
+                    if(l.signal == s.type) {
+                        if(!this._isSuspended) {
+                            this.entity.createTicker(s, l.tick);
+                            accepted = true;
+                        } else if(s.as!Anycast is null) { // anycasts cannot be received anymore, all other signals are stored in meta
+                            this.entity.meta.inboud.add(s);
+                            accepted = true;
+                            break;
+                        }
+                    }
+            }
+                
+            return accepted;
+        } else return false;
+    }
+    
+    bool send(Unicast s, EntityPtr e) {
+        synchronized(this.lock.reader) {
+            if(this.flow._config.preventIdTheft) {
+                static if(is(T == Entity))
+                    s.source = this.obj.info.ptr;
+                else
+                    s.source = null;
+            }
+
+            return this.flow.send(s, e);
         }
-        return this.flow.send(s, e);
     }
     bool send(Unicast s, EntityInfo e) { return this.send(s, e.ptr); }
     bool send(Unicast s, IEntity e) { return this.send(s, e.info); }
-    bool send(Unicast s)
-    {
+    bool send(Unicast s) {
         this._preventIdTheft(s);
         return this.flow.send(s);
     }
-    bool send(Multicast s)
-    {
+    bool send(Multicast s) {
         this._preventIdTheft(s);
         return this.flow.send(s);
     }
-    bool send(Anycast s)
-    {
+    bool send(Anycast s) {
         this._preventIdTheft(s);
         return this.flow.send(s);
     }
@@ -130,8 +193,7 @@ class Hull(T) : IHull if(is(T == Entity))
     // wait for finish
     void wait(bool delegate() expr) { this.flow.wait(expr); }
 
-    private void _preventIdTheft(Signal s)
-    {
+    private void _preventIdTheft(Signal s) {
         if(this.flow.config.preventIdTheft)
         {
             static if(is(T == Entity))
