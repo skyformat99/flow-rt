@@ -1,7 +1,7 @@
 module flow.test.type;
-import flow.flow.type;
+import __flow.type;
 
-import flow.flow.data;
+import __flow.data;
 
 version(unittest) class TestClass{int x; this(int x) {this.x = x;}}
 

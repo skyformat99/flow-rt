@@ -119,7 +119,7 @@ class SeeCandy : Tick
     }
 }
 
-Object handleShowCandy(IEntity e, Signal s)
+Object handleShowCandy(Entity e, Signal s)
 {
     return !s.source.identWith(e) ? new SeeCandy : null;
 }

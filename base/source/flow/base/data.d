@@ -2,7 +2,7 @@ module flow.base.data;
 
 import std.uuid, std.datetime;
 
-import flow.flow.data, flow.flow.type;
+import __flow.data, __flow.type, __flow.signal;
 import flow.base.interfaces, flow.base.data;
 
 /// identifyable data
@@ -66,7 +66,7 @@ class EntityInfo : Data
     mixin TList!(string, "signals");
 }
 
-class ListeningMeta {
+class ListeningMeta : Data {
     mixin TData;
 
     mixin TField!(string, "signal");
@@ -80,12 +80,12 @@ class EntityMeta : Data
     mixin TField!(EntityInfo, "info");
     mixin TField!(Data, "context");
     mixin TList!(EntityMeta, "children");
-    mixin TList!(ListeningInfo, "listenings");
+    mixin TList!(ListeningMeta, "listenings");
     mixin TList!(Signal, "inbound");
     mixin TList!(TickMeta, "ticks");
 }
 
-class TickInfo : Data, IGrouped {
+class TickInfo : IdData, IGrouped {
     mixin TData;
 
     mixin TField!(EntityPtr, "entity");
@@ -98,7 +98,8 @@ class TickMeta : Data
     mixin TData;
 
     mixin TField!(TickInfo, "info");
-    mixin TField!(Signal, "trigger");
+    mixin TField!(string, "trigger");
+    mixin TField!(Signal, "signal");
     mixin TField!(TickMeta, "previous");
     mixin TField!(Data, "context");
 }
@@ -127,7 +128,6 @@ class TraceTickData : IdData
     mixin TField!(string, "entityType");
     mixin TField!(UUID, "entityId");
     mixin TField!(UUID, "ticker");
-    mixin TField!(ulong, "seq");
     mixin TField!(string, "tick");
     mixin TField!(string, "nature");
 }

@@ -3,7 +3,7 @@ module flow.net.http;
 import std.uuid, std.array, std.string, std.datetime, std.conv, std.algorithm.searching, std.algorithm.iteration, std.file, std.path;
 
 import flow.sws.webServer, flow.sws.webRequest;
-import flow.flow.entity;
+import __flow.entity;
 import flow.base.dev, flow.base.blocks, flow.base.data, flow.base.interfaces, flow.base.signals;
 
 import flow.net.beacon;
@@ -29,7 +29,7 @@ private class HttpBeaconService : WebServer
         _lock = new Mutex;
     }
 
-    static UUID add(IEntity entity, ushort port, ushort listenerAmount, bool delegate(IEntity, WebRequest) handleReq, bool delegate(IEntity, WebRequest, string) handleMsg)
+    static UUID add(Entity entity, ushort port, ushort listenerAmount, bool delegate(Entity, WebRequest) handleReq, bool delegate(Entity, WebRequest, string) handleMsg)
     {
         synchronized(_lock)
         {
@@ -53,14 +53,14 @@ private class HttpBeaconService : WebServer
         }
     }
 
-    private IEntity _entity;
+    private Entity _entity;
     private ushort _port;
-    private bool delegate(IEntity, WebRequest) _handleReq;
-    private bool delegate(IEntity, WebRequest, string) _handleMsg;
+    private bool delegate(Entity, WebRequest) _handleReq;
+    private bool delegate(Entity, WebRequest, string) _handleMsg;
 
     @property ushort port(){return this._port;}
 
-    private this(IEntity entity, ushort port, bool delegate(IEntity, WebRequest) handleReq, bool delegate(IEntity, WebRequest, string) handleMsg)
+    private this(Entity entity, ushort port, bool delegate(Entity, WebRequest) handleReq, bool delegate(Entity, WebRequest, string) handleMsg)
     {
         this._entity = entity;
         this._port = port;
@@ -281,7 +281,7 @@ class HttpBeacon : Beacon, IStealth, IQuiet
         return false;
     }
 
-    private static Object httpListenHandler(IEntity e, Signal s)
+    private static Object httpListenHandler(Entity e, Signal s)
     {
         debugMsg("session received \""~s.type~"\"", 2);
         auto beacon = e.hull.get(e.context.as!BeaconSessionContext.beacon.id);

@@ -1,9 +1,9 @@
 module flow.test.data;
-import flow.flow.data;
+import __flow.data;
 
 import std.uuid;
 
-import flow.flow.event, flow.flow.type;
+import __flow.event, __flow.type;
 
 
 // TODO unittests for DataList properties

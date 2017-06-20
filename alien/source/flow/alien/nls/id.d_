@@ -580,7 +580,7 @@ class StartSession : Task
 
 	override void run()
 	{
-        import flow.lib.opencl;    
+        import __flow.lib.opencl;    
         auto c = cast(SessionContext)this.entity.context;
 
         string[] requiredExtensions;
@@ -706,7 +706,7 @@ class CreateClContext : Task, ISync
 
 	override void run()
 	{
-        import flow.lib.opencl;
+        import __flow.lib.opencl;
         auto c = cast(SessionContext)this.entity.context;
         auto s = cast(RunRequest)this.trigger;
         auto cl = ClFactory.get(c.clContext);
@@ -813,7 +813,7 @@ class Session : Entity
 
     override void stop()
     {
-        import flow.lib.opencl;
+        import __flow.lib.opencl;
         auto c = cast(SessionContext)this.context;
         
         if(c.clContext != UUID.init)
@@ -1112,7 +1112,7 @@ class Dispose : Task
     }
 }
 
-private bool holdsSession(IEntity e, UUID s)
+private bool holdsSession(Entity e, UUID s)
 {
     import std.algorithm.searching, std.array;
 

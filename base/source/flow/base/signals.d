@@ -2,7 +2,7 @@ module flow.base.signals;
 
 import std.uuid;
 
-import flow.flow.data, flow.flow.signal;
+import __flow.data, __flow.signal;
 import flow.base.data, flow.base.interfaces;
 
 class Ping : Multicast, IStealth

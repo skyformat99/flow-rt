@@ -2,8 +2,8 @@ module flow.base.blocks;
 
 import std.traits, std.uuid, std.datetime, std.range.primitives;
 
-static import flow.flow.type;
-import flow.flow.tick, flow.flow.data, flow.flow.entity, flow.flow.signal;
+static import __flow.type;
+import __flow.tick, __flow.data, __flow.entity, __flow.signal;
 import flow.base.interfaces;
 
 // maybe an idea
@@ -16,31 +16,31 @@ alias data = TData;
 alias field = TField;
 alias list = TList;
 
-static import flow.flow.data;
-alias Data = flow.flow.data.Data;
+static import __flow.data;
+alias Data = __flow.data.Data;
 
 import flow.base.interfaces;
 alias Data = flow.base.interfaces.Data;
 
-static import flow.flow.signal;
-alias Multicast = flow.flow.signal.Multicast;
-alias Unicast = flow.flow.signal.Unicast;
-alias Anycast = flow.flow.signal.Anycast;
+static import __flow.signal;
+alias Multicast = __flow.signal.Multicast;
+alias Unicast = __flow.signal.Unicast;
+alias Anycast = __flow.signal.Anycast;
 alias signal = TSignal;
 
-static import flow.flow.tick;
-alias Tick = flow.flow.tick.Tick;
+static import __flow.tick;
+alias Tick = __flow.tick.Tick;
 alias tick = TTick;
 
 // templates for entity generation
 /// generates a listener for an entity handling a signal
-static import flow.flow.entity;
-alias Entity = flow.flow.entity.Entity;
+static import __flow.entity;
+alias Entity = __flow.entity.Entity;
 alias entity = TEntity;
 alias listen = TListen;
 
-static import flow.flow.process;
-alias Flow = flow.flow.process.Flow;
+static import __flow.process;
+alias Flow = __flow.process.Flow;
 
 /// check if two identifyables share their identity
 bool identWith(IIdentified id1, IIdentified id2)
@@ -50,7 +50,7 @@ bool identWith(IIdentified id1, IIdentified id2)
     return id1.id == id2.id;
 }
 
-alias fqn = flow.flow.type.fqn;
-alias fqnOf = flow.flow.type.fqnOf;
-alias as = flow.flow.type.as;
-alias hasDefaultConstructor = flow.flow.type.hasDefaultConstructor;
+alias fqn = __flow.type.fqn;
+alias fqnOf = __flow.type.fqnOf;
+alias as = __flow.type.as;
+alias hasDefaultConstructor = __flow.type.hasDefaultConstructor;

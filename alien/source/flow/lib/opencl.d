@@ -1,4 +1,4 @@
-module flow.lib.opencl;
+module __flow.lib.opencl;
 
 import std.uuid, std.conv;
 
