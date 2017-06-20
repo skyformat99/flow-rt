@@ -19,9 +19,6 @@ alias list = TList;
 static import __flow.data;
 alias Data = __flow.data.Data;
 
-import flow.base.interfaces;
-alias Data = flow.base.interfaces.Data;
-
 static import __flow.signal;
 alias Multicast = __flow.signal.Multicast;
 alias Unicast = __flow.signal.Unicast;

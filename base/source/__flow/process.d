@@ -24,7 +24,7 @@ class Hull {
 
     this(Flow f, string id, EntityMeta m) {
         this._flow = f;
-        this.create(id, m);
+        this.initialize(id, m);
         this.resume();
     }
 
@@ -48,7 +48,7 @@ class Hull {
         }
     }
 
-    void create(EntityMeta m) {
+    void initialize(EntityMeta m) {
         m.info.ptr.flow = this.flow;
         auto e = Entity.create(m, this);
         try {

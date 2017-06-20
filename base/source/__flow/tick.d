@@ -1,6 +1,6 @@
 module __flow.tick;
 
-import core.thread, core.sync.mutex;
+import core.thread, core.sync.rwmutex;
 import std.uuid, std.datetime;
 
 import __flow.data, __flow.type, __flow.entity, __flow.signal;
@@ -12,7 +12,7 @@ class Ticker : Thread
     private void delegate(Ticker) _exitHandler;
     private bool _isStopped;
     private bool _shouldStop;
-    private Mutex _lock;
+    private ReadWriteMutex _lock;
     private ulong _seq;
 
     private bool _isSuspended = false;
@@ -30,7 +30,7 @@ class Ticker : Thread
     this(Entity entity, Signal signal, TickInfo initTick, void delegate(Ticker) exitHandler) {
         this._exitHandler = exitHandler;
         
-        this._lock = new Mutex;
+        this._lock = new ReadWriteMutex;
         this._entity = entity;
 
         this.writeDebug("{NEXT} tick("~i.type~")", 4);
@@ -44,7 +44,7 @@ class Ticker : Thread
     this(Entity entity, TickMeta initTick, void delegate(Ticker) exitHandler) {
         this._exitHandler = exitHandler;
         
-        this._lock = new Mutex;
+        this._lock = new ReadWriteMutex;
         this._entity = entity;
 
         this._next = initTick;
@@ -75,7 +75,7 @@ class Ticker : Thread
 
     /// suspends the chain
     void suspend() {
-        if(!this._shouldStop) synchronized(this._lock) {
+        if(!this._shouldStop) synchronized(this._lock.writer) {
             this.writeDebug("{SUSPEND}", 3);
 
             // mark loop for suspend
@@ -89,7 +89,7 @@ class Ticker : Thread
 
     /// resumes the chain
     void resume() {
-        if(!this._shouldStop) synchronized(this._lock) {
+        if(!this._shouldStop) synchronized(this._lock.writer) {
             this.writeDebug("{RESUME}", 3);
             this._isSuspended = false;
         }
@@ -108,7 +108,7 @@ class Ticker : Thread
 
     /// creates a new ticker initialized with given tick
     void fork(TickInfo i, Data c = null) {
-        if(!this._shouldStop && i !is null) synchronized(this._lock) {
+        if(!this._shouldStop && i !is null) synchronized(this._lock.reader) {
             this.writeDebug("{FORK} tick("~i.type~")", 4);
             auto m = this.createTick(i, c);
             m.trigger = this.actual.id;
@@ -119,7 +119,7 @@ class Ticker : Thread
 
     /// enques next tick in the chain
     void next(TickInfo i, Data c = null) {
-        if(!this._shouldStop) synchronized(this._lock) {
+        if(!this._shouldStop) synchronized(this._lock.reader) {
             this.writeDebug("{NEXT} tick("~i.type~")", 4);
             auto m = this.createTick(i, c);
             m.trigger = this.actual.id;
@@ -150,7 +150,7 @@ class Ticker : Thread
 
         while(!this._shouldStop) {
             TickMeta m;
-            synchronized(this._lock) {
+            synchronized(this._lock.writer) {
                 m = this.next;
                 this._actual = this.next;
                 this._next = null;
@@ -215,11 +215,15 @@ class Ticker : Thread
 
 mixin template TTick() {
     import __flow.type;
+    static import flow.base.data;
 
     override @property string __fqn() {return fqn!(typeof(this));}
 
-    static Tick create(TickMeta m, Ticker t) {return new typeof(this)(m, t);}
-    
+    static Tick create(flow.base.data.TickMeta m, Ticker t) {
+        auto tick = new typeof(this)(m, t);
+        tick.initialize(m, t);
+    }
+
     shared static this() {
         Tick.register(fqn!(typeof(this)), &create);
     }
@@ -254,7 +258,7 @@ abstract class Tick : __IFqn, IIdentified {
     @property Ticker ticker() {return this._ticker;}
     @property void ticker(Ticker value) {this._ticker = value;}
 
-    this(TickMeta m, Ticker t) {
+    void initialize(TickMeta m, Ticker t) {
         this._meta = m;
         this._ticker = t;
     }

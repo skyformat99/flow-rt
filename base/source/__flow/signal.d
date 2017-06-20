@@ -1,6 +1,5 @@
 module __flow.signal;
 
-import core.sync.mutex;
 import std.traits, std.uuid, std.datetime, std.range.primitives;
 
 import __flow.data;

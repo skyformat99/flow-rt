@@ -1,7 +1,7 @@
 module __flow.entity;
 
 import core.sync.rwmutex;
-import std.array, std.datetime;
+import std.array, std.datetime, std.uuid;
 import std.algorithm.iteration, std.algorithm.searching;
 
 import __flow.tick, __flow.type, __flow.data, __flow.process, __flow.signal;
@@ -45,17 +45,13 @@ mixin template TEntity(T = void)
             return new typeof(this)(m);
         });
     }
-
-    this(EntityMeta m) {
-        super(m);
-    }
 }
 
 abstract class Entity : __IFqn, IIdentified
 {
-    private static Entity function(EntityMeta)[string] _reg;
+    private static Entity function()[string] _reg;
 
-    static void register(string dataType, Entity function(EntityMeta m) creator)
+    static void register(string dataType, Entity function() creator)
 	{
         _reg[dataType] = creator;
 	}
@@ -69,13 +65,18 @@ abstract class Entity : __IFqn, IIdentified
     {
         Entity e = null;
         if(canCreate(m.info.ptr.type))
-            e = _reg[m.info.ptr.type](m, h);
+            e = _reg[m.info.ptr.type]();
         else
             e = null;
             
         if(e !is null)
-            e.create();
+            e.initialize(m, h);
+
+        return e;
     }
+
+    private shared static List!ListeningMeta _typeListenings = new List!ListeningMeta;
+    protected static @property List!ListeningMeta typeListenings() {return _typeListenings;}
 
     abstract @property string __fqn();
     protected bool _shouldStop;
@@ -98,31 +99,9 @@ abstract class Entity : __IFqn, IIdentified
 
     abstract @property Data context();
 
-    protected this(EntityMeta m, Hull h) {
+    protected this() {
         this._lock = new ReadWriteMutex;
         this._ticker = new List!Ticker;
-
-        this._meta = m;
-        this._hull = h;
-
-        // merge typeListenings and meta.listenings into meta
-        auto tmpListenings = this.meta.listenings;
-        foreach(tl; typeListenings) {
-            auto found = false;
-            foreach(ml; tmpListenings) {
-                found = tl.signal == ml.signal && tl.tick == ml.tick;
-                if(found) break;
-            }
-
-            if(!found)
-                this.meta.listenings.add(tl);
-        }
-
-        // if its not quiet react at ping
-        if(this.as!IQuiet is null) {
-            this.beginListen(fqn!Ping, fqn!SendPong);
-            this.beginListen(fqn!UPing, fqn!SendPong);
-        }
     }
     
     ~this() {
@@ -130,12 +109,34 @@ abstract class Entity : __IFqn, IIdentified
     }
     
     void writeDebug(string msg, uint level) {
-        debugMsg("entity("~fqnOf(this)~", "~this.id.toString~");"~msg, level);
+        debugMsg("entity("~fqnOf(this)~", "~this.id~");"~msg, level);
     }
 
-    void create() {
+    void initialize(EntityMeta m, Hull h) {
         if(this._isStopped)
         {
+            this._meta = m;
+            this._hull = h;
+
+            // merge typeListenings and meta.listenings into meta
+            auto tmpListenings = this.meta.listenings;
+            foreach(tl; typeListenings) {
+                auto found = false;
+                foreach(ml; tmpListenings) {
+                    found = tl.signal == ml.signal && tl.tick == ml.tick;
+                    if(found) break;
+                }
+
+                if(!found)
+                    this.meta.listenings.add(tl);
+            }
+
+            // if its not quiet react at ping
+            if(this.as!IQuiet is null) {
+                this.beginListen(fqn!Ping, fqn!SendPong);
+                this.beginListen(fqn!UPing, fqn!SendPong);
+            }
+
             this.start();
             this._isStopped = false;
         }
@@ -166,6 +167,7 @@ abstract class Entity : __IFqn, IIdentified
     {
         synchronized(this._lock.writer) {
             auto ti = new TickInfo;
+            ti.id = randomUUID.toString();
             ti.entity = this;
             ti.type = tt;
             ti.group = s.group;
