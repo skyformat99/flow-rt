@@ -65,11 +65,11 @@ abstract class Entity : __IFqn, IIdentified
 		return name in _reg ? true : false;
 	}
 
-    static Entity create(EntityMeta m)
+    static Entity create(EntityMeta m, Hull h)
     {
         Entity e = null;
         if(canCreate(m.info.ptr.type))
-            e = _reg[m.info.ptr.type](i, c);
+            e = _reg[m.info.ptr.type](m, h);
         else
             e = null;
             
@@ -98,12 +98,15 @@ abstract class Entity : __IFqn, IIdentified
 
     abstract @property Data context();
 
-    protected this(EntityMeta m) {
+    protected this(EntityMeta m, Hull h) {
         this._lock = new ReadWriteMutex;
         this._ticker = new List!Ticker;
 
+        this._meta = m;
+        this._hull = h;
+
         // merge typeListenings and meta.listenings into meta
-        auto tmpListenings = m.listenings;
+        auto tmpListenings = this.meta.listenings;
         foreach(tl; typeListenings) {
             auto found = false;
             foreach(ml; tmpListenings) {
@@ -112,7 +115,7 @@ abstract class Entity : __IFqn, IIdentified
             }
 
             if(!found)
-                m.listenings.add(tl);
+                this.meta.listenings.add(tl);
         }
 
         // if its not quiet react at ping
@@ -120,8 +123,6 @@ abstract class Entity : __IFqn, IIdentified
             this.beginListen(fqn!Ping, fqn!SendPong);
             this.beginListen(fqn!UPing, fqn!SendPong);
         }
-
-        this._meta = m;
     }
     
     ~this() {

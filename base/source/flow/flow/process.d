@@ -8,29 +8,39 @@ import flow.flow.entity;
 import flow.base.dev, flow.base.interfaces, flow.base.data;
 
 /// a hull hosting an entity
-class Hull(T) : IHull if(is(T == Entity)) {
+class Hull {
     private ReadWriteMutex _lock;
     private Flow _flow;
-    private string _id;
-    private T _entity;
-    private List!EntityInfo _owned;
+    private Entity _entity;
+    private List!EntityInfo _children;
 
-    @property FlowPtr flow() { return this.flow.ptr; }
-    @property bool tracing() { return this.flow.tracing; }
+    @property EntityInfo info() { return this._entity.meta.info; } 
+    @property string address() { return this.info.ptr.id~"@"~this.info.ptr.domain; }
+    @property FlowPtr flow() { return this._flow.ptr; }
+    @property bool tracing() { return this._flow.tracing; }
 
     private bool _isSuspended = false;
     @property bool isSuspended() {return this._isSuspended;}
 
-    this(Flow f, string id, T e) {
-        this.flow = f;
-        this.id = id;
-        this.entity = e;
-        this.entity.hull = this;
-
+    this(Flow f, string id, EntityMeta m) {
+        this._flow = f;
+        this.create(id, m);
         this.resume();
     }
 
-    private void suspendOwned() {
+    private void createChildren() {
+        foreach(EntityMeta m; this.entity.meta.children)
+            this.children.add(this._flow.add(m));
+    }
+
+    private void disposeChildren() {
+        foreach(EntityInfo i; this._children.clone()) {
+            this._flow.remove(i);
+            this._children.remove(i);
+        } 
+    }
+
+    private void suspendChildren() {
         foreach(i; this._owned) {
             auto e = this.get(i);
             if(e !is null)
@@ -38,16 +48,27 @@ class Hull(T) : IHull if(is(T == Entity)) {
         }
     }
 
+    void create(EntityMeta m) {
+        m.info.ptr.flow = this.flow;
+        auto e = Entity.create(m, this);
+        try {
+            this.createChildren();
+        } catch(Exception ex) {
+            e.dispose();
+            throw(ex);
+        }
+    } 
+
     void suspend() {
         synchronized(this.lock.writer) {
             this._isSuspended = true;
-            this.suspendOwned();            
+            this.suspendChildren();            
         } 
     } 
     
     void resume() {
         synchronized(this.lock.writer) {
-            this.resumeOwned();
+            this.resumeChildren();
             this.entity.resume();
 
             this._isSuspended = false;
@@ -61,7 +82,7 @@ class Hull(T) : IHull if(is(T == Entity)) {
         }
     }
 
-    private void resumeOwned()
+    private void resumeChildren()
     {
         foreach(i; this._owned) {
             auto e = this.get(i);
@@ -70,18 +91,18 @@ class Hull(T) : IHull if(is(T == Entity)) {
         }
     }
 
-    List!EntityMeta snap()
+    EntityMeta snap()
     {
         synchronized(this.lock.writer) {
             auto l = List!EntityMeta;
             auto m = new EntityMeta;
+            m.children.add(this.snapChildren());
             l.add(m);
-            l.add(this.snapOwned());
             return l;
         } 
     }
     
-    private List!EntityMeta snapOwned() {
+    private List!EntityMeta snapChildren() {
         auto l = List!EntityMeta;
         foreach(i; this._owned)
         {
@@ -262,22 +283,21 @@ class Flow : IFlow
         debugMsg("process();"~msg, level);
     }
 
-    string add(Entity e)
+    string add(EntityMeta m)
     {
         auto id = "";
         if(!this._shouldStop)
         {
-            auto obj = e.as!Entity;
-            if(obj is null)
-                throw new UnsupportedObjectTypeException();
+            if(m is null)
+                throw new ParameterException();
+
+            if(!Entity.canCreate(m.info.ptr.type))
+                throw new UnsupportedObjectTypeException(m.info.ptr.type);
             
             synchronized(this._lock)
             {
-                id = i.prt.name~"@"~i.ptr.domain;
-
-                this.writeDebug("{ADD} entity("~fqnOf(e)~", "~e.id.toString~")", 2);
-                auto m = new Hull!Entity(this, obj);
-                obj.info.ptr.process = this.ptr;
+                auto h = new Hull(this, m);
+                this.writeDebug("{ADD} entity("~h.info.ptr.type~", "~h.address~")", 2);
 
                 try
                 {

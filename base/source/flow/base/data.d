@@ -52,7 +52,7 @@ class EntityPtr : IdData
 
     mixin TField!(string, "type");
     mixin TField!(string, "domain");
-    mixin TField!(FlowPtr, "process");
+    mixin TField!(FlowPtr, "flow");
 }
 
 /// referencing a specific entity 
@@ -79,6 +79,7 @@ class EntityMeta : Data
 
     mixin TField!(EntityInfo, "info");
     mixin TField!(Data, "context");
+    mixin TList!(EntityMeta, "children");
     mixin TList!(ListeningInfo, "listenings");
     mixin TList!(Signal, "inbound");
     mixin TList!(TickMeta, "ticks");

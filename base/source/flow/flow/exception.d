@@ -40,5 +40,5 @@ class NotImplementedError : Error
 
 class UnsupportedObjectTypeException : Exception
 {
-    this() { super("");}
+    this(string type = "") { super(type);}
 }
