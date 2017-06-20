@@ -24,8 +24,8 @@ mixin template TEntity(T = void)
     import flow.base.interfaces;
     import __flow.entity, __flow.type;
     
-    private shared static List!ListeningMeta _typeListenings = new List!ListeningMeta;
-    protected shared static @property List!ListeningMeta typeListenings() {
+    private shared static ListeningMeta[] _typeListenings;
+    protected shared static @property ListeningMeta[] typeListenings() {
         auto l = List!ListeningMeta;
         l.add(super.typeListenings);
         l.add(_typeListenings);
@@ -75,8 +75,8 @@ abstract class Entity : __IFqn, IIdentified
         return e;
     }
 
-    private shared static List!ListeningMeta _typeListenings = new List!ListeningMeta;
-    protected static @property List!ListeningMeta typeListenings() {return _typeListenings;}
+    private shared static ListeningMeta[] _typeListenings;
+    protected static @property ListeningMeta[] typeListenings() {return _typeListenings;}
 
     abstract @property string __fqn();
     protected bool _shouldStop;
