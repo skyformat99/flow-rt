@@ -55,6 +55,12 @@ interface IList(E) : ICollection!E
      */
     void put(E[]);
 
+    /** puts multiple elements at end of list    
+     * Params:
+     *  E = list of elements to add
+     */
+    void put(IList!E);
+
     /** removes an element from list    
      * Params:
      *  E = element to remove
@@ -412,6 +418,10 @@ mixin template TMainOfList(E)
                 this.collectionChanged.emit(this, changedArgs);
             }
         }
+    }
+
+    void put(IList!E l) {
+        this.put(l.array);
     }
 
     void remove(E[] arr)

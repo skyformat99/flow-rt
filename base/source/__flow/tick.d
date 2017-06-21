@@ -21,8 +21,8 @@ class Ticker : Thread
     private Entity _entity;
     @property EntityInfo entity() {return this._entity.meta.info;}
 
-    private TickMeta _next;
-    @property TickMeta next() {return this._next;}
+    private TickMeta _coming;
+    @property TickMeta coming() {return this._coming;}
 
     private TickMeta _actual;
     @property TickMeta actual() {return this._actual;}
@@ -34,9 +34,9 @@ class Ticker : Thread
         this._entity = entity;
 
         this.writeDebug("{NEXT} tick("~i.type~")", 4);
-        this._next = this.createTick(i);
-        this.next.trigger = signal.id;
-        this.next.signal = signal;
+        this._coming = this.createTick(i);
+        this.coming.trigger = signal.id;
+        this.coming.signal = signal;
 
         super(&this.loop);
     }
@@ -47,7 +47,7 @@ class Ticker : Thread
         this._lock = new ReadWriteMutex;
         this._entity = entity;
 
-        this._next = initTick;
+        this._coming = initTick;
 
         super(&this.loop);
     }
@@ -125,7 +125,7 @@ class Ticker : Thread
             m.trigger = this.actual.id;
             m.signal = this.actual.signal;
 
-            this._next = m;
+            this._coming = m;
         }
     }
 
@@ -153,7 +153,7 @@ class Ticker : Thread
             synchronized(this._lock.writer) {
                 m = this.next;
                 this._actual = this.next;
-                this._next = null;
+                this._coming = null;
             }
 
             auto t = Tick.create(m, this);

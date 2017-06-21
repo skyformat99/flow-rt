@@ -1,6 +1,6 @@
 module __flow.process;
 
-import core.thread, core.sync.rwmutex;
+import core.thread, core.sync.rwmutex, std.uuid;
 import std.range.interfaces, std.string;
 
 import __flow.exception, __flow.type, __flow.data, __flow.signal;
@@ -16,40 +16,48 @@ class Hull {
 
     @property EntityInfo info() { return this._entity.meta.info; } 
     @property string address() { return this.info.ptr.id~"@"~this.info.ptr.domain; }
-    @property FlowPtr flow() { return this._flow.ptr; }
-    @property bool tracing() { return this._flow.tracing; }
+    @property FlowPtr flowptr() { return this._flow.ptr; }
+    @property bool tracing() { return this._flow.config.tracing; }
 
     private bool _isSuspended = false;
     @property bool isSuspended() {return this._isSuspended;}
 
-    this(Flow f, string id, EntityMeta m) {
+    this(Flow f, EntityMeta m) {
         this._flow = f;
-        this.initialize(id, m);
+        this.initialize(m);
         this.resume();
     }
 
+    private void writeDebug(string msg, uint level)
+    {
+        debugMsg("hull("~this.address~");"~msg, level);
+    }
+
     private void createChildren() {
-        foreach(EntityMeta m; this.entity.meta.children)
-            this.children.add(this._flow.add(m));
+        foreach(EntityMeta m; this._entity.meta.children) {
+            auto i = this._flow.add(m);
+            if(i !is null)
+                this._children.put(i);
+        }
     }
 
     private void disposeChildren() {
-        foreach(EntityInfo i; this._children.clone()) {
+        foreach(EntityInfo i; this._children.dup()) {
             this._flow.remove(i);
             this._children.remove(i);
         } 
     }
 
     private void suspendChildren() {
-        foreach(i; this._owned) {
-            auto e = this.get(i);
-            if(e !is null)
-                e.hull.suspend();
+        foreach(i; this._children) {
+            auto h = this._flow.get(i);
+            if(h !is null)
+                h.suspend();
         }
     }
 
     void initialize(EntityMeta m) {
-        m.info.ptr.flow = this.flow;
+        m.info.ptr.flowptr = this.flowptr;
         auto e = Entity.create(m, this);
         try {
             this.createChildren();
@@ -60,162 +68,151 @@ class Hull {
     } 
 
     void suspend() {
-        synchronized(this.lock.writer) {
+        synchronized(this._lock.writer) {
             this._isSuspended = true;
             this.suspendChildren();            
         } 
     } 
     
     void resume() {
-        synchronized(this.lock.writer) {
+        synchronized(this._lock.writer) {
             this.resumeChildren();
-            this.entity.resume();
+            this._entity.resume();
 
             this._isSuspended = false;
         }
 
         // resume inboud signals
-        foreach(s; this.entity.meta.inbound.clone()) {
-            this.receive(s);
-            synchronized(this.lock.writer)
-                this.entity.meta.inboud.remove(s);
-        }
+        synchronized(this._lock.writer)
+            foreach(s; this._entity.meta.inbound.dup()) {
+                this.receive(s);
+                this._entity.meta.inbound.remove(s);
+            }
     }
 
     private void resumeChildren()
     {
-        foreach(i; this._owned) {
-            auto e = this.get(i);
-            if(e !is null)
-                e.hull.resume();
+        foreach(i; this._children) {
+            auto h = this._flow.get(i);
+            if(h !is null)
+                h.resume();
         }
     }
 
     EntityMeta snap()
     {
-        synchronized(this.lock.writer) {
-            auto l = List!EntityMeta;
-            auto m = new EntityMeta;
-            m.children.add(this.snapChildren());
-            l.add(m);
-            return l;
+        synchronized(this._lock.writer) {
+            auto m = this._entity.meta.clone.as!EntityMeta;
+            m.children.put(this.snapChildren());
+            return m;
         } 
     }
     
     private List!EntityMeta snapChildren() {
-        auto l = List!EntityMeta;
-        foreach(i; this._owned)
+        auto l = new List!EntityMeta;
+        foreach(i; this._children)
         {
-            auto e = this.get(i);
-            if(e !is null)
-            {
-                auto m = new EntityMeta;
-                m.info = i;
-                m.context = e.context;
-                l.add(e.hull.snap());
-            } 
+            auto h = this._flow.get(i);
+            if(h !is null)
+                l.put(h.snap());
         }
         return l;
     }
 
-    void spawn(EntityInfo i, Data c) {
-        synchronized(this.lock.writer)
+    bool spawn(EntityMeta m) {
+        synchronized(this._lock.writer)
         {
-            auto e = Entity.create(i, c);
-            this._owned.add(this.flow.add(e));
+            auto e = Entity.create(m, this);
+            auto i = this._flow.add(m);
+            if(i !is null) {
+                this._children.put(i);
+                return true;
+            } else return false;
         } 
     }
 
     
     void beginListen(string s, string t) {
-        synchronized(this.lock.writer) {
+        synchronized(this._lock.writer) {
             auto l = new ListeningMeta;
             l.signal = s;
             l.tick = t;
 
             auto found = false;
-            foreach(ml; this.entity.meta.listenings) {
+            foreach(ml; this._entity.meta.listenings) {
                 found = l.signal == ml.signal && l.tick == ml.tick;
                 if(found) break;
             }
 
             if(!found)
-                this.entity.meta.listenings.add(l);
+                this._entity.meta.listenings.put(l);
         }
     }
     
     void endListen(string s, string t) {
-        synchronized(this.lock.writer) {
+        synchronized(this._lock.writer) {
             ListeningMeta finding = null;
-            foreach(ml; this.entity.meta.listenings) {
+            foreach(ml; this._entity.meta.listenings) {
                 if(s == ml.signal && t == ml.tick)
                     finding = ml;
                 if(finding !is null) break;
             }
 
             if(finding !is null)
-                this.entity.meta.listenings.remove(finding);
+                this._entity.meta.listenings.remove(finding);
         }
     }
-
-    Entity get(EntityInfo i) { return this.flow.get(i); }
     
     bool receive(Signal s) {
-        if(!this._isStopped) {
-            this.writeDebug("{RECEIVE} signal("~s.type~", "~s.id.toString~")", 2);
-            
-            // search for listenings and start all registered for given signal type
-            auto accepted = false;
-            synchronized(this.lock.reader) {
-                foreach(l; this.entity.meta.listenings)
-                    if(l.signal == s.type) {
-                        if(!this._isSuspended) {
-                            this.entity.createTicker(s, l.tick);
-                            accepted = true;
-                        } else if(s.as!Anycast is null) { // anycasts cannot be received anymore, all other signals are stored in meta
-                            this.entity.meta.inboud.add(s);
-                            accepted = true;
-                            break;
-                        }
+        this.writeDebug("{RECEIVE} signal("~s.type~", "~s.id.toString~")", 2);
+        // search for listenings and start all registered for given signal type
+        auto accepted = false;
+        synchronized(this._lock.reader) {
+            foreach(l; this._entity.meta.listenings)
+                if(l.signal == s.type) {
+                    if(!this._isSuspended) {
+                        this._entity.createTicker(s, l.tick);
+                        accepted = true;
+                    } else if(s.as!Anycast is null) { // anycasts cannot be received anymore, all other signals are stored in meta
+                        this._entity.meta.inbound.put(s);
+                        accepted = true;
+                        break;
                     }
-            }
-                
-            return accepted;
-        } else return false;
+                }
+        }
+            
+        return accepted;
     }
     
     bool send(Unicast s, EntityPtr e) {
-        synchronized(this.lock.reader) {
-            if(this.flow._config.preventIdTheft) {
+        synchronized(this._lock.reader) {
+            if(this._flow.config.preventIdTheft) {
                 static if(is(T == Entity))
                     s.source = this.obj.info.ptr;
                 else
                     s.source = null;
             }
 
-            return this.flow.send(s, e);
+            return this._flow.send(s, e);
         }
     }
     bool send(Unicast s, EntityInfo e) { return this.send(s, e.ptr); }
-    bool send(Unicast s, Entity e) { return this.send(s, e.info); }
+
     bool send(Unicast s) {
         this._preventIdTheft(s);
-        return this.flow.send(s);
+        return this._flow.send(s);
     }
     bool send(Multicast s) {
         this._preventIdTheft(s);
-        return this.flow.send(s);
+        return this._flow.send(s);
     }
     bool send(Anycast s) {
         this._preventIdTheft(s);
-        return this.flow.send(s);
+        return this._flow.send(s);
     }
 
-    // wait for finish
-    void wait(bool delegate() expr) { this.flow.wait(expr); }
-
     private void _preventIdTheft(Signal s) {
-        if(this.flow.config.preventIdTheft)
+        if(this._flow.config.preventIdTheft)
         {
             static if(is(T == Entity))
                 s.source = this.obj.info.ptr;
@@ -224,13 +221,12 @@ class Hull {
         }
     }
 
-    void dispose() { this.entity.dispose(); }
+    void dispose() { this._entity.dispose(); }
 }
 
 /// a flow process able to host the local swarm
 class Flow
 {
-    private FlowConfig _config;
     private bool _shouldStop;
     private bool _isStopped;
     private ReadWriteMutex _lock;
@@ -239,7 +235,8 @@ class Flow
     private FlowPtr _ptr;
     @property FlowPtr ptr() { return this._ptr; }
 
-    @property bool tracing(){ return this._config.tracing; }
+    private FlowConfig _config;
+    @property FlowConfig config(){ return this._config; }
 
     this(FlowConfig c = null)
     {
@@ -253,7 +250,6 @@ class Flow
         this._lock = new ReadWriteMutex;
         this._config = c;
         auto pf = new FlowPtr;
-        pf.ptress = "";
         this._ptr = pf;
     }
 
@@ -283,60 +279,63 @@ class Flow
         debugMsg("process();"~msg, level);
     }
 
-    string add(EntityMeta m)
+    EntityInfo add(EntityMeta m)
     {
-        auto id = "";
         if(!this._shouldStop)
         {
             if(m is null)
-                throw new ParameterException();
+                throw new ParameterException("entity meta can't be null");
 
             if(!Entity.canCreate(m.info.ptr.type))
                 throw new UnsupportedObjectTypeException(m.info.ptr.type);
             
             synchronized(this._lock.writer)
             {
-                auto h = new Hull(this, m);
-                this.writeDebug("{ADD} entity("~h.info.ptr.type~", "~h.address~")", 2);
-
+                Hull h;
                 try
                 {
-                    this._local[id] = m;
+                    h = new Hull(this, m);
+                    this.writeDebug("{ADD} entity("~h.info.ptr.type~"|"~h.address~")", 2);
+                    this._local[h.address] = h;
                 }
                 catch(Exception exc)
                 {
-                    this.writeDebug("{ADD FAILED} entity("~fqnOf(e)~", "~e.id.toString~") ["~exc.msg~"]", 0);
-                    if(id in this._local)
-                        this._local.remove(id);
+                    this.writeDebug("{ADD FAILED} entity("~m.info.ptr.type~"|"~m.info.ptr.id~"@"~m.info.ptr.domain~") ["~exc.msg~"]", 0);
+                    if(h !is null && h.address in this._local)
+                        this._local.remove(h.address);
+
+                    return null;
                 }
             }
         }
 
-        return id;
+        return m.info;
     }
 
     string remove(EntityInfo i)
     {
-        auto id = "";
+        string addr;
         if(!this._shouldStop)
         {
-            id = i.prt.name~"@"~i.ptr.domain; 
+            addr = i.ptr.id~"@"~i.ptr.domain; 
             synchronized(this._lock.writer)
-            {                
-                auto m = this._local[i.id];
-                this.writeDebug("{REMOVE} entity("~fqnOf(m.obj)~", "~id.toString~")", 2);
-                m.dispose();
-                this._local.remove(i.id);
+            {            
+                if(addr in this._local) {    
+                    auto h = this._local[addr];
+                    this.writeDebug("{REMOVE} entity("~h.info.ptr.type~"|"~addr~")", 2);
+                    h.dispose();
+                    this._local.remove(addr);
+                }
             }
         }
-        return id;
+        return addr;
     }
 
-    Entity get(EntityInfo i)
+    Hull get(EntityInfo i)
     {
         if(!this._shouldStop)
             synchronized(this._lock.reader)
-                return this._local[i.id].obj;
+                return this._local[i.ptr.id~"@"~i.ptr.domain];
         
         return null;
     }
@@ -370,11 +369,6 @@ class Flow
         return this.send(s, e.ptr);
     }
 
-    bool send(Unicast s, Entity e)
-    {
-        return this.send(s, e.info.ptr);
-    }
-
     bool send(Unicast s)
     {
         if(!this._shouldStop)
@@ -405,12 +399,12 @@ class Flow
             
             auto found = false;
             // sending only to acceptable
-            foreach(r; this.getReceiver(s.type))
+            foreach(i; this.getReceiver(s.type))
             {
-                auto acceptable = r.domain.startsWith(s.domain);
+                auto acceptable = i.ptr.domain.startsWith(s.domain);
                 if(acceptable)
                 {
-                    this.deliver(s, r.ptr);
+                    this.deliver(s, i.ptr);
                     found = true;
                 }
             }
@@ -429,12 +423,12 @@ class Flow
             
             auto delivered = false;
             // sending only to acceptable
-            foreach(r; this.getReceiver(s.type))
+            foreach(i; this.getReceiver(s.type))
             {
-                auto acceptable = r.domain.startsWith(s.domain);
+                auto acceptable = i.ptr.domain.startsWith(s.domain);
                 if(acceptable)
                 {
-                    delivered = this.deliver(s, r.ptr);
+                    delivered = this.deliver(s, i.ptr);
                     if(delivered) break;
                 }
             }
@@ -465,15 +459,13 @@ class Flow
         if(!this._shouldStop)
         {
             if(e !is null)
-                this.writeDebug("{SEND} signal("~s.type~", "~s.id.toString~") TO entity("~ e.id.toString~")", 3);
-            else
-                this.writeDebug("{SEND} signal("~s.type~", "~s.id.toString~") TO entity(GOD)", 3);
+                this.writeDebug("{SEND} signal("~s.type~", "~s.id.toString~") TO entity("~ e.id~"@"~e.domain~")", 3);
 
             bool isLocal;
             synchronized(this._lock.reader)
-                isLocal = e is null || e.id in this._local;
+                isLocal = e is null || e.id~"@"~e.domain in this._local;
             if(isLocal)
-                return this.receive(s.clone.as!Signal, e);
+                return this.receive(this.config.isolateMem ? s.clone.as!Signal : s, e);
             else{return false;/* TODO search online when implementing apache thrift*/}
         }
 
@@ -485,18 +477,16 @@ class Flow
         if(!this._shouldStop)
         {
             auto stype = s.type;
-            if(e !is null)
-                this.writeDebug("{RECEIVE} signal("~s.type~") FOR entity("~ e.id.toString~")", 3);
-            else
-                this.writeDebug("{RECEIVE} signal("~s.type~") FOR entity(GOD)", 3);
+            auto addr = e.id~"@"~e.domain;
+            this.writeDebug("{RECEIVE} signal("~s.type~") FOR entity("~addr~")", 3);
 
-            Entity entity;
+            Hull h;
             synchronized(this._lock.reader)
-                if(e !is null && e.id in this._local)
-                    entity = this._local[e.id].obj;
+                if(addr in this._local)
+                    h = this._local[addr];
 
-            if(entity !is null)
-                return entity.receive(s);
+            if(h !is null)
+                return h.receive(s);
             else
                 this.writeDebug("{RECEIVE} signal("~s.type~") entity NOT FOUND)", 3);
         }
@@ -512,33 +502,31 @@ class Flow
 
     EntityInfo[] getListener(string signal)
     {
+        EntityInfo[] ret;
         if(!this._shouldStop)
         {
-            EntityInfo[] found;
-
             this.writeDebug("{SEARCH} entities FOR signal("~signal~")", 4);
 
             synchronized(this._lock.reader)
             {
                 foreach(id; this._local.keys)
                 {
-                    auto e = this._local[id].obj.info;
-                    foreach(s; e.signals)
+                    auto h = this._local[id];
+                    auto i = h.info;
+                    foreach(s; i.signals)
                     {
                         if(s == signal)
                         {
-                            found ~= e;
-                            this.writeDebug("\t!!! entity("~e.ptr.type~", "~e.ptr.id.toString~")", 4);
+                            ret ~= i;
+                            this.writeDebug("\t!!! entity("~i.ptr.type~"|"~h.address~")", 4);
                             break;
                         }
                     }
-                    this.writeDebug("\t>>> entity("~e.ptr.type~", "~e.ptr.id.toString~")", 4);
+                    this.writeDebug("\t>>> entity("~i.ptr.type~"|"~h.address~")", 4);
                 }
             }
-
-            return found;
         }
 
-        return null;
+        return ret;
     }
 }

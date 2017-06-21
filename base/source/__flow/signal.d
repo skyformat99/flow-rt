@@ -25,13 +25,13 @@ class Signal : IdData, IGrouped
     mixin TField!(string, "group");
     mixin TField!(bool, "traceable");
     mixin TField!(string, "type");
+    mixin TField!(EntityPtr, "source");
 }
 
 class Unicast : Signal
 {
     mixin TSignal;
 
-    mixin TField!(EntityPtr, "source");
     mixin TField!(EntityPtr, "destination");
 }
 
@@ -39,7 +39,6 @@ class Multicast : Signal
 {
     mixin TSignal;
 
-    mixin TField!(EntityPtr, "source");
     mixin TField!(string, "domain");
 }
 
@@ -47,6 +46,5 @@ class Anycast : Signal
 {    
     mixin TSignal;
 
-    mixin TField!(EntityPtr, "source");
     mixin TField!(string, "domain");
 }

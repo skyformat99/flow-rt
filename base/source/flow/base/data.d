@@ -19,6 +19,7 @@ class FlowConfig : Data
     mixin TData;
     
     mixin TField!(bool, "tracing");
+    mixin TField!(bool, "isolateMem");
     mixin TField!(bool, "preventIdTheft");
 }
 
@@ -46,13 +47,14 @@ enum EntityState
 }
 
 /// referencing a specific entity 
-class EntityPtr : IdData
+class EntityPtr : Data
 {
     mixin TData;
 
+    mixin TField!(string, "id");
     mixin TField!(string, "type");
     mixin TField!(string, "domain");
-    mixin TField!(FlowPtr, "flow");
+    mixin TField!(FlowPtr, "flowptr");
 }
 
 /// referencing a specific entity 

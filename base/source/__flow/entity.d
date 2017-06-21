@@ -13,7 +13,10 @@ mixin template TListen(string s, string t)
     import __flow.entity;
     
     shared static this() {
-        _typeListenings.add(new ListeningMeta(s, t));
+        auto m = new ListeningMeta;
+        m.signal = s;
+        m.tick = t;
+        _typeListenings ~= m;
     }
 }
 
@@ -24,13 +27,7 @@ mixin template TEntity(T = void)
     import flow.base.interfaces;
     import __flow.entity, __flow.type;
     
-    private shared static ListeningMeta[] _typeListenings;
-    protected shared static @property ListeningMeta[] typeListenings() {
-        auto l = List!ListeningMeta;
-        l.add(super.typeListenings);
-        l.add(_typeListenings);
-        return l;
-    }
+    private static ListeningMeta[] _typeListenings;
 
     override @property string __fqn() {return fqn!(typeof(this));}
 
@@ -47,7 +44,7 @@ mixin template TEntity(T = void)
     }
 }
 
-abstract class Entity : __IFqn, IIdentified
+abstract class Entity : __IFqn
 {
     private static Entity function()[string] _reg;
 
@@ -74,9 +71,8 @@ abstract class Entity : __IFqn, IIdentified
 
         return e;
     }
-
-    private shared static ListeningMeta[] _typeListenings;
-    protected static @property ListeningMeta[] typeListenings() {return _typeListenings;}
+    
+    private static ListeningMeta[] _typeListenings;
 
     abstract @property string __fqn();
     protected bool _shouldStop;
@@ -109,7 +105,7 @@ abstract class Entity : __IFqn, IIdentified
     }
     
     void writeDebug(string msg, uint level) {
-        debugMsg("entity("~fqnOf(this)~", "~this.id~");"~msg, level);
+        debugMsg("entity("~fqnOf(this)~", "~this.meta.info.ptr.id~");"~msg, level);
     }
 
     void initialize(EntityMeta m, Hull h) {
@@ -119,22 +115,18 @@ abstract class Entity : __IFqn, IIdentified
             this._hull = h;
 
             // merge typeListenings and meta.listenings into meta
-            auto tmpListenings = this.meta.listenings;
-            foreach(tl; typeListenings) {
-                auto found = false;
-                foreach(ml; tmpListenings) {
-                    found = tl.signal == ml.signal && tl.tick == ml.tick;
-                    if(found) break;
-                }
-
-                if(!found)
-                    this.meta.listenings.add(tl);
+            foreach(l; _typeListenings) {
+                this.hull.beginListen(l.signal, l.tick);
             }
 
             // if its not quiet react at ping
             if(this.as!IQuiet is null) {
-                this.beginListen(fqn!Ping, fqn!SendPong);
-                this.beginListen(fqn!UPing, fqn!SendPong);
+                this.hull.beginListen(fqn!Ping, fqn!SendPong);
+                this.hull.beginListen(fqn!UPing, fqn!SendPong);
+            }
+
+            foreach(l; this.meta.listenings) {
+                this.hull.beginListen(l.signal, l.tick);
             }
 
             this.start();
@@ -148,9 +140,8 @@ abstract class Entity : __IFqn, IIdentified
         if(!this._shouldStop && !this._isStopped)
         {
             this._shouldStop = true;
-            this._listeners.clear();
 
-            auto ticker = this._ticker.clone();
+            auto ticker = this._ticker.dup();
             foreach(t; ticker)
                 if(t !is null)
                     t.stop();
@@ -167,12 +158,12 @@ abstract class Entity : __IFqn, IIdentified
     {
         synchronized(this._lock.writer) {
             auto ti = new TickInfo;
-            ti.id = randomUUID.toString();
-            ti.entity = this;
+            ti.id = randomUUID;
+            ti.entity = this.meta.info.ptr;
             ti.type = tt;
             ti.group = s.group;
             auto ticker = new Ticker(this, s, ti, (t){this._ticker.remove(t);});
-            this._ticker.add(ticker);
+            this._ticker.put(ticker);
             ticker.start();
         }
     }
@@ -181,7 +172,7 @@ abstract class Entity : __IFqn, IIdentified
     {
         synchronized(this._lock.writer) {
             auto ticker = new Ticker(this, tm, (t){this._ticker.remove(t);});
-            this._ticker.add(ticker);
+            this._ticker.put(ticker);
             ticker.start();
         }
     }
@@ -192,10 +183,10 @@ abstract class Entity : __IFqn, IIdentified
         {
             this.writeDebug("{SUSPEND}", 3);
             this._isSuspended = true;
-            foreach(t; this._ticker.clone()) {
+            foreach(t; this._ticker.dup()) {
                 t.stop();
-                if(t.next !is null)
-                    this.meta.ticks.add(t.next);
+                if(t.coming !is null)
+                    this.meta.ticks.put(t.coming);
             }
         }
     }
@@ -210,7 +201,7 @@ abstract class Entity : __IFqn, IIdentified
             }
                 
             // resume ticks
-            foreach(tm; this.meta.ticks.clone) {
+            foreach(tm; this.meta.ticks.dup()) {
                 this.createTicker(tm);
                 this.meta.ticks.remove(tm);
             }

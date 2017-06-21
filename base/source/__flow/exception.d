@@ -38,6 +38,11 @@ class NotImplementedError : Error
     this() { super("");}
 }
 
+class ParameterException : Exception
+{
+    this(string msg) { super(msg);}
+}
+
 class UnsupportedObjectTypeException : Exception
 {
     this(string type = "") { super(type);}
