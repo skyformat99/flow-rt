@@ -27,25 +27,25 @@ class Ticker : Thread
     private TickMeta _actual;
     @property TickMeta actual() {return this._actual;}
 
-    this(Entity entity, Signal signal, TickInfo initTick, void delegate(Ticker) exitHandler) {
+    this(Entity e, Signal signal, TickInfo initTick, void delegate(Ticker) exitHandler) {
         this._exitHandler = exitHandler;
         
         this._lock = new ReadWriteMutex;
-        this._entity = entity;
+        this._entity = e;
 
-        this.writeDebug("{NEXT} tick("~i.type~")", 4);
-        this._coming = this.createTick(i);
+        this.writeDebug("{NEXT} tick("~initTick.type~"|"~initTick.id.toString()~")", 4);
+        this._coming = this.createTick(initTick);
         this.coming.trigger = signal.id;
         this.coming.signal = signal;
 
         super(&this.loop);
     }
     
-    this(Entity entity, TickMeta initTick, void delegate(Ticker) exitHandler) {
+    this(Entity e, TickMeta initTick, void delegate(Ticker) exitHandler) {
         this._exitHandler = exitHandler;
         
         this._lock = new ReadWriteMutex;
-        this._entity = entity;
+        this._entity = e;
 
         this._coming = initTick;
 
@@ -70,37 +70,18 @@ class Ticker : Thread
     }
 
     private void writeDebug(string msg, uint level) {
-        debugMsg("ticker("~fqnOf(this._entity)~", "~this._entity.meta.info.id.toString~");"~msg, level);
+        auto address = this._entity.meta.info.ptr.id~"@"~this._entity.meta.info.ptr.type;
+        debugMsg("ticker("~address~");"~msg, level);
     }
 
-    /// suspends the chain
-    void suspend() {
-        if(!this._shouldStop) synchronized(this._lock.writer) {
-            this.writeDebug("{SUSPEND}", 3);
-
-            // mark loop for suspend
-            this._shouldSuspend = true;
-
-            // wait until loop suspended
-            while(!this._isSuspended)
-                Thread.sleep(WAITINGTIME);
-        }
-    }
-
-    /// resumes the chain
-    void resume() {
-        if(!this._shouldStop) synchronized(this._lock.writer) {
-            this.writeDebug("{RESUME}", 3);
-            this._isSuspended = false;
-        }
-    }
-
-    private TickMeta createTick(TickInfo i, Data c) {
+    private TickMeta createTick(TickInfo i, Data c = null) {
         auto m = new TickMeta;
         m.info = i;     
         m.previous = this.actual;
         m.context = c;
         if(m.previous !is null) {
+            m.trigger = m.previous.trigger;
+            m.signal = m.previous.signal;
         }
 
         return m;
@@ -108,21 +89,26 @@ class Ticker : Thread
 
     /// creates a new ticker initialized with given tick
     void fork(TickInfo i, Data c = null) {
-        if(!this._shouldStop && i !is null) synchronized(this._lock.reader) {
-            this.writeDebug("{FORK} tick("~i.type~")", 4);
             auto m = this.createTick(i, c);
-            m.trigger = this.actual.id;
+            m.trigger = this.actual.info.id;
             m.signal = this.actual.signal;
-            this._entity.invoke(m);
+            this.fork(m);
+    }
+
+    /// creates a new ticker initialized with given tick
+    void fork(TickMeta m) {
+        if(!this._shouldStop && m !is null) synchronized(this._lock.reader) {
+            this.writeDebug("{FORK} tick("~m.info.type~"|"~m.info.id.toString()~")", 4);
+            this._entity.createTicker(m);
         }
     }
 
     /// enques next tick in the chain
     void next(TickInfo i, Data c = null) {
         if(!this._shouldStop) synchronized(this._lock.reader) {
-            this.writeDebug("{NEXT} tick("~i.type~")", 4);
+            this.writeDebug("{NEXT} tick("~i.type~"|"~i.id.toString()~")", 4);
             auto m = this.createTick(i, c);
-            m.trigger = this.actual.id;
+            m.trigger = this.actual.info.id;
             m.signal = this.actual.signal;
 
             this._coming = m;
@@ -130,7 +116,7 @@ class Ticker : Thread
     }
 
     void repeat() {
-        this.next(this.actual);
+        this._coming = this.actual;
     }
 
     void repeatFork() {
@@ -138,11 +124,11 @@ class Ticker : Thread
     }
     
     UUID beginListen(string s, TickInfo i) {
-        return this._entity.beginListen(s, i);
+        return this._entity.hull.beginListen(s, i);
     }
 
     void endListen(UUID id) {
-        this._entity.endListen(id);
+        this._entity.hull.endListen(id);
     }
 
     private void loop() {

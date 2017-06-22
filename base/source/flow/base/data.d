@@ -100,7 +100,7 @@ class TickMeta : Data
     mixin TData;
 
     mixin TField!(TickInfo, "info");
-    mixin TField!(string, "trigger");
+    mixin TField!(UUID, "trigger");
     mixin TField!(Signal, "signal");
     mixin TField!(TickMeta, "previous");
     mixin TField!(Data, "context");
