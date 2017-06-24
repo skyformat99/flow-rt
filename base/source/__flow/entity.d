@@ -46,7 +46,7 @@ mixin template TEntity(T = void)
 
 abstract class Entity : __IFqn
 {
-    private static Entity function()[string] _reg;
+    private shared static Entity function()[string] _reg;
 
     static void register(string dataType, Entity function() creator)
 	{
@@ -75,9 +75,10 @@ abstract class Entity : __IFqn
     private static ListeningMeta[] _typeListenings;
 
     abstract @property string __fqn();
-    protected bool _shouldStop;
+    private bool _shouldStop;
 
     private ReadWriteMutex _lock;
+    @property ReadWriteMutex lock() {return this._lock;}
 
     protected bool _isStopped = true;
     @property bool isStopped() {return this._isStopped;}

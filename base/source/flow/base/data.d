@@ -92,7 +92,7 @@ class TickInfo : IdData, IGrouped {
 
     mixin TField!(EntityPtr, "entity");
     mixin TField!(string, "type");
-    mixin TField!(string, "group");
+    mixin TField!(UUID, "group");
 }
 
 class TickMeta : Data
@@ -111,7 +111,7 @@ class TraceSignalData : IdData
 {
     mixin TData;
 
-    mixin TField!(string, "group");
+    mixin TField!(UUID, "group");
     mixin TField!(SysTime, "time");
     mixin TField!(UUID, "trigger");
     mixin TField!(EntityPtr, "destination");
@@ -127,16 +127,45 @@ class TraceTickData : IdData
     mixin TField!(UUID, "group");
     mixin TField!(SysTime, "time");
     mixin TField!(UUID, "trigger");
-    mixin TField!(string, "entityType");
-    mixin TField!(UUID, "entityId");
-    mixin TField!(UUID, "ticker");
+    mixin TField!(EntityPtr, "entity");
     mixin TField!(string, "tick");
     mixin TField!(string, "nature");
+}
+
+class Signal : IdData, IGrouped
+{
+    mixin TSignal;
+
+    mixin TField!(UUID, "group");
+    mixin TField!(bool, "traceable");
+    mixin TField!(string, "type");
+    mixin TField!(EntityPtr, "source");
+}
+
+class Unicast : Signal
+{
+    mixin TSignal;
+
+    mixin TField!(EntityPtr, "destination");
+}
+
+class Multicast : Signal
+{
+    mixin TSignal;
+
+    mixin TField!(string, "domain");
+}
+
+class Anycast : Signal
+{    
+    mixin TSignal;
+
+    mixin TField!(string, "domain");
 }
 
 class WrappedSignalData : Data
 {
 	mixin TData;
 
-    mixin TField!(Data, "signal");
+    mixin TField!(Signal, "signal");
 }

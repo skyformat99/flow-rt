@@ -1,7 +1,7 @@
 module flow.base.ticks;
 
 import __flow.tick, __flow.entity, __flow.type;
-import flow.base.signals, flow.base.interfaces;
+import flow.base.signals, flow.base.interfaces, flow.base.data;
 
 class SendPong : Tick, IStealth
 {
@@ -9,9 +9,10 @@ class SendPong : Tick, IStealth
 
     override void run()
     {
-        this.entity.as!Entity.writeDebug("received ping from entity("~this.trigger.source.type~", "~this.trigger.source.id.toString~")", 2);
+        this.writeDebug("received ping from entity("~this.meta.signal.source.type~"|"~this.meta.signal.source.id~"@"~this.meta.signal.source.domain~")", 2);
         auto p = new Pong;
-        p.data = this.entity.info;
+        p.ptr = this.ticker.entity.ptr;
+        p.signals.put(this.ticker.entity.signals);
         this.answer(p);
     }
 }

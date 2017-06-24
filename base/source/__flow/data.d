@@ -98,7 +98,7 @@ Data set(T)(Data obj, string name, T value) if(isScalarType!T || is(T == UUID) |
 abstract class Data : __IFqn
 {
 	import __flow.event;
-
+	
 	private shared static Data function()[string] _reg;
 
 	static void register(string dataType, Data function() creator)
@@ -133,10 +133,9 @@ abstract class Data : __IFqn
 		return obj;
 	}
 
+	@property shared(PropertyInfo[string]) dataProperties(){return null;}	
 	private EPropertyChanging _propertyChanging;
 	private EPropertyChanged _propertyChanged;
-
-	@property shared(PropertyInfo[string]) dataProperties(){return null;}	
 	
 	@property EPropertyChanging propertyChanging()
 	{
@@ -183,7 +182,7 @@ mixin template TData()
 	import flow.base.interfaces;
 
 	shared static PropertyInfo[string] DataProperties;
-	override @property shared(PropertyInfo[string]) dataProperties(){return DataProperties;}	
+	override @property shared(PropertyInfo[string]) dataProperties(){return DataProperties;}
 	private shared static void function(typeof(this))[] _inits;
 	private shared static Object function(typeof(this), string)[] _getter;
 	private shared static bool function(typeof(this), string, Object)[] _setter;
@@ -195,7 +194,7 @@ mixin template TData()
 
 	shared static this()
 	{
-		static if(fqn!(typeof(super)) != "flow.flow.data.Data")
+		static if(fqn!(typeof(super)) != "__flow.data.Data")
 		foreach(n, i; super.DataProperties)
 			DataProperties[n] = i;
 
@@ -215,7 +214,7 @@ mixin template TData()
 	override Object getGeneric(string name)
 	{
 		Object value = null;
-		static if(fqn!(typeof(super)) != "flow.flow.data.Data")
+		static if(fqn!(typeof(super)) != "__flow.data.Data")
 			value = super.getGeneric(name);
 
 		if(value is null)
@@ -233,7 +232,7 @@ mixin template TData()
 	override bool setGeneric(string name, Object value)
 	{
 		auto set = false;
-		static if(fqn!(typeof(super)) != "flow.flow.data.Data")
+		static if(fqn!(typeof(super)) != "__flow.data.Data")
 			super.setGeneric(name, value);
 
 		if(!set)
@@ -254,7 +253,7 @@ mixin template TData()
 
 	override protected void dupInternal(Data c)
 	{
-		static if(fqn!(typeof(super)) != "flow.flow.data.Data")
+		static if(fqn!(typeof(super)) != "__flow.data.Data")
 			super.dupInternal(c);
 
 		auto clone = cast(typeof(this))c;
@@ -272,7 +271,7 @@ mixin template TData()
 	alias toJson = Data.toJson;
 	override protected void toJson(Json j)
 	{
-		static if(fqn!(typeof(super)) != "flow.flow.data.Data")
+		static if(fqn!(typeof(super)) != "__flow.data.Data")
 			super.toJson(j);
 		
 		auto len = _toJsons.length;
@@ -294,7 +293,7 @@ mixin template TData()
 
 	override void fillFromJson(Json j)
 	{
-		static if(fqn!(typeof(super)) != "flow.flow.data.Data")
+		static if(fqn!(typeof(super)) != "__flow.data.Data")
 			super.fillFromJson(j);
 			
 		foreach(fj; _fromJsons)
@@ -584,8 +583,8 @@ mixin template TList(T, string name)
 	
 	alias h = TListHelper!p;
 	enum mixinString = "
-		private IList!("~p.type~") _"~p.name~";
-		@property IList!("~p.type~") "~p.name~"() { return this._"~p.name~"; }
+		private DataList!("~p.type~") _"~p.name~";
+		@property DataList!("~p.type~") "~p.name~"() { return this._"~p.name~"; }
 		"~h.init~"
 	";
 

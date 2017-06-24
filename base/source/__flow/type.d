@@ -3,159 +3,35 @@ module __flow.type;
 import core.exception;
 import std.traits, std.range.interfaces, std.range.primitives, std.uuid, std.datetime;
 
-import __flow.event;
+import __flow.event, __flow.data;
 import flow.base.interfaces;
-
-/// interfaces collection of elements
-interface ICollection(E) : RandomAccessFinite!E, OutputRange!E
-{
-    /** removes an element from collection if it is present
-     * Params:
-     *  E = element to remove
-     */
-    void remove(E);
-
-    /** clears whole collection */
-    void clear();
-
-    /** Returns: length of collection */
-    @property size_t length();
-
-    /** checks if an element is present in collection
-     * Params: element
-     * Returns: yes(true) or no(false)
-    */
-    bool contains(E);
-
-    /** event beeing triggered when collection is about to change.
-        event is cancellable see __flow.event.CancelableEventArgs.
-     * Returns: event with args __flow.event.CollectionChangingEventArgs
-     */
-    @property ECollectionChanging!E collectionChanging();
-
-    /** event beeing triggered when collection is about to change.
-     * Returns: event with args __flow.event.CollectionChangedEventArgs
-     */
-    @property ECollectionChanged!E collectionChanged();
-}
-
-/// interfaces list of elements
-interface IList(E) : ICollection!E
-{
-    /** puts an element at end of list
-     * See_Also: https://dlang.org/library/std/range/primitives/put.html
-     * Params:
-     *  E = element to add
-     */
-    void put(E);    // had to repeat due to overloading only works local
-
-    /** puts multiple elements at end of list    
-     * Params:
-     *  E = array of elements to add
-     */
-    void put(E[]);
-
-    /** puts multiple elements at end of list    
-     * Params:
-     *  E = list of elements to add
-     */
-    void put(IList!E);
-
-    /** removes an element from list    
-     * Params:
-     *  E = element to remove
-     */
-    void remove(E); // had to repeat due to overloading only works local
-
-    /** removes multiple elements from list    
-     * Params:
-     *  E = array of elements to remove
-     */
-    void remove(E[]);
-
-    /** removes an element at a specific index from list    
-     * Params:
-     *  size_t = index to remove
-     */
-    void removeAt(size_t);
-
-    /** gets first index of a specific element
-     * Prams:
-     *  E = element for getting its index
-     * Returns: index
-    */
-    size_t indexOf(E);
-
-    /** gets next index of a specific element
-     * Prams:
-     *  E = element for getting its index
-     *  size_t = index to start +1 (usually index of last finding + 1)
-     * Returns: index
-    */
-    size_t indexOf(E, size_t);
-
-    /** gets last index of a specific element
-     *  this function does a backsearch 
-     * Prams:
-     *  E = element for getting its index
-     * Returns: index
-     */
-    size_t indexOfReverse(E);
-
-    /** gets last index of a specific element
-     *  this function does a backsearch 
-     * Prams:
-     *  E = element for getting its index
-     *  size_t = index to start -1 (usually index of last finding - 1)
-     * Returns: index
-     */
-    size_t indexOfReverse(E, size_t);
-
-    /** get element at specified index
-     * See_Also: https://dlang.org/spec/operatoroverloading.html#array-ops
-     * Params:
-     *  size_t = index of element
-     * Returns: element
-     */
-    E opIndex(size_t);
-
-    /// Returns: duplicate of the list
-    IList!E dup();
-}
-
-/** list allowing only flow compatible data types.
- *  if you want to transport collections of data inside flow, this descripes what you need
- */
-interface DataList(T) : IList!T if (is(T : Data) || isScalarType!T || is(T == UUID) || is(T == SysTime) || is(T == DateTime) || (isArray!T && isScalarType!(ElementType!T)))
-{
-}
 
 version(TODO) {
     // TODO implement
-    interface IFiFo(E) : InputRange!E, OutputRange!E
+    class FiFo(T) : InputRange!T, OutputRange!T
     {
         @property size_t length();
         
-        void put(E);
-        void put(E[]);
+        void put(T);
+        void put(T[]);
 
-        E pop();
-        E[] pop(size_t amount);
+        T pop();
+        T[] pop(size_t amount);
 
-        @property ECollectionChanging!E collectionChanging();
-        @property ECollectionChanged!E collectionChanged();
+        @property ECollectionChanging!T collectionChanging();
+        @property ECollectionChanged!T collectionChanged();
         
     }
 
     // TODO implement
-    interface ILiFo(E) : InputRange!E, OutputRange!E
+    class LiFo(T) : InputRange!T, OutputRange!T
     {
-        void put(E);
-        E pop();
-        E pop(size_t amount);
+        void put(T);
+        T pop();
+        T pop(size_t amount);
 
-        @property ECollectionChanging!E collectionChanging();
-        @property ECollectionChanged!E collectionChanged();
+        @property ECollectionChanging!T collectionChanging();
+        @property ECollectionChanged!T collectionChanged();
     }
 }
 
@@ -181,13 +57,13 @@ template isConstructableWith(T, Args...)
 }
 
 /// generates code of list required by std.range.InputRange
-mixin template TInputRangeOfList(E)
+mixin template TInputRangeOfList(T)
 {
     /** gets first element of list
      * See_Also: https://dlang.org/library/std/range/primitives/front.html
      * Returns: element
      */
-    @property E front()
+    @property T front()
     {
         return this._arr.front;
     }
@@ -202,7 +78,7 @@ mixin template TInputRangeOfList(E)
     }
 
     /// See_Also: https://dlang.org/library/std/range/primitives/move_front.html
-    E moveFront()
+    T moveFront()
     {
         synchronized (this._lock.writer)
             return this._arr.moveFront();
@@ -216,7 +92,7 @@ mixin template TInputRangeOfList(E)
     }
 
     /// See_Also: https://dlang.org/spec/statement.html#ForeachTypeAttribute
-    int opApply(scope int delegate(E) fn)
+    int opApply(scope int delegate(T) fn)
     {
         int result = 0;
         synchronized (this._lock.reader) foreach(e; this._arr)
@@ -230,7 +106,7 @@ mixin template TInputRangeOfList(E)
     }
 
     /// See_Also: https://dlang.org/spec/statement.html#ForeachTypeAttribute
-    int opApply(scope int delegate(size_t, E) fn)
+    int opApply(scope int delegate(size_t, T) fn)
     {
         int result = 0;
         synchronized (this._lock.reader) foreach(i, e; this._arr)
@@ -245,12 +121,12 @@ mixin template TInputRangeOfList(E)
 }
 
 /// generates code of list required by std.range.ForwardRange
-mixin template TForwardRangeOfList(E)
+mixin template TForwardRangeOfList(T)
 {
 }
 
 /// generates code of list required by std.range.BidirectionalRange
-mixin template TBidirectionalRangeOfList(E)
+mixin template TBidirectionalRangeOfList(T)
 {
     size_t _backPtr;
 
@@ -258,13 +134,13 @@ mixin template TBidirectionalRangeOfList(E)
     * See_Also: https://dlang.org/library/std/range/primitives/back.html
     * Returns: element
     */
-    @property E back()
+    @property T back()
     {
         return this._arr.back;
     }
 
     /// See_Also: https://dlang.org/library/std/range/primitives/move_back.html
-    E moveBack()
+    T moveBack()
     {
         synchronized (this._lock.writer)
             return this._arr.moveBack();
@@ -279,12 +155,12 @@ mixin template TBidirectionalRangeOfList(E)
 }
 
 /// generates code of list required by std.range.BidirectionalRange
-mixin template TRandomAccessFiniteOfList(T, E)
+mixin template TRandomAccessFiniteOfList(LT, T)
 {
     /// See_Also: https://dlang.org/library/std/range/primitives/save.html
-    @property RandomAccessFinite!E save()
+    @property RandomAccessFinite!T save()
     {
-        auto clone = new T();
+        auto clone = new LT();
         synchronized (this._lock.reader) clone._arr = this._arr.save;
 
         return clone;
@@ -296,13 +172,13 @@ mixin template TRandomAccessFiniteOfList(T, E)
      *  size_t = index of element
      * Returns: element
      */
-    E opIndex(size_t idx)
+    T opIndex(size_t idx)
     {
         return this._arr[idx];
     }
 
     /// See_Also: https://dlang.org/library/std/range/primitives/move_at.html
-    E moveAt(size_t idx)
+    T moveAt(size_t idx)
     {
         synchronized (this._lock.writer)
             return this._arr.moveAt(idx);
@@ -312,11 +188,11 @@ mixin template TRandomAccessFiniteOfList(T, E)
     alias opDollar = length;
 
     /// See_Also: https://dlang.org/spec/operatoroverloading.html#slice
-    RandomAccessFinite!E opSlice(size_t start, size_t end)
+    RandomAccessFinite!T opSlice(size_t start, size_t end)
     {        
         synchronized (this._lock.reader)
         {
-            auto clone = new T();
+            auto clone = new LT();
             clone._arr = this._arr[start..end];
 
             return clone;
@@ -325,27 +201,27 @@ mixin template TRandomAccessFiniteOfList(T, E)
 }
 
 /// generates code of list required by std.range.OutputRange
-mixin template TOutputRangeOfList(E)
+mixin template TOutputRangeOfList(T)
 {
     /** puts an element at end of list
      * See_Also: https://dlang.org/library/std/range/primitives/put.html
      * Params:
-     *  E = element to add
+     *  e = element to add
      */
-    void put(E e)
+    void put(T e)
     {
         this.put([e]);
     }
 }
 
 /// generates code of list required by __flow.type.ICollection
-mixin template TCollectionOfList(E)
+mixin template TCollectionOfList(T)
 {
     /** removes an element from collection if it is present
      * Params:
-     *  E = element to remove
+     *  e = element to remove
      */
-    void remove(E e)
+    void remove(T e)
     {
         this.remove([e]);
     }
@@ -367,7 +243,7 @@ mixin template TCollectionOfList(E)
      * Params: element
      * Returns: yes(true) or no(false)
     */
-    bool contains(E e)
+    bool contains(T e)
     {
         synchronized (this._lock.reader)
             foreach (e_; this._arr)
@@ -379,15 +255,15 @@ mixin template TCollectionOfList(E)
 }
 
 /// generates main code of list
-mixin template TMainOfList(E)
+mixin template TMainOfList(LT, T)
 {
     static import core.sync.rwmutex;
 
-    private E[] _arr;
+    private T[] _arr;
     private core.sync.rwmutex.ReadWriteMutex _lock;
 
     /// constructor taking an array of initial elements
-    this(E[] arr)
+    this(T[] arr)
     {
         this();
 
@@ -398,37 +274,37 @@ mixin template TMainOfList(E)
     this()
     {
         this._lock = new core.sync.rwmutex.ReadWriteMutex(core.sync.rwmutex.ReadWriteMutex.Policy.PREFER_WRITERS);
-        this._collectionChanging = new ECollectionChanging!E;
-        this._collectionChanged = new ECollectionChanged!E;
+        this._collectionChanging = new ECollectionChanging!T;
+        this._collectionChanged = new ECollectionChanged!T;
     }
     
-    void put(E[] arr)
+    void put(T[] arr)
     {
         if(arr.length > 0)
         {
-            auto changingArgs = new CollectionChangingEventArgs!E(arr, null);
+            auto changingArgs = new CollectionChangingEventArgs!T(arr, null);
             this.collectionChanging.emit(this, changingArgs);
             
             if(!changingArgs.cancel)
             {
                 synchronized (this._lock.writer)
-                    this._arr = this._arr ~= arr;
+                    this._arr ~= arr;
 
-                auto changedArgs = new CollectionChangedEventArgs!E(arr, null);
+                auto changedArgs = new CollectionChangedEventArgs!T(arr, null);
                 this.collectionChanged.emit(this, changedArgs);
             }
         }
     }
 
-    void put(IList!E l) {
-        this.put(l.array);
+    void put(LT l) {
+        this.put(l._arr);
     }
 
-    void remove(E[] arr)
+    void remove(T[] arr)
     {
         if(arr.length > 0)
         {
-            auto changingArgs = new CollectionChangingEventArgs!E(null, arr);
+            auto changingArgs = new CollectionChangingEventArgs!T(null, arr);
             this.collectionChanging.emit(this, changingArgs);
             
             if(!changingArgs.cancel)
@@ -440,7 +316,7 @@ mixin template TMainOfList(E)
                         this._arr = std.algorithm.mutation.remove(this._arr, this.indexOfInternal(e, 0)); // TODO can be optimized
                 }
 
-                auto changedArgs = new CollectionChangedEventArgs!E(null, arr);
+                auto changedArgs = new CollectionChangedEventArgs!T(null, arr);
                 this.collectionChanged.emit(this, changedArgs);
             }
         }
@@ -453,18 +329,18 @@ mixin template TMainOfList(E)
             this._arr = std.algorithm.mutation.remove(this._arr, idx);
     }
 
-    size_t indexOf(E e)
+    size_t indexOf(T e)
     {
         return this.indexOf(e, 0); // costs a lot with huge data
     }
 
-    size_t indexOf(E e, size_t startIdx)
+    size_t indexOf(T e, size_t startIdx)
     {
         synchronized (this._lock.reader)
             return this.indexOfInternal(e, startIdx);
     }
     
-    private size_t indexOfInternal(E e, size_t startIdx)
+    private size_t indexOfInternal(T e, size_t startIdx)
     {
         foreach(i, e_; this._arr[startIdx..$]) // costs a lot with huge data
             static if(__traits(compiles, e_ is null))
@@ -481,18 +357,18 @@ mixin template TMainOfList(E)
         throw new RangeError("element not found");
     }
 
-    size_t indexOfReverse(E e)
+    size_t indexOfReverse(T e)
     {
         return this.indexOfReverse(e, this._arr.length - 1); // costs a lot with huge data
     }
 
-    size_t indexOfReverse(E e, size_t startIdx)
+    size_t indexOfReverse(T e, size_t startIdx)
     {
         synchronized (this._lock.reader)
             return this.indexOfReverseInternal(e, startIdx);
     }
 
-    size_t indexOfReverseInternal(E e, size_t startIdx)
+    size_t indexOfReverseInternal(T e, size_t startIdx)
     {
         foreach_reverse(i, e_; this._arr[0..$-startIdx]) // costs a lot with huge data
             if (e_ == e)
@@ -501,17 +377,25 @@ mixin template TMainOfList(E)
         throw new RangeError("element not found");
     }
 
-    private ECollectionChanging!E _collectionChanging;
-    private ECollectionChanged!E _collectionChanged;
+    private ECollectionChanging!T _collectionChanging;
+    private ECollectionChanged!T _collectionChanged;
 
-    @property ECollectionChanging!E collectionChanging()
+    @property ECollectionChanging!T collectionChanging()
     {
         return this._collectionChanging;
     }
 
-    @property ECollectionChanged!E collectionChanged()
+    @property ECollectionChanged!T collectionChanged()
     {
         return this._collectionChanged;
+    }
+
+    LT dup()
+    {
+        auto clone = new LT;
+        clone._arr = this._arr.dup();
+
+        return clone;
     }
 }
 
@@ -556,22 +440,15 @@ class Ref(T) if (isScalarType!T || is(T == UUID) || is(T == SysTime) || is(T == 
  * Bugs:
  *  - critical non writing operations are blocking each other (https://github.com/RalphBariz/flow-base/issues/2)
  */
-class List(E) : IList!E
+class List(T) : RandomAccessFinite!T, OutputRange!T
 {
-    mixin TInputRangeOfList!E;
-    mixin TForwardRangeOfList!E;
-    mixin TBidirectionalRangeOfList!E;
-    mixin TRandomAccessFiniteOfList!(List!E, E);
-    mixin TOutputRangeOfList!E;
-    mixin TCollectionOfList!E;
-    mixin TMainOfList!E;
-
-    List!E dup()
-    {
-        List!E clone = new List!E(this._arr.dup);
-
-        return clone;
-    }
+    mixin TInputRangeOfList!T;
+    mixin TForwardRangeOfList!T;
+    mixin TBidirectionalRangeOfList!T;
+    mixin TRandomAccessFiniteOfList!(List!T, T);
+    mixin TOutputRangeOfList!T;
+    mixin TCollectionOfList!T;
+    mixin TMainOfList!(List!T, T);
 }
 
 /** easy to use .NET oriented list of flow data elements implementing notifications when collection changes
@@ -579,22 +456,15 @@ class List(E) : IList!E
  * Bugs:
  *  - critical reading non writing operations are blocking each other
  */
-class DataList(E) : DataList!E
+class DataList(T) : RandomAccessFinite!T, OutputRange!T if (is(T : Data) || isScalarType!T || is(T == UUID) || is(T == SysTime) || is(T == DateTime) || (isArray!T && isScalarType!(ElementType!T)))
 {
-    mixin TInputRangeOfList!E;
-    mixin TForwardRangeOfList!E;
-    mixin TBidirectionalRangeOfList!E;
-    mixin TRandomAccessFiniteOfList!(DataList!E, E);
-    mixin TOutputRangeOfList!E;
-    mixin TCollectionOfList!E;
-    mixin TMainOfList!E;
-
-    DataList!E dup()
-    {
-        DataList!E clone = new DataList!E(this._arr.dup);
-
-        return clone;
-    }
+    mixin TInputRangeOfList!T;
+    mixin TForwardRangeOfList!T;
+    mixin TBidirectionalRangeOfList!T;
+    mixin TRandomAccessFiniteOfList!(DataList!T, T);
+    mixin TOutputRangeOfList!T;
+    mixin TCollectionOfList!T;
+    mixin TMainOfList!(DataList!T, T);
 }
 
 /// a put extension for collections to support ducktyping

@@ -7,15 +7,18 @@ import flow.base.data, flow.base.interfaces;
 
 class Ping : Multicast, IStealth
 {
-    mixin TSignal!(EntityInfo);
+    mixin TSignal;
 }
 class UPing : Unicast, IStealth
 {
-    mixin TSignal!(EntityInfo);
+    mixin TSignal;
 }
 class Pong : Unicast, IStealth
 {
-    mixin TSignal!(EntityInfo);
+    mixin TSignal;
+
+    mixin TField!(EntityPtr, "ptr");
+    mixin TList!(string, "signals");
 }
 
 class TraceSend : Multicast, IStealth

@@ -20,9 +20,6 @@ static import __flow.data;
 alias Data = __flow.data.Data;
 
 static import __flow.signal;
-alias Multicast = __flow.signal.Multicast;
-alias Unicast = __flow.signal.Unicast;
-alias Anycast = __flow.signal.Anycast;
 alias signal = TSignal;
 
 static import __flow.tick;

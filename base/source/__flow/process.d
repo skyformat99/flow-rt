@@ -12,7 +12,7 @@ class Hull {
     private ReadWriteMutex _lock;
     private Flow _flow;
     private Entity _entity;
-    private List!EntityInfo _children;
+    private DataList!EntityInfo _children;
 
     @property EntityInfo info() { return this._entity.meta.info; } 
     @property string address() { return this.info.ptr.id~"@"~this.info.ptr.domain; }
@@ -108,8 +108,8 @@ class Hull {
         } 
     }
     
-    private List!EntityMeta snapChildren() {
-        auto l = new List!EntityMeta;
+    private DataList!EntityMeta snapChildren() {
+        auto l = new DataList!EntityMeta;
         foreach(i; this._children)
         {
             auto h = this._flow.get(i);
@@ -132,7 +132,7 @@ class Hull {
     }
 
     
-    void beginListen(string s, string t) {
+    ListeningMeta beginListen(string s, string t) {
         synchronized(this._lock.writer) {
             auto l = new ListeningMeta;
             l.signal = s;
@@ -146,20 +146,18 @@ class Hull {
 
             if(!found)
                 this._entity.meta.listenings.put(l);
+
+            return l;
         }
     }
     
-    void endListen(string s, string t) {
+    void endListen(ListeningMeta l) {
         synchronized(this._lock.writer) {
-            ListeningMeta finding = null;
-            foreach(ml; this._entity.meta.listenings) {
-                if(s == ml.signal && t == ml.tick)
-                    finding = ml;
-                if(finding !is null) break;
-            }
-
-            if(finding !is null)
-                this._entity.meta.listenings.remove(finding);
+            foreach(ml; this._entity.meta.listenings.dup())
+                if(ml == l) {
+                    this._entity.meta.listenings.remove(l);
+                    break;
+                }
         }
     }
     

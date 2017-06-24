@@ -1,5 +1,7 @@
 module flow.base.interfaces;
 
+import std.uuid;
+
 interface ITyped
 {
     @property string type();
@@ -14,10 +16,10 @@ interface ISync{}
 
 interface IIdentified
 {
-    @property string id();
+    @property UUID id();
 }
 
 interface IGrouped
 {
-    @property string group();
+    @property UUID group();
 }
