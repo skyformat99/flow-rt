@@ -1,47 +1,49 @@
 module flow.example.base.typingmonkeys.overseer;
 import flow.example.base.typingmonkeys.signals;
 
-import flow.base.blocks, flow.base.interfaces;
+import flow.base.blocks, flow.base.signals, flow.base.interfaces;
 
 // just an internal signal, therefor located here
 class FoundNotify : Unicast{mixin signal!(GermanPage);}
 
-/** she needs to know a few things
-and has a found flag */
-class OverseerContext : Data
-{
+/// she needs to know a few things
+class OverseerConfig : Data {
+	mixin data;
+    
+    mixin field!(string, "search");
+}
+
+/// she needs to remember a few things
+class OverseerContext : Data {
 	mixin data;
 
-    mixin field!(string, "search");
     mixin field!(ulong, "pages");
     mixin field!(bool, "found");
 }
 
 /** search the texts for the bible (parallel)
 she's got the power' */
-class Search : Tick
-{
+class Search : Tick {
 	mixin tick;
 
-	override void run()
-	{
+	override void run() {
         import std.algorithm, std.conv;
         import flow.base.dev;
 
-        auto c = this.entity.context.as!OverseerContext;
-        auto s = this.trigger.as!GermanText;
+        auto cfg = this.entity.config.as!OverseerConfig;
+        auto c = this.context.as!OverseerContext;
+        auto s = this.signal.as!GermanText;
 
         // search
-        if(canFind(s.data.text, c.search))
-        {
+        if(cfg.search !is null && cfg.search != "" && canFind(s.data.text, cfg.search)) {
             c.found = true;
 
-            debugMsg(fqnOf(this.entity) ~ " (" ~ this.entity.id.toString
-                ~ ") found \"" ~ c.search
-                ~ "\" after searching "
-                ~ c.pages.to!string ~ " pages and "
-                ~ (c.pages*4).to!string
-                ~ "kB of random bytes", 1);
+            debugMsg(this.entity.ptr.type~"|"~this.entity.ptr.id~"@"~this.entity.ptr.domain
+                ~" found \""~cfg.search
+                ~"\" after searching "
+                ~c.pages.to!string~" pages and "
+                ~(c.pages*4).to!string
+                ~"kB of random bytes", 1);
 
                 /* notifying herself that she found something
                 you may now ask, why do this via signalling?
@@ -49,45 +51,31 @@ class Search : Tick
                 to override signal from a derrived overseer */
                 auto found = new FoundNotify;
                 found.data = s.data;
-                this.send(found, this.entity);
+                this.send(found, this.entity.ptr);
         }
 
         c.pages = c.pages + 1;
     }
 }
 
-class Found : Tick
-{
+class Found : Tick {
 	mixin tick;
 
-	override void run()
-	{
-        auto s = this.trigger.as!FoundNotify;
-        /* she is a real sweetheart giving
-        the successful monkey a candy */
-        this.send(new Candy, s.data.author);
+	override void run() {
+        if(this.signal.source.identWith(this.entity.ptr)) {
+            auto s = this.signal.as!FoundNotify;
+            /* she is a real sweetheart giving
+            the successful monkey a candy */
+            this.send(new Candy, s.data.author);
+        }
     }
-}
-
-Object handleFoundNotify(Entity e, Signal s)
-{
-    return e.identWith(s.source) ? new Found : null;
 }
 
 /** and finally defining her
 (black hair, deep green eyes) */
-class Overseer : Entity
-{
+class Overseer : Entity {
     mixin entity!(OverseerContext);
     
-    mixin listen!(fqn!GermanText,
-        (e, s) => e.context.as!OverseerContext.search !is null &&
-            e.context.as!OverseerContext.search != "" ?
-                new Search :
-                null
-    );
-    
-    mixin listen!(fqn!FoundNotify,
-        (e, s) => handleFoundNotify(e, s)
-    );
+    mixin listen!(fqn!GermanText, fqn!Search);    
+    mixin listen!(fqn!FoundNotify, fqn!Found);
 }

@@ -1,14 +1,12 @@
-module flow.example.base.typingmonkeys.test;
+module flow.example.base.madtypingmonkeys.test;
 import flow.example.base.typingmonkeys.overseer;
 import flow.example.base.typingmonkeys.translator;
-import flow.example.base.typingmonkeys.monkey;
+import flow.example.base.madtypingmonkeys.madmonkey;
 
 import flow.base.blocks, flow.base.data;
 
 /// we construct an initial causal snap for the system
 private EntityMeta createMeta(string domain, uint amount, string search) {
-    import std.conv;
-
     // build overseer meta
     auto om = new EntityMeta;
     om.info = new EntityInfo;
@@ -38,8 +36,11 @@ private EntityMeta createMeta(string domain, uint amount, string search) {
         mm.info = new EntityInfo;
         mm.info.ptr = new EntityPtr;
         mm.info.ptr.id = "monkey_"~i.to!string;
-        mm.info.ptr.type = "flow.example.base.typingmonkeys.monkey.Monkey";
-        mm.info.ptr.domain = domain~".monkeys";
+        mm.info.ptr.type = "flow.example.base.madtypingmonkeys.madmonkey.MadMonkey";
+        mm.info.ptr.domain = domain~".madmonkeys";
+        auto mc = new MadMonkeyConfig;
+        mc.koAt = -100;
+        mm.info.config = mc;
         mm.context = new MonkeyContext;
 
         // in this constructed causality snap its about to execute write tick
@@ -60,18 +61,19 @@ private bool waitForMonkeys(EntityMeta om) {
     foreach(em; om.children) {
         auto c = em.context.as!MonkeyContext;
         if(c !is null && c.state == MonkeyEmotionalState.Calm) {
-            return false;
+            return true;
         }
     }
 
-    return true;
+    return false;
 }
 
 /// finally we run that
-void run(uint amount, string search) {
+void run(uint amount, string search)
+{
     import core.time;
-    import std.datetime, std.conv, std.stdio;
-    import flow.base.dev;
+    import std.datetime, std.conv;
+    import flow.base.dev, flow.base.blocks;
 
     debugMsg("#######################################", 0);
     debugMsg("#######################################", 0);
@@ -81,6 +83,8 @@ void run(uint amount, string search) {
 
     // unimportant for example
     ulong pages;
+    bool didOneHideCandy;
+    ulong amountOfActive;
     
     // unimportant for example
     auto f = {
@@ -89,7 +93,7 @@ void run(uint amount, string search) {
         // build flow config
         auto fc = new FlowConfig;
         fc.ptr = new FlowPtr;
-        fc.tracing = false;
+        fc.tracing = true;
         fc.preventIdTheft = true;
 
         auto em = createMeta(domain, amount, search);
@@ -99,7 +103,7 @@ void run(uint amount, string search) {
         flow.add(em);
 
         // wait for an event indicating that swarm can be shut down
-        flow.wait((){return waitForMonkeys(em);});
+        flow.wait(&waitForMonkeys);
 
         // write causal snap to console
         //auto h = flwo.get(em.info);
@@ -110,13 +114,14 @@ void run(uint amount, string search) {
         foreach(m; flow.stop())
             writeln(m.toJson());
     };
-
     
     auto b = benchmark!(f)(1);
     debugMsg("time required for finding \"" ~ search ~ "\" "
         ~ "using " ~ amount.to!string ~ " monkeys "
         ~ "reviewed " ~ pages.to!string ~ " pages "
-        ~ "searched " ~ ((pages*4)/1024).to!string ~ " MB of random data"
+        ~ "searched " ~ ((pages*4)/1024).to!string ~ " MB of random data "
+        ~ "the candy is " ~ (didOneHideCandy ? "hidden " : "not hidden ")
+        ~ "and " ~ amountOfActive.to!string ~ " monkeys are left "
         ~ ": " ~ b[0].usecs.to!string
         ~ "usecs", 0);
     debugMsg("#######################################", 0);
@@ -125,6 +130,7 @@ void run(uint amount, string search) {
 
 /** two kicker playing ball and one trainer
 watching and controlling the kicker */
-unittest {
-    run(5, "fo");
+unittest
+{
+    run(10, "fo");
 }

@@ -9,8 +9,7 @@ import flow.base.interfaces;
 /// an error occured in data reflection layer (error stops execution of app)
 class DataingError : Error
 {
-    this(string msg)
-    {
+    this(string msg) {
         super(msg);
     }
 }
@@ -18,8 +17,7 @@ class DataingError : Error
 /// an exception occured in data reflection layer (exception is catchable)
 class DataingException : Exception
 {
-    this(string msg)
-    {
+    this(string msg) {
         super(msg);
     }
 }

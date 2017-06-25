@@ -7,12 +7,11 @@ class SendPong : Tick, IStealth
 {
     mixin TTick;
 
-    override void run()
-    {
-        this.writeDebug("received ping from entity("~this.meta.signal.source.type~"|"~this.meta.signal.source.id~"@"~this.meta.signal.source.domain~")", 2);
+    override void run() {
+        this.writeDebug("received ping from entity("~this.signal.source.type~"|"~this.signal.source.id~"@"~this.signal.source.domain~")", 2);
         auto p = new Pong;
-        p.ptr = this.ticker.entity.ptr;
-        p.signals.put(this.ticker.entity.signals);
+        p.ptr = this.entity.ptr;
+        p.signals.put(this.entity.signals);
         this.answer(p);
     }
 }

@@ -18,6 +18,7 @@ class FlowConfig : Data
 {
     mixin TData;
     
+    mixin TField!(FlowPtr, "ptr");
     mixin TField!(bool, "tracing");
     mixin TField!(bool, "isolateMem");
     mixin TField!(bool, "preventIdTheft");
@@ -46,6 +47,13 @@ enum EntityState
     Sleeping
 }
 
+class ListeningMeta : Data {
+    mixin TData;
+
+    mixin TField!(string, "signal");
+    mixin TField!(string, "tick");
+}
+
 /// referencing a specific entity 
 class EntityPtr : Data
 {
@@ -64,15 +72,9 @@ class EntityInfo : Data
 
     mixin TField!(EntityPtr, "ptr");
     mixin TField!(EntityScope, "availability");
+    mixin TField!(Data, "config");
 
     mixin TList!(string, "signals");
-}
-
-class ListeningMeta : Data {
-    mixin TData;
-
-    mixin TField!(string, "signal");
-    mixin TField!(string, "tick");
 }
 
 class EntityMeta : Data
@@ -80,8 +82,8 @@ class EntityMeta : Data
     mixin TData;
 
     mixin TField!(EntityInfo, "info");
-    mixin TField!(Data, "context");
     mixin TList!(EntityMeta, "children");
+    mixin TField!(Data, "context");
     mixin TList!(ListeningMeta, "listenings");
     mixin TList!(Signal, "inbound");
     mixin TList!(TickMeta, "ticks");
@@ -103,7 +105,7 @@ class TickMeta : Data
     mixin TField!(UUID, "trigger");
     mixin TField!(Signal, "signal");
     mixin TField!(TickMeta, "previous");
-    mixin TField!(Data, "context");
+    mixin TField!(Data, "data");
 }
 
 
@@ -140,32 +142,4 @@ class Signal : IdData, IGrouped
     mixin TField!(bool, "traceable");
     mixin TField!(string, "type");
     mixin TField!(EntityPtr, "source");
-}
-
-class Unicast : Signal
-{
-    mixin TSignal;
-
-    mixin TField!(EntityPtr, "destination");
-}
-
-class Multicast : Signal
-{
-    mixin TSignal;
-
-    mixin TField!(string, "domain");
-}
-
-class Anycast : Signal
-{    
-    mixin TSignal;
-
-    mixin TField!(string, "domain");
-}
-
-class WrappedSignalData : Data
-{
-	mixin TData;
-
-    mixin TField!(Signal, "signal");
 }

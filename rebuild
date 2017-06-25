@@ -21,15 +21,15 @@ function buildBin {
 $rootDir/clean
 
 buildLib base &&
-buildLib data &&
-buildLib net &&
-buildLib alien &&
-buildLib example/base/lib &&
+#buildLib data &&
+#buildLib net &&
+#buildLib alien &&
+buildLib example/base/lib #&&
 
-buildBin example/base/simplekicker &&
-buildBin example/base/trainingkicker &&
-buildBin example/base/typingmonkeys &&
-buildBin example/base/madtypingmonkeys &&
-buildBin example/net/http &&
-buildBin causal #&&
+#buildBin example/base/simplekicker &&
+#buildBin example/base/trainingkicker &&
+#buildBin example/base/typingmonkeys &&
+#buildBin example/base/madtypingmonkeys &&
+#buildBin example/net/http &&
+#buildBin causal #&&
 #buildBin hive/experiments/take01

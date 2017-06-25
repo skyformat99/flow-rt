@@ -3,7 +3,38 @@ module flow.base.signals;
 import std.uuid;
 
 import __flow.data, __flow.signal;
-import flow.base.data, flow.base.interfaces;
+import flow.base.interfaces, flow.base.data;
+
+static import flow.base.data;
+alias Signal = flow.base.data.Signal;
+
+class Unicast : Signal
+{
+    mixin TSignal;
+
+    mixin TField!(EntityPtr, "destination");
+}
+
+class Multicast : Signal
+{
+    mixin TSignal;
+
+    mixin TField!(string, "domain");
+}
+
+class Anycast : Signal
+{    
+    mixin TSignal;
+
+    mixin TField!(string, "domain");
+}
+
+class WrappedSignalData : Data
+{
+	mixin TData;
+
+    mixin TField!(Signal, "signal");
+}
 
 class Ping : Multicast, IStealth
 {

@@ -11,8 +11,7 @@ mixin template TSignal(T = void)
     import __flow.data;
     mixin TData;
 
-    static if(!is(T == void))
-    {
+    static if(!is(T == void)) {
         mixin TField!(ulong, "seq");
         mixin TField!(T, "data");
     }

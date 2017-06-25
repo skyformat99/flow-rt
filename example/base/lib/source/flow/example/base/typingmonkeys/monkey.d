@@ -1,10 +1,9 @@
 module flow.example.base.typingmonkeys.monkey;
 import flow.example.base.typingmonkeys.signals;
 
-import flow.base.blocks, flow.base.interfaces;
+import flow.base.blocks, flow.base.data;
 
-enum MonkeyEmotionalState
-{
+enum MonkeyEmotionalState {
     Calm,
     Happy,
     Dissapointed
@@ -18,8 +17,7 @@ but you should stay with a data objects in most cases
 * The monkey needs to know just two things
 one for measuring its performance for us
 and one to know how it feels */
-class MonkeyContext : Data
-{
+class MonkeyContext : Data {
 	mixin data;
 
     mixin field!(ulong, "counter");
@@ -32,12 +30,10 @@ class MonkeyContext : Data
 a tick has a [name] and defines an [algorithm].
 the algorithm takes an [entity],
 a [ticker] to control the internal flow */
-class Write : Tick
-{
+class Write : Tick {
     mixin tick;
 
-    override void run()
-    {
+    override void run() {
         /* some imports necessary
         for the d and phobos functionality used */
         import std.random, std.conv;
@@ -45,13 +41,12 @@ class Write : Tick
 
         /* sadly at the moment the context has
         to be casted to its type or interface */
-        auto c = entity.context.as!MonkeyContext;
+        auto c = this.context.as!MonkeyContext;
 
         /* when the monkey gets happy it is distracted
         and when dissapointed it is restive
         so it only types when its calm */
-        if(c.state == MonkeyEmotionalState.Calm)
-        {
+        if(c.state == MonkeyEmotionalState.Calm) {
             byte[] arr;
 
             // get 4kb data from urandom
@@ -62,7 +57,7 @@ class Write : Tick
             auto s = new HebrewText;
             s.data = new HebrewPage;
             s.data.text = arr;
-            s.data.author = entity.info.ptr;
+            s.data.author = this.entity.ptr;
             // send multicast
             this.send(s);
 
@@ -70,86 +65,71 @@ class Write : Tick
             c.counter = c.counter + 1;
 
             // just something for us to see
-            debugMsg(fqnOf(entity) ~ " (" ~ entity.id.toString
-                ~ ") amount of typed pages: " ~ c.counter.to!string, 1);
+            debugMsg(this.entity.ptr.type~"|"~this.entity.ptr.id~"@"~this.entity.ptr.domain
+                ~" amount of typed pages: "~c.counter.to!string, 1);
             
             // tell the ticker to repeat this tick (natural while loop)
-            ticker.repeat();
+            this.repeat();
         }
     }
 }
 
 /** this one is pretty simple */
-class GetCandy : Tick
-{
+class GetCandy : Tick {
 	mixin tick;
 
-	override void run()
-	{
+	override void run() {
         import flow.base.dev;
 
-        auto c = this.entity.context.as!MonkeyContext;
+        auto c = this.context.as!MonkeyContext;
 
         c.state = MonkeyEmotionalState.Happy;
 
         this.send(new ShowCandy);
 
         // just something for us to see
-        debugMsg(fqnOf(this.entity) ~ " (" ~ this.entity.id.toString
-            ~ ") got happy", 1);
+        debugMsg(this.entity.ptr.type~"|"~this.entity.ptr.id~"@"~this.entity.ptr.domain
+            ~" got happy", 1);
     }
 }
 
 /** this one too */
-class SeeCandy : Tick
-{
+class SeeCandy : Tick {
 	mixin tick;
 
-	override void run()
-	{
+	override void run() {
         import flow.base.dev;
 
-        auto c = this.entity.context.as!MonkeyContext;
+        if(!this.signal.source.identWith(this.entity.ptr)) {
+            auto c = this.context.as!MonkeyContext;
 
-        c.state = MonkeyEmotionalState.Dissapointed;
+            c.state = MonkeyEmotionalState.Dissapointed;
 
-        // just something for us to see
-        debugMsg(fqnOf(this.entity) ~ " (" ~ this.entity.id.toString
-            ~ ") got dissapointed", 1);
+            // just something for us to see
+            debugMsg(this.entity.ptr.type~"|"~this.entity.ptr.id~"@"~this.entity.ptr.domain
+                ~" got dissapointed", 1);
+        }
     }
-}
-
-Object handleShowCandy(Entity e, Signal s)
-{
-    return !s.source.identWith(e) ? new SeeCandy : null;
 }
 
 /** finally we define what a monkey is.
 what it listens to and how it reacts
 * so there is one main sequential tick string
 * and two just setting something */
-class Monkey : Entity
-{
+class Monkey : Entity {
     mixin entity!(MonkeyContext);
-
-    mixin listen!(
-        // type id of a whisper signal
-        fqn!Whisper,        
-        // it begins to type
-        (e, s) => new Write
-    );
 
     mixin listen!(
         // type id of a candy
         fqn!Candy,
         // it gets happy
-        (e, s) => new GetCandy
+        fqn!GetCandy
     );
 
     mixin listen!(
         // type of "any monkey shows it candy"
         fqn!ShowCandy,
         // if it is not seeing the own candy it gets dissapointed
-        (e, s) => handleShowCandy(e, s)
+        fqn!SeeCandy
     );
 }

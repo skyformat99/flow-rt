@@ -4,7 +4,7 @@ import std.traits, std.uuid, std.datetime, std.range.primitives;
 
 static import __flow.type;
 import __flow.tick, __flow.data, __flow.entity, __flow.signal;
-import flow.base.interfaces;
+import flow.base.interfaces, flow.base.data;
 
 // maybe an idea
 // https://github.com/CyberShadow/ae/blob/master/utils/meta/args.d
@@ -39,9 +39,13 @@ alias Flow = __flow.process.Flow;
 /// check if two identifyables share their identity
 bool identWith(IIdentified id1, IIdentified id2)
 {
-    auto t1 = id1.id;
-    auto t2 = id2.id;
     return id1.id == id2.id;
+}
+
+/// check if two entities share their identity
+bool identWith(EntityPtr e1, EntityPtr e2)
+{
+    return e1.id == e2.id && e1.domain == e2.domain;
 }
 
 alias fqn = __flow.type.fqn;

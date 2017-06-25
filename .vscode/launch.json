@@ -70,7 +70,6 @@
             "cwd": "${workspaceRoot}/example/util/web/bin"
         }
     ]
-    */
     "configurations": [
         {
             "name": "flow-causal",
@@ -83,6 +82,21 @@
             ],
             "target": "flow-causal",
             "cwd": "${workspaceRoot}/causal/bin"
+        }
+    */
+    "configurations": [
+        {
+            "name": "flow-example-base-typingmonkeys",
+            "type": "gdb",
+            "request": "launch",
+            "autorun": [
+                "handle SIGUSR1 nostop noprint",
+                "handle SIGUSR2 nostop noprint",
+                "break onInvalidMemoryOperationError"
+            ],
+            "target": "flow-example-base-typingmonkeys",
+            "arguments": "5 fo",
+            "cwd": "${workspaceRoot}/example/base/typingmonkeys/bin"
         }
     ]
 }
