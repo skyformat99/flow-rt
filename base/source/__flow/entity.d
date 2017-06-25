@@ -20,6 +20,18 @@ mixin template TListen(string s, string t) {
     }
 }
 
+enum EntityState {
+    None = 0,
+    Initializing,
+    Resuming,
+    Running,
+    Suspending,
+    Suspended,
+    Damaged,
+    Disposing,
+    Disposed
+}
+
 mixin template TEntity(T = void) if(is(T == void) || is(T : Data)) {
     import std.uuid;
     import flow.base.data;
@@ -27,12 +39,12 @@ mixin template TEntity(T = void) if(is(T == void) || is(T : Data)) {
     
     private shared static string[string] _typeListenings;
 
-    override @property string __fqn() {return fqn!(typeof(this));}
+    package override @property string __fqn() {return fqn!(typeof(this));}
 
     static if(!is(T == void))
-        override @property T context() {return this.meta.context.as!T;}
+        package override @property T context() {return this.meta.context.as!T;}
     else
-        override @property Data context() {return this.meta.context;}
+        package override @property Data context() {return this.meta.context;}
 
     shared static this() {
         Entity.register(fqn!(typeof(this)), (){
@@ -41,18 +53,19 @@ mixin template TEntity(T = void) if(is(T == void) || is(T : Data)) {
     }
 }
 
-abstract class Entity : __IFqn {
-    private shared static Entity function()[string] _reg;
+abstract class Entity : StateMachine!EntityState, __IFqn {
+    private shared static Entity function()[string] _reg;    
+    private shared static string[string] _typeListenings;
 
-    static void register(string dataType, Entity function() creator) {
+    package static void register(string dataType, Entity function() creator) {
         _reg[dataType] = creator;
 	}
 
-	static bool canCreate(string name) {
+	package static bool canCreate(string name) {
 		return name in _reg ? true : false;
 	}
 
-    static Entity create(string name) {
+    package static Entity create(string name) {
         Entity e = null;
         if(canCreate(name))
             e = _reg[name]();
@@ -61,143 +74,313 @@ abstract class Entity : __IFqn {
 
         return e;
     }
+
     
-    private shared static string[string] _typeListenings;
-
-    abstract @property string __fqn();
-    private bool _shouldStop;
-
-    private ReadWriteMutex _lock;
-    @property ReadWriteMutex lock() {return this._lock;}
-
-    protected bool _isStopped = true;
-    @property bool isStopped() {return this._isStopped;}
-
-    private bool _isSuspended = false;
-    @property bool isSuspended() {return this._isSuspended;}
-
-    private Hull _hull;
-    
+    private Entity _parent;
+    private List!Entity _children;
+    private Flow _flow;
+    private ReadWriteMutex _lock;    
+    private List!Exception _damage;
     private List!Ticker _ticker;
-
     private EntityMeta _meta;
-    @property EntityMeta meta() {return this._meta;}
 
-    @property bool tracing() { return this._hull.tracing; }
+    package abstract @property string __fqn();
+    package @property ReadWriteMutex lock() {return this._lock;}
+    package @property string address() { return this.info.ptr.id~"@"~this.info.ptr.domain; }
+    package @property bool tracing() { return this._flow.config.tracing; }
+    package abstract @property Data context();
 
-    abstract @property Data context();
+    public @property FlowPtr flow() { return this._flow.ptr; }
+    public @property EntityInfo info() { return this._entity.meta.info; }
 
-    protected this() {
+    protected this(Flow f, EntityMeta m) {
+        this._flow = f;
+        this._meta = m;
+        this.info.signals.clear();
+        this._children = new List!Entity;
         this._lock = new ReadWriteMutex;
+        this._damage = new List!Exception;
         this._ticker = new List!Ticker;
+
+        this.state = EntityState.Initializing;
     }
     
     ~this() {
         this.stop();
     }
+
+    package void suspend() {
+        this.state = EntityState.Suspending;
+    } 
     
-    void writeDebug(string msg, uint level) {
-        debugMsg("entity("~fqnOf(this)~", "~this.meta.info.ptr.id~");"~msg, level);
+    package void resume() {
+        this.state = EntityState.Resuming;
     }
 
-    void initialize(EntityMeta m, Hull h) {
-        if(this._isStopped) {
-            this._meta = m;
-            this._hull = h;
+    package void dispose() {
+        this.state = EntityState.Disposing;
+    }
 
-            foreach(s; _typeListenings.keys) {
-                this._hull.beginListen(s);
-            }
+    package void damage(string msg = null, Exception ex = null) {
+        this.debugMsg(DL_WARNING, msg, ex);
+        this._damage.put(ex);
+
+        this.state = EntityState.Damaged;
+    }
+
+    override protected bool onStateChanging(EntityState oldState, EntityState newState) {
+        switch(newState) {
+            case EntityState.Initializing:
+                return oldState == EntityState.None;
+            case EntityState.Resuming:
+                return oldState == EntityState.Initializing || oldState == EntityState.Suspended;
+            case EntityState.Running:
+                return oldState == EntityState.Resuming;
+            case EntityState.Suspending:
+                return oldState == EntityState.Running;
+            case EntityState.Suspended:
+                return oldState == EntityState.Suspending;
+            case EntityState.Damaged:
+                return oldState == EntityState.Resuming ||
+                    oldState == EntityState.Running ||
+                    oldState == EntityState.Suspending ||
+                    oldState == EntityState.Suspended;
+            case EntityState.Disposing:
+                return true;
+            case EntityState.Disposed:
+                return oldState == EntityState.Disposing;
+            default:
+                return false;
+        }
+    }
+
+    override protected void onStateChanged(EntityState oldState, EntityState newState) {
+        switch(newState) {
+            case EntityState.Initializing:
+                this.onInitializing(); break;
+            case EntityState.Resuming:
+                this.onResuming(); break;
+            case EntityState.Suspending:
+                this.onSuspending(); break;
+            case EntityState.Damaged:
+                this.onDamaged(); break;
+            case EntityState.Disposing:
+                this.onDisposing(); break;
+            default:
+                break;
+        }
+    }
+
+    protected void onInitializing() {
+        try {
+            this.debugMsg(DL_INFO, "initializing");
+            auto type = this._meta.info.ptr.type;
+            this._meta.info.ptr.flowptr = this.flowptr;
+            
+            this.debugMsg(DL_DEBUG, "registering type listenings");
+            foreach(s; _typeListenings.keys)
+                this.beginListen(s);
 
             // if its not quiet react at ping (this should be done at runtime and added to typelistenings)
             if(this.as!IQuiet is null) {
-                this._hull.beginListen(fqn!Ping);
-                this._hull.beginListen(fqn!UPing);
+                this.debugMsg(DL_DEBUG, "registering ping listenings");
+                this.beginListen(fqn!Ping);
+                this.beginListen(fqn!UPing);
             }
 
-            foreach(l; this.meta.listenings) {
-                this._hull.beginListen(l.signal);
-            }
+            this.debugMsg(DL_DEBUG, "registering dynamic listenings");
+            foreach(l; this._meta.listenings)
+                this.beginListen(l.signal);
 
-            this.start();
-            this._isStopped = false;
+            this.debugMsg(DL_DEBUG, "creating children entities");
+            this.createChildren();
+
+            this.state = EntityState.Resuming;
+        } catch(Exception ex) {
+            this.damage("initializing", ex);
         }
     }
-    
-    void start() {}
 
-    void dispose() {
-        if(!this._shouldStop && !this._isStopped) {
-            this._shouldStop = true;
-
-            auto ticker = this._ticker.dup();
-            foreach(t; ticker)
-                if(t !is null)
-                    t.stop();
+    protected void onResuming() {
+        try {
+            this.debugMsg(DL_INFO, "resuming");
             
-            this.suspend();
-            this.stop();
-            this._isStopped = true;
-        }
-    }
+            this.start();
 
-    void stop() {}
+            this.resumeChildren();
 
-    void createTicker(Signal s, string tt) {
-        synchronized(this._lock.writer) {
-            auto ti = new TickInfo;
-            ti.id = randomUUID;
-            ti.entity = this.meta.info.ptr;
-            ti.type = tt;
-            ti.group = s.group;
-            auto ticker = new Ticker(this, s, ti, (t){this._ticker.remove(t);});
-            this._ticker.put(ticker);
-            ticker.start();
-        }
-    }
-
-    void createTicker(TickMeta tm) {
-        synchronized(this._lock.writer) {
-            auto ticker = new Ticker(this, tm, (t){this._ticker.remove(t);});
-            this._ticker.put(ticker);
-            ticker.start();
-        }
-    }
-
-    /// suspends the chain
-    void suspend() {
-        if(!this._shouldStop) synchronized(this._lock.writer) {
-            this.writeDebug("{SUSPEND}", 3);
-            this._isSuspended = true;
-            foreach(t; this._ticker.dup()) {
-                t.stop();
-                if(t.coming !is null)
-                    this.meta.ticks.put(t.coming);
-            }
-        }
-    }
-
-    /// resumes the chain
-    void resume() {
-        if(!this._shouldStop) {
-            synchronized(this._lock.writer) {
-                this.writeDebug("{RESUME}", 3);
-
-                this._isSuspended = false;
-            }
-                
-            // resume ticks
             foreach(tm; this.meta.ticks.dup()) {
                 this.createTicker(tm);
                 this.meta.ticks.remove(tm);
             }
+
+            this.state = EntityState.Running;
+        } catch(Exception ex) {
+            this.damage("resuming", ex);
+            return;
+        }
+
+        try {
+            this.debugMsg(DL_INFO, "resuming inboud signals");
+            Signal s = !this._meta.inbound.empty() ? this._meta.inbound.front() : null;
+            while(s !is null) {
+                this.receive(s);
+                this._meta.inbound.remove(s);
+                s = !this._meta.inbound.empty() ? this._meta.inbound.front() : null;
+            }
+        } catch(Exception ex) {
+            this.damage("resuming inboud signals", ex);
+        }
+    }
+
+    protected void onSuspending() {
+        try {
+            this.debugMsg(DL_INFO, "suspending");
+
+            this.meta.ticks.clear();
+            
+            while(!this._ticker.empty())
+                Thread.sleep(WAITINGTIME);
+
+            this.stop();
+            
+            this.suspendChildren();
+
+            this.state = EntityState.Suspended;
+        } catch(Exception ex) {
+            this.damage("suspending", ex);
+        }
+    }
+
+    protected void onDamaged() {
+        this.debugMsg(DL_WARNING, "damaged");
+            
+        while(!this._ticker.empty())
+            Thread.sleep(WAITINGTIME);
+
+        try { /* cleanup and data rescue code here */ } catch {}
+
+        this.debugMsg(DL_WARNING, "damaged but I didn't really do anything, not implemented yet");
+    }
+
+    protected void onDisposing() {
+        try {
+            this.debugMsg(DL_INFO, "disposing");
+            this.disposeChildren();
+
+            foreach(s; this.info.signals.dup())
+                this.endListen(s);
+
+            this.state = EntityState.Disposed;
+        } catch(Exception ex) {
+            this.damage("disposing", ex);
+        }
+    }
+
+    private bool addChild(EntityMeta m) {
+        auto e = this._flow.add(m);
+        if(e !is null) {
+            e._parent = this;
+            this._children.put(e);
+            return true;
+        } else return false;
+    }
+
+    private void removeChild(Entity e) {
+        this._flow.remove(e.info);
+        this._children.remove(e);
+    }
+
+    private void createChildren() {
+        foreach(EntityMeta m; this.meta.children.dup()) {
+            this.addChild(m);
+        }
+    }
+
+    private void disposeChildren() {
+        foreach(e; this._children.dup()) {
+            this.removeChild(e);
+        } 
+    }
+
+    private void suspendChildren() {
+        foreach(e; this._children.dup()) {
+            if(e !is null)
+                e.suspend();
+        }
+    }
+
+    private void resumeChildren() {
+        foreach(e; this._children.dup()) {
+            if(e !is null)
+                e.resume();
         }
     }
     
-    bool receive(Signal s) {
-        // search for listenings and start all registered for given signal type
+    private DataList!EntityMeta snapChildren() {
+        auto l = new DataList!EntityMeta;
+        foreach(e; this._children.dup()) {
+            if(e !is null)
+                l.put(e.snap());
+        }
+        return l;
+    }
+    
+    protected void start() {}
+
+    protected void stop() {}
+
+    package void createTicker(Signal s, string tt) {
+        auto ti = new TickInfo;
+        ti.id = randomUUID;
+        ti.entity = this.meta.info.ptr;
+        ti.type = tt;
+        ti.group = s.group;
+        auto ticker = new Ticker(this, s, ti, (t){this._ticker.remove(t);});
+        this._ticker.put(ticker);
+        ticker.start();
+    }
+
+    package void createTicker(TickMeta tm) {
+        auto ticker = new Ticker(this, tm, (t){this._ticker.remove(t);});
+        this._ticker.put(ticker);
+        ticker.start();
+    }
+
+    package bool receive(Signal s) {
         auto accepted = false;
-        synchronized(this._lock.reader) {
+        try {
+            this.debugMsg(DL_INFO, "receiving");
+
+            foreach(ms; this.info.signals)
+                if(ms == s.type) {
+                    if(this.state == EntityState.Running)
+                        accepted = this.process(s);
+                    else if(s.as!Anycast is null && (
+                        this.state == EntityState.Suspending ||
+                        this.state == EntityState.Suspended ||
+                        this.state == EntityState.Resuming)) {
+                        this.debugMsg(DL_DEBUG, "enqueuing signal");
+                        /* anycasts cannot be received anymore,
+                        all other signals are stored in meta */
+                        this._entity.meta.inbound.put(s);
+                        accepted = true;
+                        break;
+                    }
+                }
+        } catch(Exception ex) {
+            this.debugMsg(DL_WARNING, "receiving", ex);
+        }
+
+        return accepted;
+    }
+    
+    package bool process(Signal s) {
+        auto accepted = false;
+        try {
+            this.debugMsg(DL_INFO, "processing");
+            
+            this.debugMsg(DL_DEBUG, "processing type listenings");
             foreach(tls; _typeListenings.keys) {
                 if(tls == s.type) {
                     this.createTicker(s, _typeListenings[tls]);
@@ -205,59 +388,117 @@ abstract class Entity : __IFqn {
                 }
             }
 
-            // if its not quiet react at ping
+            this.debugMsg(DL_DEBUG, "processing ping listenings");
             if(this.as!IQuiet is null && (s.type == fqn!Ping || s.type == fqn!UPing)) {
                 this.createTicker(s, fqn!SendPong);
                 accepted = true;
             }
 
+            this.debugMsg(DL_DEBUG, "processing dynamic listenings");
             foreach(l; this.meta.listenings) {
                 if(l.signal == s.type) {
                     this.createTicker(s, l.tick);
                 accepted = true;
                 }
             }
+        } catch(Exception ex) {
+            this.debugMsg(DL_WARNING, "processing", ex);
         }
             
         return accepted;
     }
 
-    bool send(Unicast s, EntityPtr e) {return this._hull.send(s, e);}
-    bool send(Unicast s, EntityInfo e) {return this._hull.send(s, e);}
-    bool send(Unicast s) {return this._hull.send(s);}
-    bool send(Multicast s) {return this._hull.send(s);}
-    bool send(Anycast s) {return this._hull.send(s);}
+    private void _preventIdTheft(Signal s) {
+        if(this._flow.config.preventIdTheft) {
+            static if(is(T == Entity))
+                s.source = this.obj.info.ptr;
+            else
+                s.source = null;
+        }
+    }
     
-    ListeningMeta beginListen(string s, string t) {
-        synchronized(this._lock.writer) {
-            auto l = new ListeningMeta;
-            l.signal = s;
-            l.tick = t;
+    package bool send(Unicast s, EntityPtr e) {
+        if(this._flow.config.preventIdTheft) {
+            static if(is(T == Entity))
+                s.source = this.obj.info.ptr;
+            else
+                s.source = null;
+        }
 
-            auto found = false;
-            foreach(ml; this.meta.listenings) {
-                found = l.signal == ml.signal && l.tick == ml.tick;
+        return this._flow.send(s, e);
+    }
+    package bool send(Unicast s, EntityInfo e) { return this.send(s, e.ptr); }
+
+    package bool send(Unicast s) {
+        this._preventIdTheft(s);
+        return this._flow.send(s);
+    }
+    package bool send(Multicast s) {
+        this._preventIdTheft(s);
+        return this._flow.send(s);
+    }
+    package bool send(Anycast s) {
+        this._preventIdTheft(s);
+        return this._flow.send(s);
+    }
+    
+    package ListeningMeta listen(string s, string t) {
+        this.ensureStateOr([EntityState.Initializing, EntityState.Running]);
+        auto l = new ListeningMeta;
+        l.signal = s;
+        l.tick = t;
+
+        auto found = false;
+        foreach(ml; this.meta.listenings) {
+            found = l.signal == ml.signal && l.tick == ml.tick;
+            if(found) break;
+        }
+
+        if(!found)
+        {
+            this.meta.listenings.put(l);
+
+            found = false;
+            foreach(ms; this.info.signals) {
+                found = ms == s;
                 if(found) break;
             }
 
             if(!found)
-            {
-                this.meta.listenings.put(l);
-                this._hull.beginListen(s);
-            }
-
-            return l;
+                this.info.signals.put(s);
         }
+
+        return l;
     }
     
-    void endListen(ListeningMeta l) {
-        synchronized(this._lock.writer) {
-            foreach(ml; this.meta.listenings.dup())
-                if(ml == l) {
-                    this.meta.listenings.remove(l);
-                    this._hull.endListen(l.signal);
-                    break;
-                }
-        }
+    package void shut(ListeningMeta l) {
+        this.ensureStateOr([EntityState.Disposing, EntityState.Running]);
+        foreach(ms; this.info.signals.dup())
+            if(ms == s) {
+                this.info.signals.remove(s);
+
+                foreach(ml; this.meta.listenings.dup())
+                    if(ml == l) {
+                        this.meta.listenings.remove(l);
+                        break;
+                    }
+
+                break;
+            }
+        
+    }
+
+    package EntityMeta snap() {
+        this.ensureState(EntityState.Suspended);
+
+        auto m = this.meta.dup().as!EntityMeta;
+        m.children.put(this.snapChildren());
+        return m;
+    }
+
+    package bool spawn(EntityMeta m) {
+        this.ensureState(EntityState.Running);
+
+        return this.addChild(m);
     }
 }

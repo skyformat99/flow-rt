@@ -7,199 +7,23 @@ import __flow.exception, __flow.type, __flow.data, __flow.signal;
 import __flow.entity;
 import flow.base.dev, flow.base.interfaces, flow.base.data, flow.base.signals;
 
-enum HullState {
-    None = 0,
-    Initializing,
-    Resuming,
-    Running,
-    Suspending,
-    Suspended,
-    Disposing,
-    Disposed
-}
 
 /// a hull hosting an entity
-class Hull : StateMachine!HullState {
-    private Flow _flow;
-    private Entity _entity;
-    private Hull _parent;
-    private List!Hull _children;
-
-    @property EntityInfo info() { return this._entity.meta.info; } 
-    @property string address() { return this.info.ptr.id~"@"~this.info.ptr.domain; }
-    @property FlowPtr flowptr() { return this._flow.ptr; }
-    @property bool tracing() { return this._flow.config.tracing; }
-
-    this(Flow f, EntityMeta m) {
-        this._children = new List!Hull;
-        this._flow = f;
-        
-        auto type = m.info.ptr.type;
-        m.info.ptr.flowptr = this.flowptr;
-        this._entity = Entity.create(type);
-        this._entity.initialize(m, this);
-
-        this.state = HullState.Initializing;
-    }
-
-    void suspend() {
-        this.state = HullState.Suspending;
-    } 
+class Hull : StateMachine!EntityState { 
     
-    void resume() {
-        this.state = HullState.Resuming;
-    }
 
-    void dispose() {
-        this.state = HullState.Disposing;
-    }
+    this(, EntityMeta m) {
+        
+        
 
-    override protected bool onStateChanging(HullState oldState, HullState newState) {
-        switch(newState) {
-            case HullState.Initializing:
-                return oldState == HullState.None;
-            case HullState.Resuming:
-                return oldState == HullState.Initializing || oldState == HullState.Suspended;
-            case HullState.Running:
-                return oldState == HullState.Resuming;
-            case HullState.Suspending:
-                return oldState == HullState.Running;
-            case HullState.Suspended:
-                return oldState == HullState.Suspending;
-            case HullState.Disposing:
-                return oldState == HullState.Suspended;
-            case HullState.Disposed:
-                return oldState == HullState.Disposing;
-            default:
-                return false;
-        }
-    }
-
-    override protected void onStateChanged(HullState oldState, HullState newState) {
-        switch(newState) {
-            case HullState.Initializing:
-                this.onInitializing(); break;
-            case HullState.Resuming:
-                this.onResuming(); break;
-            case HullState.Suspending:
-                this.onSuspending(); break;
-            case HullState.Disposing:
-                this.onDisposing(); break;
-            default:
-                break;
-        }
-    }
-
-    protected void onInitializing() {
-        try {
-            this.createChildren();
-        } catch(Exception ex) {
-            this._entity.dispose();
-            throw ex;
-        }
-
-        this.state = HullState.Resuming;
-    }
-
-    protected void onResuming() {
-        this.resumeChildren();
-        this._entity.resume();
-        this.state = HullState.Running;
-
-        // resume inboud signals
-        Signal s = !this._entity.meta.inbound.empty() ? this._entity.meta.inbound.front() : null;
-        while(s !is null) {
-            this.receive(s);
-            this._entity.meta.inbound.remove(s);
-            s = !this._entity.meta.inbound.empty() ? this._entity.meta.inbound.front() : null;
-        }
-    }
-
-    protected void onSuspending() {
-        this._entity.suspend();
-        this.suspendChildren();
-        this.state = HullState.Suspended;
-    }
-
-    protected void onDisposing() {
-        try {
-            this.disposeChildren();
-            this._entity.dispose();
-            if(this._parent !is null)
-                this._parent._children.remove(this);
-            this.state = HullState.Disposed;
-        } catch(Exception ex) {
-            if(this.state != HullState.Disposed)
-                this.state = HullState.Disposed;
-
-            throw ex;
-        }
-    }
-
-    private void _preventIdTheft(Signal s) {
-        if(this._flow.config.preventIdTheft) {
-            static if(is(T == Entity))
-                s.source = this.obj.info.ptr;
-            else
-                s.source = null;
-        }
     }
 
     private void writeDebug(string msg, uint level) {
         debugMsg("hull("~this.address~");"~msg, level);
     }
 
-    private void createChildren() {
-        foreach(EntityMeta m; this._entity.meta.children) {
-            this.addChild(m);
-        }
-    }
-
-    private void disposeChildren() {
-        foreach(h; this._children.dup()) {
-            this.removeChild(h);
-        } 
-    }
-
-    private void suspendChildren() {
-        foreach(h; this._children) {
-            if(h !is null)
-                h.suspend();
-        }
-    }
-
-    private bool addChild(EntityMeta m) {
-        auto h = this._flow.addInternal(m);
-        if(h !is null) {
-            h._parent = this;
-            this._children.put(h);
-            return true;
-        } else return false;
-    }
-
-    private void removeChild(Hull h) {
-        this._flow.removeInternal(h.info);
-        this._children.remove(h);
-    }
-
-    private void resumeChildren() {
-        foreach(h; this._children) {
-            if(h !is null)
-                h.resume();
-        }
-    }
-    
-    private DataList!EntityMeta snapChildren() {
-        auto l = new DataList!EntityMeta;
-        foreach(h; this._children) {
-            if(h !is null)
-                l.put(h.snap());
-        }
-        return l;
-    }
-
     EntityMeta snap() {
-        this.ensureState(HullState.Suspended);
+        this.ensureState(EntityState.Suspended);
 
         auto m = this._entity.meta.clone.as!EntityMeta;
         m.children.put(this.snapChildren());
@@ -207,13 +31,13 @@ class Hull : StateMachine!HullState {
     }
 
     bool spawn(EntityMeta m) {
-        this.ensureState(HullState.Running);
+        this.ensureState(EntityState.Running);
 
         return this.addChild(m);
     }
 
     EntityMeta kill(EntityInfo i) {
-        this.ensureState(HullState.Running);
+        this.ensureState(EntityState.Running);
         
         foreach(h; this._children)
             if(h.info == i) {
@@ -224,78 +48,6 @@ class Hull : StateMachine!HullState {
             }
         
         return null;
-    }
-    
-    void beginListen(string s) {
-        this.ensureStateOr([HullState.Initializing, HullState.Running]);
-
-        auto found = false;
-        foreach(ms; this.info.signals) {
-            found = ms == s;
-            if(found) break;
-        }
-
-        if(!found)
-            this.info.signals.put(s);
-    }
-    
-    void endListen(string s) {
-        this.ensureStateOr([HullState.Initializing, HullState.Running]);
-
-        foreach(ms; this.info.signals.dup())
-            if(ms == s) {
-                this.info.signals.remove(s);
-                break;
-            }
-    }
-    
-    bool receive(Signal s) {
-        // search for listenings and start all registered for given signal type
-        auto accepted = false;
-        foreach(ms; this.info.signals)
-            if(ms == s.type) {
-                if(this.state == HullState.Running) {
-                    this.writeDebug("{RECEIVE} signal("~s.type~", "~s.id.toString~")", 2);                        
-                    accepted = this._entity.receive(s);
-                }
-                else if(s.as!Anycast is null && (
-                    this.state == HullState.Suspending ||
-                    this.state == HullState.Suspended ||
-                    this.state == HullState.Resuming)) {
-                    /* anycasts cannot be received anymore,
-                    all other signals are stored in meta */
-                    this._entity.meta.inbound.put(s);
-                    accepted = true;
-                    break;
-                }
-            }
-            
-        return accepted;
-    }
-    
-    bool send(Unicast s, EntityPtr e) {
-        if(this._flow.config.preventIdTheft) {
-            static if(is(T == Entity))
-                s.source = this.obj.info.ptr;
-            else
-                s.source = null;
-        }
-
-        return this._flow.send(s, e);
-    }
-    bool send(Unicast s, EntityInfo e) { return this.send(s, e.ptr); }
-
-    bool send(Unicast s) {
-        this._preventIdTheft(s);
-        return this._flow.send(s);
-    }
-    bool send(Multicast s) {
-        this._preventIdTheft(s);
-        return this._flow.send(s);
-    }
-    bool send(Anycast s) {
-        this._preventIdTheft(s);
-        return this._flow.send(s);
     }
 }
 
@@ -378,7 +130,7 @@ class Flow
                 throw new UnsupportedObjectTypeException(m.info.ptr.type);
                 
                 try {
-                    h = new Hull(this, m);
+                    h = new Hull(this, m);//this._entity = Entity.create(type);
                     this.writeDebug("{ADD} entity("~h.info.ptr.type~"|"~h.address~")", 2);
                     this._local[h.address] = h;
                 } catch(Exception exc) {

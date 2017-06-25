@@ -1,4 +1,4 @@
-module __flow.exception;
+module __flow.exception, __flow.data;
 
 /* exception handling example
 try {
@@ -33,17 +33,40 @@ Throwable
         ptressException, HostException, SocketException, ... (std.socket)
 */
 
-class NotImplementedError : Error
-{
+mixin template TError() {
+    @property string __fqn() {return fullyQualifiedName!(typeof(this));}
+
+    this() { super(this.__fqn); }
+}
+
+mixin template TException(T = void) if(is(T == void) || is(T : Data)) {
+    @property string __fqn() {return fullyQualifiedName!(typeof(this));}
+
+    static if(!is(T == void))
+        T data;
+    else
+        Data data;
+
+    this() { super(this.__fqn); }
+}
+
+class FlowError : Error, __IFqn {
+	abstract @property string __fqn();
+}
+
+class FlowException : Error, __IFqn {
+	abstract @property string __fqn();
+}
+
+class NotImplementedError : FlowError {
     this() { super("");}
 }
 
-class ParameterException : Exception
-{
+class ParameterException : FlowException {
     this(string msg) { super(msg);}
 }
 
-class UnsupportedObjectTypeException : Exception
-{
+class UnsupportedObjectTypeException : Exception, __IFqn {
+	abstract @property string __fqn();
     this(string type = "") { super(type);}
 }

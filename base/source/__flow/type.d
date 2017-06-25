@@ -201,7 +201,7 @@ mixin template TCollectionOfList(T) {
     /** clears whole collection */
     void clear() {
         synchronized (this._lock.writer)
-            this._arr = null;
+            this._arr.clear();
     }
 
     /** Returns: length of collection */
