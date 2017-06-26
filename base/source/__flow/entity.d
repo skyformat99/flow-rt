@@ -292,6 +292,9 @@ abstract class Entity : StateMachine!EntityState, __IFqn {
                 this.damageMeta(ex, "snapping children failed");
             }
             
+            if(!this._meta.damages.empty)
+                this.damage("meta data is damaged");
+
             return m;
         }
     }
