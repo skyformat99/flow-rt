@@ -1,6 +1,6 @@
 module flow.base.ticks;
 
-import __flow.tick, __flow.entity, __flow.type;
+import __flow.ticker, __flow.entity, __flow.type;
 import flow.base.signals, flow.base.interfaces, flow.base.data;
 
 class SendPong : Tick, IStealth

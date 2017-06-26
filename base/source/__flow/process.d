@@ -3,53 +3,8 @@ module __flow.process;
 import core.thread, core.sync.rwmutex, std.uuid;
 import std.range.interfaces, std.string;
 
-import __flow.exception, __flow.type, __flow.data, __flow.signal;
-import __flow.entity;
+import __flow.exception, __flow.type, __flow.data, __flow.signal, __flow.entity;
 import flow.base.dev, flow.base.interfaces, flow.base.data, flow.base.signals;
-
-
-/// a hull hosting an entity
-class Hull : StateMachine!EntityState { 
-    
-
-    this(, EntityMeta m) {
-        
-        
-
-    }
-
-    private void writeDebug(string msg, uint level) {
-        debugMsg("hull("~this.address~");"~msg, level);
-    }
-
-    EntityMeta snap() {
-        this.ensureState(EntityState.Suspended);
-
-        auto m = this._entity.meta.clone.as!EntityMeta;
-        m.children.put(this.snapChildren());
-        return m;
-    }
-
-    bool spawn(EntityMeta m) {
-        this.ensureState(EntityState.Running);
-
-        return this.addChild(m);
-    }
-
-    EntityMeta kill(EntityInfo i) {
-        this.ensureState(EntityState.Running);
-        
-        foreach(h; this._children)
-            if(h.info == i) {
-                h.suspend();
-                auto m = h.snap();
-                this.removeChild(h);
-                return m;
-            }
-        
-        return null;
-    }
-}
 
 /// a flow process able to host the local swarm
 class Flow
@@ -57,12 +12,12 @@ class Flow
     private bool _shouldStop;
     private bool _isStopped;
     private ReadWriteMutex _lock;
-    private Hull[string] _local;
+    private Entity[string] _local;
 
-    @property FlowPtr ptr() { return this.config.ptr; }
+    @property FlowPtr ptr() { return this.config.ptr.dup(); }
 
     private FlowConfig _config;
-    @property FlowConfig config(){ return this._config; }
+    @property FlowConfig config(){ return this._config.dup(); }
 
     this(FlowConfig c = null) {
         if(c is null) { // if no config is passed use defaults
@@ -72,7 +27,7 @@ class Flow
             c.preventIdTheft = true;
         }
 
-        this._lock = new ReadWriteMutex;
+        this._lock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
         this._config = c;
     }
 
@@ -88,19 +43,19 @@ class Flow
             this.writeDebug("{DESTROY}", 2);            
 
             synchronized(this._lock.writer) {
-                auto hulls = new List!Hull;
-                hulls.put(this._local.values);
-                // eleminate non top hulls
-                foreach(h; hulls.dup())
-                    foreach(ph; hulls)
-                        if(ph._children.contains(ph)) {
-                            hulls.remove(ph);
+                auto entities = new List!Entity;
+                entities.put(this._local.values);
+                // eleminate non top entities
+                foreach(e; entities.dup())
+                    foreach(pe; entities)
+                        if(e._children.contains(pe)) {
+                            entities.remove(pe);
                             break;
                         }
 
-                // dispose top hulls
-                foreach(h; hulls) {
-                    m.put(this.remove(h.info));
+                // dispose top entities
+                foreach(e; entities) {
+                    m.put(this.remove(e.info));
                 }
             }
 
@@ -114,14 +69,14 @@ class Flow
         debugMsg("process();"~msg, level);
     }
 
-    Hull add(EntityMeta m) {
+    Entity add(EntityMeta m) {
         synchronized(this._lock.writer) {
             return this.addInternal(m);
         }
     }
 
-    private Hull addInternal(EntityMeta m) {
-        Hull h;
+    package Entity addInternal(EntityMeta m) {
+        Entity h;
         if(!this._shouldStop) {
             if(m is null)
                 throw new ParameterException("entity meta can't be null");
@@ -130,7 +85,7 @@ class Flow
                 throw new UnsupportedObjectTypeException(m.info.ptr.type);
                 
                 try {
-                    h = new Hull(this, m);//this._entity = Entity.create(type);
+                    h = new Entity(this, m);//this._entity = Entity.create(type);
                     this.writeDebug("{ADD} entity("~h.info.ptr.type~"|"~h.address~")", 2);
                     this._local[h.address] = h;
                 } catch(Exception exc) {
@@ -151,7 +106,7 @@ class Flow
         }
     }
 
-    private EntityMeta removeInternal(EntityInfo i) {
+    package EntityMeta removeInternal(EntityInfo i) {
         EntityMeta m;
         if(!this._shouldStop) {
             string addr = i.ptr.id~"@"~i.ptr.domain;        
@@ -167,7 +122,7 @@ class Flow
         return m;
     }
 
-    Hull get(EntityInfo i) {
+    Entity get(EntityInfo i) {
         if(!this._shouldStop)
             synchronized(this._lock.reader)
                 return this._local[i.ptr.id~"@"~i.ptr.domain];
@@ -291,7 +246,7 @@ class Flow
             auto addr = e.id~"@"~e.domain;
             this.writeDebug("{RECEIVE} signal("~s.type~") FOR entity("~addr~")", 3);
 
-            Hull h;
+            Entity h;
             synchronized(this._lock.reader)
                 if(addr in this._local)
                     h = this._local[addr];

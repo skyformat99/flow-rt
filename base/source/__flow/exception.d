@@ -1,4 +1,7 @@
-module __flow.exception, __flow.data;
+module __flow.exception;
+import __flow.data, __flow.type;
+
+import std.traits;
 
 /* exception handling example
 try {
@@ -34,39 +37,50 @@ Throwable
 */
 
 mixin template TError() {
-    @property string __fqn() {return fullyQualifiedName!(typeof(this));}
+    override @property string __fqn() {return fullyQualifiedName!(typeof(this));}
 
-    this() { super(this.__fqn); }
+    this(string msg = string.init) {
+        super(msg != string.init ? msg : this.__fqn);
+    }
 }
 
-mixin template TException(T = void) if(is(T == void) || is(T : Data)) {
-    @property string __fqn() {return fullyQualifiedName!(typeof(this));}
+mixin template TException() {
+    override @property string __fqn() {return fullyQualifiedName!(typeof(this));}
 
-    static if(!is(T == void))
-        T data;
-    else
-        Data data;
+    List!Exception inner;
 
-    this() { super(this.__fqn); }
+    this(string msg = string.init, Data d = null, List!Exception i = null) {
+        super(msg != string.init ? msg : this.__fqn);
+        this.data = d;
+        this.inner = i;
+    }
 }
 
 class FlowError : Error, __IFqn {
 	abstract @property string __fqn();
+
+    this(string msg) {super(msg);}
 }
 
 class FlowException : Error, __IFqn {
 	abstract @property string __fqn();
+    Data data;
+
+    this(string msg) {super(msg);}
 }
 
 class NotImplementedError : FlowError {
-    this() { super("");}
+    mixin TError;
 }
 
 class ParameterException : FlowException {
-    this(string msg) { super(msg);}
+    mixin TException;
 }
 
-class UnsupportedObjectTypeException : Exception, __IFqn {
-	abstract @property string __fqn();
-    this(string type = "") { super(type);}
+class UnsupportedObjectTypeException : FlowException {
+    mixin TException;
+}
+
+class DataDamageException : FlowException {
+    mixin TException;
 }

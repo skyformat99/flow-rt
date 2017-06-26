@@ -1,10 +1,9 @@
 module __flow.type;
 
-import core.exception;
+import core.exception, core.sync.rwmutex;
 import std.traits, std.range.interfaces, std.range.primitives, std.uuid, std.datetime;
 
-import __flow.event, __flow.data;
-import flow.base.interfaces;
+import __flow.event, __flow.data, __flow.exception;
 
 version(TODO) {
     // TODO implement
@@ -200,8 +199,9 @@ mixin template TCollectionOfList(T) {
 
     /** clears whole collection */
     void clear() {
+        T[] empty;
         synchronized (this._lock.writer)
-            this._arr.clear();
+            this._arr = empty;
     }
 
     /** Returns: length of collection */
@@ -225,10 +225,8 @@ mixin template TCollectionOfList(T) {
 
 /// generates main code of list
 mixin template TMainOfList(LT, T) {
-    static import core.sync.rwmutex;
-
     private T[] _arr;
-    private core.sync.rwmutex.ReadWriteMutex _lock;
+    private ReadWriteMutex _lock;
 
     /// constructor taking an array of initial elements
     this(T[] arr) {
@@ -239,7 +237,7 @@ mixin template TMainOfList(LT, T) {
 
     /// constructor's preparing synchronization and event handling
     this() {
-        this._lock = new core.sync.rwmutex.ReadWriteMutex(core.sync.rwmutex.ReadWriteMutex.Policy.PREFER_WRITERS);
+        this._lock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
         this._collectionChanging = new ECollectionChanging!T;
         this._collectionChanged = new ECollectionChanged!T;
     }
@@ -419,8 +417,8 @@ ICollection!T dRemove(T)(ICollection!T collection, T e) {
 }
 unittest{/*TODO*/}
 
-class InvalidStateException : Exception {
-    this() { super("");}
+class InvalidStateException : FlowException {
+    mixin TException;
 }
 
 class StateMachine(T) if (isScalarType!T) {
@@ -430,6 +428,8 @@ class StateMachine(T) if (isScalarType!T) {
 
     private ReadWriteMutex _lock;
     private T _state;
+
+    protected @property ReadWriteMutex lock() {return this._lock;}
 
     @property T state() {
         synchronized(this._lock.reader) return this._state;
@@ -454,7 +454,7 @@ class StateMachine(T) if (isScalarType!T) {
     }
 
     protected this() {
-        this._lock = new ReadWriteMutex;
+        this._lock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
     }
 
     protected void ensureState(T requiredState) {

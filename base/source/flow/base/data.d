@@ -77,9 +77,18 @@ class EntityInfo : Data
     mixin TList!(string, "signals");
 }
 
+class EntityMetaDamage : Data {
+    mixin TData;
+
+    mixin TField!(string, "msg");
+    mixin TField!(Data, "recovery");
+}
+
 class EntityMeta : Data
 {
     mixin TData;
+
+    mixin TList!(EntityMetaDamage, "damages");
 
     mixin TField!(EntityInfo, "info");
     mixin TList!(EntityMeta, "children");

@@ -1,25 +1,19 @@
-module __flow.tick;
+module __flow.ticker;
 
 import core.thread, core.sync.rwmutex;
 import std.uuid, std.datetime;
 
 import __flow.data, __flow.type, __flow.entity, __flow.signal;
-import flow.base.dev, flow.base.interfaces, flow.base.data, flow.base.signals;
+import flow.base.dev, flow.base.data, flow.base.signals, flow.base.interfaces;
 
 /// ticker executing chains of ticks
 class Ticker : Thread
 {
     private void delegate(Ticker) _exitHandler;
-    private bool _isStopped;
-    private bool _shouldStop;
-    private ReadWriteMutex _lock;
     private ulong _seq;
 
-    private bool _isSuspended = false;
-    @property bool isSuspended() {return this._isSuspended;}
-
     private Entity _entity;
-    @property EntityInfo entity() {return this._entity.meta.info;}
+    @property EntityInfo entity() {return this._entity.info;}
 
     private TickMeta _coming;
     @property TickMeta coming() {return this._coming;}
@@ -27,10 +21,12 @@ class Ticker : Thread
     private TickMeta _actual;
     @property TickMeta actual() {return this._actual;}
 
+    @property Data context() {return this._entity.context;}
+
     this(Entity e, Signal signal, TickInfo initTick, void delegate(Ticker) exitHandler) {
         this._exitHandler = exitHandler;
         
-        this._lock = new ReadWriteMutex;
+        this._lock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
         this._entity = e;
 
         this.writeDebug("{NEXT} tick("~initTick.type~"|"~initTick.id.toString()~")", 4);
@@ -44,7 +40,7 @@ class Ticker : Thread
     this(Entity e, TickMeta initTick, void delegate(Ticker) exitHandler) {
         this._exitHandler = exitHandler;
         
-        this._lock = new ReadWriteMutex;
+        this._lock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
         this._entity = e;
 
         this._coming = initTick;
@@ -70,8 +66,8 @@ class Ticker : Thread
     }
 
     private void writeDebug(string msg, uint level) {
-        auto address = this._entity.meta.info.ptr.id~"@"~this._entity.meta.info.ptr.type;
-        debugMsg("ticker("~address~");"~msg, level);
+        auto address = this._entity.address;
+        //debugMsg("ticker("~address~");"~msg, level);
     }
 
     private TickMeta createTick(TickInfo i, Data d = null) {
@@ -99,7 +95,7 @@ class Ticker : Thread
     void fork(TickMeta m) {
         if(!this._shouldStop && m !is null) synchronized(this._lock.reader) {
             this.writeDebug("{FORK} tick("~m.info.type~"|"~m.info.id.toString()~")", 4);
-            this._entity.createTicker(m);
+            this._entity.tick(m);
         }
     }
 
@@ -118,17 +114,13 @@ class Ticker : Thread
     void repeat() {
         this._coming = this.actual;
     }
-
-    void repeatFork() {
-        this.fork(this.actual);
-    }
     
-    ListeningMeta beginListen(string s, string t) {
-        return this._entity.beginListen(s, t);
+    ListeningMeta listen(string s, string t) {
+        return this._entity.listen(s, t);
     }
 
-    void endListen(ListeningMeta l) {
-        this._entity.endListen(l);
+    void shut(ListeningMeta l) {
+        this._entity.shut(l);
     }
 
     private void loop() {
@@ -193,7 +185,7 @@ class Ticker : Thread
 }
 
 mixin template TTick() {
-    import __flow.type, __flow.tick;
+    import __flow.type, __flow.ticker;
     static import flow.base.data;
 
     override @property string __fqn() {return fqn!(typeof(this));}
@@ -242,7 +234,7 @@ abstract class Tick : __IFqn {
     @property Signal signal() {return this._meta.signal;}
     @property TickInfo previous() {return this._meta.previous.info;}
     @property Data data() {return this._meta.data;}
-    @property Data context() {return this._ticker._entity.meta.context;}
+    @property Data context() {return this._ticker.context;}
 
     void initialize(TickMeta m, Ticker t) {
         this._meta = m;
@@ -330,9 +322,8 @@ abstract class Tick : __IFqn {
     }
 
     void repeat() {this._ticker.repeat();}
-    void repeatFork() {this._ticker.repeatFork();}
 
     void writeDebug(string msg, uint level) {
-        debugMsg("tick("~this._ticker.entity.ptr.type~", "~this._ticker.entity.ptr.id~");"~msg, level);
+        //debugMsg("tick("~this._ticker.entity.ptr.type~", "~this._ticker.entity.ptr.id~");"~msg, level);
     }
 }

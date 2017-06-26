@@ -4,7 +4,6 @@ import std.traits, std.uuid, std.meta, std.datetime, std.range.primitives;
 
 import __flow.lib.vibe.data.json;
 import __flow.type;
-import flow.base.interfaces;
 
 /// an error occured in data reflection layer (error stops execution of app)
 class DataingError : Error
@@ -177,7 +176,6 @@ mixin template TData()
 	import std.traits, std.array, std.conv;
 	import __flow.lib.vibe.data.serialization, __flow.lib.vibe.data.json;
 	import __flow.event, __flow.type, __flow.data;
-	import flow.base.interfaces;
 
 	shared static PropertyInfo[string] DataProperties;
 	override @property shared(PropertyInfo[string]) dataProperties(){return DataProperties;}
@@ -529,8 +527,7 @@ mixin template TField(T, string name)
 	import core.sync.rwmutex;
 	import std.traits, std.array, std.conv;
 	import __flow.lib.vibe.data.json, __flow.lib.vibe.data.serialization;
-	import __flow.event, __flow.type, __flow.data;
-	
+	import __flow.event, __flow.type, __flow.data;	
 
 	enum isData = is(T : Data);
 	enum p = PropertyMeta(
@@ -567,7 +564,6 @@ mixin template TList(T, string name)
 	import std.traits, std.array, std.conv;
 	import __flow.lib.vibe.data.json, __flow.lib.vibe.data.serialization;
 	import __flow.event, __flow.type, __flow.data;
-	import flow.base.interfaces;
 
 	enum isData = is(T : Data);
 	enum p = PropertyMeta(
