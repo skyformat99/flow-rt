@@ -3,7 +3,7 @@ module flow.base.blocks;
 import std.traits, std.uuid, std.datetime, std.range.primitives;
 
 static import __flow.type;
-import __flow.tick, __flow.data, __flow.entity, __flow.signal;
+import __flow.ticker, __flow.data, __flow.entity, __flow.signal;
 import flow.base.interfaces, flow.base.data;
 
 // maybe an idea
@@ -22,8 +22,8 @@ alias Data = __flow.data.Data;
 static import __flow.signal;
 alias signal = TSignal;
 
-static import __flow.tick;
-alias Tick = __flow.tick.Tick;
+static import __flow.ticker;
+alias Tick = __flow.ticker.Tick;
 alias tick = TTick;
 
 // templates for entity generation
