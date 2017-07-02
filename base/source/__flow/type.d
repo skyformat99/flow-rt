@@ -472,7 +472,7 @@ template fqn(T) {
 
 /// enables a type to be aware of its fully qualified name
 interface __IFqn {
-    @property string __fqn();
+    public @property string __fqn();
 }
 
 /// gets the fully qualified name of an element's type implementing __IFqn

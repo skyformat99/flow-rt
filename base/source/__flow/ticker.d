@@ -13,22 +13,18 @@ class Ticker : Thread
     private ulong _seq;
 
     private Entity _entity;
-    @property EntityInfo entity() {return this._entity.info;}
-
-    private TickMeta _coming;
-    @property TickMeta coming() {return this._coming;}
-
     private TickMeta _actual;
-    @property TickMeta actual() {return this._actual;}
+    private TickMeta _coming;
 
-    @property Data context() {return this._entity.context;}
+    public @property TickMeta actual() {return this._actual;}
+    public @property TickMeta coming() {return this._coming;}
 
     this(Entity e, Signal signal, TickInfo initTick, void delegate(Ticker) exitHandler) {
         this._exitHandler = exitHandler;
         
         this._entity = e;
 
-        this.entity.debugMsg(DL.Debug, "enqueuing tick", initTick);
+        this._entity.msg(DL.Debug, initTick, "enqueuing tick");
         this._coming = this.createTick(initTick);
         this.coming.trigger = signal.id;
         this.coming.signal = signal;
@@ -41,27 +37,10 @@ class Ticker : Thread
         
         this._entity = e;
 
-        this.entity.debugMsg(DL.Debug, "enqueuing tick", initTick);
+        this._entity.msg(DL.Debug, initTick, "enqueuing tick");
         this._coming = initTick;
 
         super(&this.loop);
-    }
-
-    ~this() {
-        this.stop();
-    }
-    
-    void start() {
-        super.start();
-    }
-
-    void stop() {
-        if(!this._shouldStop) {
-            this._shouldStop = true;
-
-            while(!this._isStopped)
-                Thread.sleep(WAITINGTIME);
-        }
     }
 
     private TickMeta createTick(TickInfo i, Data d = null) {
@@ -78,22 +57,22 @@ class Ticker : Thread
     }
 
     /// creates a new ticker initialized with given tick
-    void fork(TickInfo i, Data d = null) {
-            auto m = this.createTick(i, d);
-            m.trigger = this.actual.info.id;
-            m.signal = this.actual.signal;
-            this.fork(m);
+    public void fork(TickInfo i, Data d = null) {
+        auto m = this.createTick(i, d);
+        m.trigger = this.actual.info.id;
+        m.signal = this.actual.signal;
+        this.fork(m);
     }
 
     /// creates a new ticker initialized with given tick
-    void fork(TickMeta m) {
-        this.entity.debugMsg(DL.Debug, "forking tick", m);
+    public void fork(TickMeta m) {
+        this._entity.msg(DL.Debug, m, "forking tick");
         this._entity.tick(m);
     }
 
     /// enques next tick in the chain
-    void next(TickInfo i, Data d = null) {
-        this.entity.debugMsg(DL.Debug, "enqueuing tick", i);
+    public void next(TickInfo i, Data d = null) {
+        this._entity.msg(DL.Debug, i, "enqueuing tick");
         auto m = this.createTick(i, d);
         m.trigger = this.actual.info.id;
         m.signal = this.actual.signal;
@@ -101,20 +80,20 @@ class Ticker : Thread
         this._coming = m;
     }
 
-    void repeat() {
+    public void repeat() {
         this._coming = this.actual;
     }
     
-    ListeningMeta listen(string s, string t) {
+    public ListeningMeta listen(string s, string t) {
         return this._entity.listen(s, t);
     }
 
-    void shut(ListeningMeta l) {
+    public void shut(ListeningMeta l) {
         this._entity.shut(l);
     }
 
     private void loop() {
-        this.entity.debugMsg(DL.Debug, "ticker starts");
+        this._entity.msg(DL.Debug, "ticker starts");
 
         while(!this._entity.state == EntityState.Running) {
             this._actual = this.coming;
@@ -123,7 +102,7 @@ class Ticker : Thread
             if(Tick.canCreate(this.actual.info.type)) {
                 auto t = Tick.create(this.actual, this);
                 
-                if(this._entity.tracing &&
+                if(this._entity.flow.config.tracing &&
                     this._entity.as!IStealth is null &&
                     t.as!IStealth is null) {
                     auto td = new TraceTickData;
@@ -135,31 +114,31 @@ class Ticker : Thread
                     ts.data.id = this.actual.info.id;
                     ts.data.trigger = this.actual.trigger;
                     ts.data.time = Clock.currTime.toUTC();
-                    ts.data.entity = this.entity.ptr;
+                    ts.data.entity = this._entity.meta.info.ptr;
                     ts.data.tick = this.actual.info.type;
                     this._entity.send(ts);
                 }
 
-                synchronized(t.as!ISync !is null ? this._entity.lock.writer : this._entity.lock.reader) {
+                synchronized(t.as!ISync !is null ? this._entity.sync.writer : this._entity.sync.reader) {
                     try {
-                        this.entity.debugMsg(DL.Debug, "executing tick", t);
+                        this._entity.msg(DL.Debug, this.actual, "executing tick");
                         t.run();
-                        this.entity.debugMsg(DL.Debug, "finished tick", t);
+                        this._entity.msg(DL.Debug, this.actual, "finished tick");
                     }
                     catch(Exception ex) {
-                        this.entity.debugMsg(DL.Info, "tick failed", ex);
+                        this._entity.msg(DL.Info, ex, "tick failed");
                         try {
-                            this.entity.debugMsg(DL.Info, "handling tick error", t);
-                            t.error(exc);
-                            this.entity.debugMsg(DL.Info, "tick error handled", t);
+                            this._entity.msg(DL.Info, this.actual, "handling tick error");
+                            t.error(ex);
+                            this._entity.msg(DL.Info, this.actual, "tick error handled");
                         }
                         catch(Exception ex2) {
-                            this.entity.debugMsg(DL.Warning, "handling tick error failed", ex2);
+                            this._entity.msg(DL.Warning, ex2, "handling tick error failed");
                         }
                     }
                 }
                 
-                if(this._entity.tracing &&
+                if(this._entity.flow.config.tracing &&
                     this._entity.as!IStealth is null &&
                     t.as!IStealth is null) {
                     auto td = new TraceTickData;
@@ -171,7 +150,7 @@ class Ticker : Thread
                     ts.data.id = this.actual.info.id;
                     ts.data.trigger = this.actual.trigger;
                     ts.data.time = Clock.currTime.toUTC();
-                    ts.data.entity = this.entity.ptr;
+                    ts.data.entity = this._entity.meta.info.ptr;
                     ts.data.tick = this.actual.info.type;
                     this._entity.send(ts);
                 }
@@ -179,9 +158,8 @@ class Ticker : Thread
             else break;
         }
 
-        this._isStopped = true;
         if(this._exitHandler !is null) this._exitHandler(this);
-        this.entity.debugMsg(DL.Debug, "ticker ends");
+        this._entity.msg(DL.Debug, "ticker ends");
     }
 }
 
@@ -192,8 +170,7 @@ mixin template TTick() {
     override @property string __fqn() {return fqn!(typeof(this));}
 
     static Tick create(flow.base.data.TickMeta m, Ticker t) {
-        auto tick = new typeof(this)();
-        tick.initialize(m, t);
+        auto tick = new typeof(this)(m, t);
         return tick;
     }
 
@@ -201,21 +178,21 @@ mixin template TTick() {
         Tick.register(fqn!(typeof(this)), &create);
     }
 
-    this() {}
+    this(TickMeta m, Ticker t) {super(m, t);}
 }
 
 abstract class Tick : __IFqn {
 	private shared static Tick function(TickMeta, Ticker)[string] _reg;
 
-	static void register(string tickType, Tick function(TickMeta, Ticker) creator) {
+	public static void register(string tickType, Tick function(TickMeta, Ticker) creator) {
 		_reg[tickType] = creator;
 	}
 
-	static bool canCreate(string tickType) {
+	package static bool canCreate(string tickType) {
 		return tickType in _reg ? true : false;
 	}
 
-	static Tick create(TickMeta m, Ticker t) {
+	package static Tick create(TickMeta m, Ticker t) {
 		if(m.info.type in _reg) {
             auto tick = _reg[m.info.type](m, t);
 			return tick;
@@ -224,35 +201,35 @@ abstract class Tick : __IFqn {
 			return null;
 	}
     
-	abstract @property string __fqn();
+	public abstract @property string __fqn();
 
     private TickMeta _meta;
     private Ticker _ticker;
 
-    @property EntityInfo entity() {return this._ticker.entity;}
-    @property TickInfo info() {return this._meta.info;}
-    @property UUID trigger() {return this._meta.trigger;}
-    @property Signal signal() {return this._meta.signal;}
-    @property TickInfo previous() {return this._meta.previous.info;}
-    @property Data data() {return this._meta.data;}
-    @property Data context() {return this._ticker.context;}
+    protected @property EntityInfo entity() {return this._ticker._entity.meta.info;}
+    protected @property TickInfo info() {return this._meta.info;}
+    protected @property UUID trigger() {return this._meta.trigger;}
+    protected @property Signal signal() {return this._meta.signal;}
+    protected @property TickInfo previous() {return this._meta.previous.info;}
+    protected @property Data context() {return this._ticker._entity.meta.context;}
+    protected @property Data data() {return this._meta.data;}
 
-    void initialize(TickMeta m, Ticker t) {
+    protected this(TickMeta m, Ticker t) {
         this._meta = m;
         this._ticker = t;
     }
 
-    abstract void run();
-    void error(Exception exc) {}
+    public abstract void run();
+    public void error(Exception exc) {}
 
     /// sends a unicast signal to a specific receiver
-    bool send(Unicast s, EntityPtr e) {
+    protected bool send(Unicast s, EntityPtr e) {
         s.destination = e;
         return this.send(s);
     }
 
     /// answers a signal into the swarm
-    bool answer(Signal s) {
+    protected bool answer(Signal s) {
         if(s.as!Unicast !is null)
             s.as!Unicast.destination = this._meta.signal.source;
 
@@ -260,20 +237,18 @@ abstract class Tick : __IFqn {
     }
 
     /// sends a signal into the swarm
-    bool send(Signal s) {
+    protected bool send(Signal s) {
         auto success = false;
 
         s.id = randomUUID;
         if(s.group == UUID.init) // only set group if its not already set
             s.group = this._meta.info.group;
-        s.source = this._ticker.entity.ptr;
+        s.source = this._ticker._entity.meta.info.ptr;
         s.type = s.dataType;
-
-        this.writeDebug("{SEND} signal("~s.type~")", 4);
 
         if(s.as!Multicast !is null
             && s.as!Multicast.domain == string.init)
-            s.as!Multicast.domain = this.entity.ptr.domain;
+            s.as!Multicast.domain = this._ticker._entity.meta.info.ptr.domain;
 
         if(s.as!Unicast !is null)
             success = this._ticker._entity.send(s.as!Unicast);
@@ -282,12 +257,12 @@ abstract class Tick : __IFqn {
         else if(s.as!Anycast !is null)
             success = this._ticker._entity.send(s.as!Anycast);
 
-        if(this._ticker._entity.tracing &&
+        if(this._ticker._entity.flow.config.tracing &&
             s.as!IStealth is null) {
             auto td = new TraceSignalData;
             auto ts = new TraceSend;
             ts.type = ts.dataType;
-            ts.source = this._ticker.entity.ptr;
+            ts.source = this._ticker._entity.meta.info.ptr;
             ts.data = td;
             ts.data.group = s.group;
             ts.data.success = success;
@@ -306,7 +281,7 @@ abstract class Tick : __IFqn {
         return success;
     }
 
-    void fork(string t, Data d = null) {
+    protected void fork(string t, Data d = null) {
         auto i = new TickInfo;
         i.id = randomUUID;
         i.type = t;
@@ -314,7 +289,7 @@ abstract class Tick : __IFqn {
         this._ticker.fork(i, d);
     }
 
-    void next(string t, Data d = null) {
+    protected void next(string t, Data d = null) {
         auto i = new TickInfo;
         i.id = randomUUID;
         i.type = t;
@@ -322,9 +297,17 @@ abstract class Tick : __IFqn {
         this._ticker.next(i, d);
     }
 
-    void repeat() {this._ticker.repeat();}
+    protected void repeat() {this._ticker.repeat();}
 
-    void writeDebug(string msg, uint level) {
-        //debugMsg("tick("~this._ticker.entity.ptr.type~", "~this._ticker.entity.ptr.id~");"~msg, level);
+    protected void msg(DL level, string msg) {
+        this._ticker._entity.msg(level, msg);
+    }
+    
+    protected void msg(DL level, Exception ex, string msg = string.init) {
+        this._ticker._entity.msg(level, ex, msg);
+    }
+
+    protected void msg(DL level, Data d, string msg = string.init) {
+        this._ticker._entity.msg(level, d, msg);
     }
 }

@@ -44,6 +44,8 @@ mixin template TEntity() {
             return new typeof(this)();
         });
     }
+
+    this(Flow f, EntityMeta m) {super(m, t);}
 }
 
 public abstract class Entity : StateMachine!EntityState, __IFqn {
@@ -54,11 +56,11 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
         _reg[dataType] = creator;
 	}
 
-	public static bool canCreate(string name) {
+	package static bool canCreate(string name) {
 		return name in _reg ? true : false;
 	}
 
-    public static Entity create(string name) {
+    package static Entity create(string name) {
         Entity e = null;
         if(name in _reg)
             e = _reg[name]();
@@ -79,6 +81,7 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
     package List!Exception damages;
     package @property void meta(EntityMeta m) {this._meta = m;}
     package @property void parent(Entity e) {this._parent = e;}
+    package @property ReadWriteMutex sync() {return this.lock;}
 
     public @property EntityMeta meta() {return this._meta;}
     public @property Entity parent() {return this._parent;}
@@ -98,15 +101,15 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
         this.state = EntityState.Initializing;
     }
     
-    public void msg(DL level, string msg) {
+    package void msg(DL level, string msg) {
         Debug.msg(level, "entity("~this.meta.info.ptr.type~"|"~this.meta.info.ptr.id~"@"~this.meta.info.ptr.domain~"); "~msg);
     }
     
-    public void msg(DL level, Exception ex, string msg = string.init) {
+    package void msg(DL level, Exception ex, string msg = string.init) {
         Debug.msg(level, ex, "entity("~this.meta.info.ptr.type~"|"~this.meta.info.ptr.id~"@"~this.meta.info.ptr.domain~"); "~msg);
     }
 
-    public void msg(DL level, Data d, string msg = string.init) {
+    package void msg(DL level, Data d, string msg = string.init) {
         Debug.msg(level, d, "entity("~this.meta.info.ptr.type~"|"~this.meta.info.ptr.id~"@"~this.meta.info.ptr.domain~"); "~msg);
     }
 
