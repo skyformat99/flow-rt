@@ -39,14 +39,6 @@ enum EntityScope
     Global
 }
 
-// states an entity can have
-enum EntityState
-{
-    Halted,
-    Running,
-    Sleeping
-}
-
 class ListeningMeta : Data {
     mixin TData;
 

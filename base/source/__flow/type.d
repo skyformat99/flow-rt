@@ -1,7 +1,8 @@
 module __flow.type;
 
 import core.exception, core.sync.rwmutex;
-import std.traits, std.range.interfaces, std.range.primitives, std.uuid, std.datetime;
+import std.traits, std.range.interfaces, std.range.primitives;
+import std.algorithm, std.uuid, std.datetime;
 
 import __flow.event, __flow.data, __flow.exception;
 
@@ -215,11 +216,7 @@ mixin template TCollectionOfList(T) {
     */
     bool contains(T e) {
         synchronized (this._lock.reader)
-            foreach (e_; this._arr)
-                if (e_ == e)
-                    return true;
-
-        return false;
+            return this._arr.canFind(e);
     }
 }
 
@@ -227,6 +224,8 @@ mixin template TCollectionOfList(T) {
 mixin template TMainOfList(LT, T) {
     private T[] _arr;
     private ReadWriteMutex _lock;
+
+    @property T[] array() {return this._arr.dup();}
 
     /// constructor taking an array of initial elements
     this(T[] arr) {
@@ -402,20 +401,6 @@ class DataList(T) : RandomAccessFinite!T, OutputRange!T if (is(T : Data) || isSc
     mixin TCollectionOfList!T;
     mixin TMainOfList!(DataList!T, T);
 }
-
-/// a put extension for collections to support ducktyping
-OutputRange!T dPut(T)(OutputRange!T range, T e) {
-    range.put(e);
-    return range;
-}
-unittest{/*TODO*/}
-
-/// a remove extension for collections to support ducktyping
-ICollection!T dRemove(T)(ICollection!T collection, T e) {
-    collection.remove(e);
-    return collection;
-}
-unittest{/*TODO*/}
 
 class InvalidStateException : FlowException {
     mixin TException;

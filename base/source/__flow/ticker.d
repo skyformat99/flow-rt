@@ -26,10 +26,9 @@ class Ticker : Thread
     this(Entity e, Signal signal, TickInfo initTick, void delegate(Ticker) exitHandler) {
         this._exitHandler = exitHandler;
         
-        this._lock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
         this._entity = e;
 
-        this.writeDebug("{NEXT} tick("~initTick.type~"|"~initTick.id.toString()~")", 4);
+        this.entity.debugMsg(DL.Debug, "enqueuing tick", initTick);
         this._coming = this.createTick(initTick);
         this.coming.trigger = signal.id;
         this.coming.signal = signal;
@@ -40,9 +39,9 @@ class Ticker : Thread
     this(Entity e, TickMeta initTick, void delegate(Ticker) exitHandler) {
         this._exitHandler = exitHandler;
         
-        this._lock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
         this._entity = e;
 
+        this.entity.debugMsg(DL.Debug, "enqueuing tick", initTick);
         this._coming = initTick;
 
         super(&this.loop);
@@ -63,11 +62,6 @@ class Ticker : Thread
             while(!this._isStopped)
                 Thread.sleep(WAITINGTIME);
         }
-    }
-
-    private void writeDebug(string msg, uint level) {
-        auto address = this._entity.address;
-        //debugMsg("ticker("~address~");"~msg, level);
     }
 
     private TickMeta createTick(TickInfo i, Data d = null) {
@@ -93,22 +87,18 @@ class Ticker : Thread
 
     /// creates a new ticker initialized with given tick
     void fork(TickMeta m) {
-        if(!this._shouldStop && m !is null) synchronized(this._lock.reader) {
-            this.writeDebug("{FORK} tick("~m.info.type~"|"~m.info.id.toString()~")", 4);
-            this._entity.tick(m);
-        }
+        this.entity.debugMsg(DL.Debug, "forking tick", m);
+        this._entity.tick(m);
     }
 
     /// enques next tick in the chain
     void next(TickInfo i, Data d = null) {
-        if(!this._shouldStop) synchronized(this._lock.reader) {
-            this.writeDebug("{NEXT} tick("~i.type~"|"~i.id.toString()~")", 4);
-            auto m = this.createTick(i, d);
-            m.trigger = this.actual.info.id;
-            m.signal = this.actual.signal;
+        this.entity.debugMsg(DL.Debug, "enqueuing tick", i);
+        auto m = this.createTick(i, d);
+        m.trigger = this.actual.info.id;
+        m.signal = this.actual.signal;
 
-            this._coming = m;
-        }
+        this._coming = m;
     }
 
     void repeat() {
@@ -124,17 +114,14 @@ class Ticker : Thread
     }
 
     private void loop() {
-        this.writeDebug("{START}", 3);
+        this.entity.debugMsg(DL.Debug, "ticker starts");
 
-        while(!this._shouldStop) {
-            synchronized(this._lock.writer) {
-                this._actual = this.coming;
-                this._coming = null;
-            }
+        while(!this._entity.state == EntityState.Running) {
+            this._actual = this.coming;
+            this._coming = null;
 
             if(Tick.canCreate(this.actual.info.type)) {
                 auto t = Tick.create(this.actual, this);
-                this.writeDebug("{RUN} tick("~this.actual.info.type~")", 4);
                 
                 if(this._entity.tracing &&
                     this._entity.as!IStealth is null &&
@@ -154,8 +141,22 @@ class Ticker : Thread
                 }
 
                 synchronized(t.as!ISync !is null ? this._entity.lock.writer : this._entity.lock.reader) {
-                    try {t.run();}
-                    catch(Exception exc) {t.error(exc);}
+                    try {
+                        this.entity.debugMsg(DL.Debug, "executing tick", t);
+                        t.run();
+                        this.entity.debugMsg(DL.Debug, "finished tick", t);
+                    }
+                    catch(Exception ex) {
+                        this.entity.debugMsg(DL.Info, "tick failed", ex);
+                        try {
+                            this.entity.debugMsg(DL.Info, "handling tick error", t);
+                            t.error(exc);
+                            this.entity.debugMsg(DL.Info, "tick error handled", t);
+                        }
+                        catch(Exception ex2) {
+                            this.entity.debugMsg(DL.Warning, "handling tick error failed", ex2);
+                        }
+                    }
                 }
                 
                 if(this._entity.tracing &&
@@ -180,7 +181,7 @@ class Ticker : Thread
 
         this._isStopped = true;
         if(this._exitHandler !is null) this._exitHandler(this);
-        this.writeDebug("{END}", 3);
+        this.entity.debugMsg(DL.Debug, "ticker ends");
     }
 }
 

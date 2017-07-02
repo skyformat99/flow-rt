@@ -283,7 +283,7 @@ unittest
     dO1.uuidL.put(id2);
     dO1.uuidL.put(id3);
     
-    auto json = dO1.toJson;
+    auto json = dO1.json;
 
     auto dO2 = JsonTestData.fromJson(json);
     assert(dO2.propId == id);

@@ -159,7 +159,7 @@ abstract class Data : __IFqn
 		return this.dup;
 	}
 
-	string toJson(){return this.toJsonStruct().toString();}
+	@property string json(){return this.toJsonStruct().toString();}
 
 	abstract Data dup();
 	abstract protected void dupInternal(Data c);

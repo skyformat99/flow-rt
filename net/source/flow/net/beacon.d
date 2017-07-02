@@ -94,7 +94,7 @@ class PushWrappedSignal : Tick, IStealth
 	{
         auto c = this.entity.context.as!BeaconSessionContext;
         auto wd = new WrappedSignalData;
-        wd.signal = this.trigger.toJson();
+        wd.signal = this.trigger.json;
         auto ws = new WrappedSignal;
         ws.data = wd;
         this.send(ws, c.beacon);

@@ -104,11 +104,11 @@ void run(uint amount, string search) {
         // write causal snap to console
         //auto h = flwo.get(em.info);
         //h.suspend();
-        //writeln(h.snap().toJson());
+        //writeln(h.snap().json);
 
         // shut down local swarm writing causal state to console
         foreach(m; flow.stop())
-            writeln(m.toJson());
+            writeln(m.json);
     };
 
     

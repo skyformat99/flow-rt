@@ -1,6 +1,6 @@
 module flow.base.dev;
 
-import __flow.exception;
+import __flow.exception, __flow.data;
 
 import core.time, std.stdio, std.ascii, std.conv;
 
@@ -15,32 +15,41 @@ enum DL : uint {
 }
 
 class Debug {
-    private static immutable DEBUGSEP = "--------------------------------------------------"~newline;
+    public static immutable DEBUGSEP = "--------------------------------------------------"~newline;
     public static DL debugLevel = DL.Warning;
-    public static void msg(DL level, string msg=string.init, Exception ex = null) {
-        import std.ascii;
-
+    public static void msg(DL level, string msg) {
         if(level <= debugLevel) {
             auto t = "["~level.to!string~"] ";
-            if(msg != string.init)
-                t ~= msg~newline~"    ";
-            
-            if(ex !is null) {
-                if(ex.msg != string.init)
-                    t ~= ex.msg~newline;
-
-                if(cast(FlowException)ex !is null && (cast(FlowException)ex).data !is null) {
-                    t ~= DEBUGSEP;
-                    t ~= (cast(FlowException)ex).data.toJson()~newline;
-                    t ~= DEBUGSEP;
-                    t ~= DEBUGSEP;
-                }
-            }
+            t ~= msg;
 
             synchronized {
                 writeln(t);
                 //flush();
             }
         }
+    }
+
+    public static void msg(DL level, Exception ex, string msg=string.init) {
+        string t;
+        
+        if(msg != string.init)
+            t ~= msg~newline~"    ";
+        
+        if(ex.msg != string.init)
+            t ~= ex.msg~newline;
+
+        if(cast(FlowException)ex !is null && (cast(FlowException)ex).data !is null) {
+            t ~= DEBUGSEP;
+            t ~= (cast(FlowException)ex).data.json~newline;
+            t ~= DEBUGSEP;
+            t ~= DEBUGSEP;
+        }
+    }
+
+    public static void msg(DL level, Data d, string msg = string.init) {
+        auto t = msg;
+        t ~= Debug.DEBUGSEP;
+        t ~= d.json;
+        Debug.msg(level, t);
     }
 }

@@ -445,7 +445,7 @@ class FileMemoryStorage : MemoryStorage
             {
                 c.infos = new MemoryInfos;
                 c.infos.types.put(se.types.array);
-                listFile.write(c.infos.toJson());
+                listFile.write(c.infos.json);
             }
             else if(listFile.isFile)
             {
@@ -499,10 +499,10 @@ class FileMemoryStorage : MemoryStorage
             
         auto revisionPath = dataPath.buildPath(mc.revision.to!string ~ ".dat");
         if(se.format == MemoryFormat.Json)
-            revisionPath.write(mc.toJson());
+            revisionPath.write(mc.json);
 
         auto listFile = se.url.buildPath("list");
-        listFile.write(c.infos.toJson());
+        listFile.write(c.infos.json);
 
         return exists ? StoreType.Update : StoreType.Add;
     }
@@ -516,7 +516,7 @@ class FileMemoryStorage : MemoryStorage
         dataPath.rmdirRecurse();
 
         auto listFile = se.url.buildPath("list");
-        listFile.write(c.infos.toJson());
+        listFile.write(c.infos.json);
     }
 }
 
