@@ -9,15 +9,6 @@ import __flow.data, __flow.signal, __flow.exception;
 import flow.base.dev, flow.base.interfaces;
 import flow.base.signals, flow.base.data, flow.base.ticks;
 
-/// generates listener meta informations to use by an entity
-mixin template TListen(string s, string t) {
-    import _flow.entity;
-    
-    shared static this() {
-        _typeListenings[s] = t;
-    }
-}
-
 enum EntityState {
     None = 0,
     Initializing,
@@ -31,28 +22,34 @@ enum EntityState {
 }
 
 mixin template TEntity() {
-    import std.uuid;
-    import flow.base.data;
-    import _flow.entity, _flow.type;
+    static import flow.base.data;
+    static import __flow.entity, __flow.type, __flow.process;
     
     private shared static string[string] _typeListenings;
 
-    public override @property string __fqn() {return fqn!(typeof(this));}
+    public override @property string __fqn() {return __flow.type.fqn!(typeof(this));}
 
     shared static this() {
-        Entity.register(fqn!(typeof(this)), (){
-            return new typeof(this)();
+        __flow.entity.Entity.register(__flow.type.fqn!(typeof(this)), (__flow.process.Flow f, flow.base.data.EntityMeta m){
+            return new typeof(this)(f, m);
         });
     }
 
-    this(Flow f, EntityMeta m) {super(m, t);}
+    this(__flow.process.Flow f, flow.base.data.EntityMeta m) {super(f, m);}
+}
+
+/// generates listener meta informations to use by an entity
+mixin template TListen(string s, string t) {    
+    shared static this() {
+        _typeListenings[s] = t;
+    }
 }
 
 public abstract class Entity : StateMachine!EntityState, __IFqn {
-    private shared static Entity function()[string] _reg;    
+    private shared static Entity function(Flow, EntityMeta)[string] _reg;    
     private shared static string[string] _typeListenings;
 
-    public static void register(string dataType, Entity function() creator) {
+    public static void register(string dataType, Entity function(Flow, EntityMeta) creator) {
         _reg[dataType] = creator;
 	}
 
@@ -60,10 +57,10 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
 		return name in _reg ? true : false;
 	}
 
-    package static Entity create(string name) {
+    package static Entity create(Flow f, EntityMeta m) {
         Entity e = null;
-        if(name in _reg)
-            e = _reg[name]();
+        if(m.info.ptr.type in _reg)
+            e = _reg[m.info.ptr.type](f, m);
         else
             e = null;
 
@@ -222,7 +219,7 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
         }
     }
     
-    public ListeningMeta listen(string s, string t) {
+    public ListeningMeta listenFor(string s, string t) {
         this.msg(DL.Debug, "waiting for listen");
         synchronized(this.lock.reader) {
             this.ensureStateOr([EntityState.Initializing, EntityState.Running]);
@@ -380,7 +377,7 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
 
                 this.msg(DL.Debug, "registering dynamic listenings");
                 foreach(l; this.meta.listenings)
-                    this.listen(l.signal, l.tick);
+                    this.listenFor(l.signal, l.tick);
 
                 this.msg(DL.Debug, "creating children entities");
                 this.createChildren();

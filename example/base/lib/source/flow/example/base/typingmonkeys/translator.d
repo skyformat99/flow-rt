@@ -45,8 +45,7 @@ class Translate : Tick {
 
         c.counter = c.counter + 1;
 
-        debugMsg(this.entity.ptr.type~"|"~this.entity.ptr.id~"@"~this.entity.ptr.domain
-            ~" amount of translated pages: " ~ c.counter.to!string, 1);
+        this.msg(DL.Debug, "amount of translated pages: " ~ c.counter.to!string);
     }
 }
 
@@ -54,7 +53,7 @@ class Translate : Tick {
 in the opposite to a monkey there is
 one single tick executed in parallel */
 class Translator : Entity {
-    mixin entity!(TranslatorContext);
+    mixin entity;
 
     mixin listen!(fqn!HebrewText, fqn!Translate);
 }

@@ -15,7 +15,7 @@ enum DL : uint {
 }
 
 class Debug {
-    public static immutable DEBUGSEP = "--------------------------------------------------"~newline;
+    public static immutable sep = "--------------------------------------------------"~newline;
     public static DL debugLevel = DL.Warning;
     public static void msg(DL level, string msg) {
         if(level <= debugLevel) {
@@ -39,16 +39,16 @@ class Debug {
             t ~= ex.msg~newline;
 
         if(cast(FlowException)ex !is null && (cast(FlowException)ex).data !is null) {
-            t ~= DEBUGSEP;
+            t ~= sep;
             t ~= (cast(FlowException)ex).data.json~newline;
-            t ~= DEBUGSEP;
-            t ~= DEBUGSEP;
+            t ~= sep;
+            t ~= sep;
         }
     }
 
     public static void msg(DL level, Data d, string msg = string.init) {
         auto t = msg;
-        t ~= Debug.DEBUGSEP;
+        t ~= Debug.sep;
         t ~= d.json;
         Debug.msg(level, t);
     }

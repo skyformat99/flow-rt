@@ -3,7 +3,7 @@ module __flow.data;
 import std.traits, std.uuid, std.meta, std.datetime, std.range.primitives;
 
 import __flow.lib.vibe.data.json;
-import __flow.type;
+import __flow.type, __flow.event;
 
 /// an error occured in data reflection layer (error stops execution of app)
 class DataingError : Error
@@ -93,9 +93,7 @@ Data set(T)(Data obj, string name, T value) if(isScalarType!T || is(T == UUID) |
 }
 
 abstract class Data : __IFqn
-{
-	import __flow.event;
-	
+{	
 	private shared static Data function()[string] _reg;
 
 	static void register(string dataType, Data function() creator)
@@ -173,31 +171,31 @@ abstract class Data : __IFqn
 /// implements code of a data object
 mixin template TData()
 {
-	import std.traits, std.array, std.conv;
-	import __flow.lib.vibe.data.serialization, __flow.lib.vibe.data.json;
-	import __flow.event, __flow.type, __flow.data;
+	static import std.traits, std.array, std.conv, std.uuid;
+	static import __flow.lib.vibe.data.serialization, __flow.lib.vibe.data.json;
+	static import __flow.event, __flow.type, __flow.data;
 
-	shared static PropertyInfo[string] DataProperties;
-	override @property shared(PropertyInfo[string]) dataProperties(){return DataProperties;}
+	shared static __flow.data.PropertyInfo[string] DataProperties;
+	override @property shared(__flow.data.PropertyInfo[string]) dataProperties(){return DataProperties;}
 	private shared static void function(typeof(this))[] _inits;
 	private shared static Object function(typeof(this), string)[] _getter;
 	private shared static bool function(typeof(this), string, Object)[] _setter;
 	private shared static void function(typeof(this), typeof(this))[] _dups;
-	private shared static void function(typeof(this), Json)[] _toJsons;
-	private shared static void function(typeof(this), Json)[] _fromJsons;
+	private shared static void function(typeof(this), __flow.lib.vibe.data.json.Json)[] _toJsons;
+	private shared static void function(typeof(this), __flow.lib.vibe.data.json.Json)[] _fromJsons;
 
-	static Data create() {return new typeof(this);}
+	static __flow.data.Data create() {return new typeof(this);}
 
 	shared static this()
 	{
-		static if(fqn!(typeof(super)) != "__flow.data.Data")
+		static if(__flow.type.fqn!(typeof(super)) != "__flow.data.Data")
 		foreach(n, i; super.DataProperties)
 			DataProperties[n] = i;
 
-		Data.register(fqn!(typeof(this)), &create);
+		__flow.data.Data.register(__flow.type.fqn!(typeof(this)), &create);
 	}
 
-	override @property string __fqn() {return fqn!(typeof(this));}
+	override @property string __fqn() {return __flow.type.fqn!(typeof(this));}
 
 	this()
 	{
@@ -210,7 +208,7 @@ mixin template TData()
 	override Object getGeneric(string name)
 	{
 		Object value = null;
-		static if(fqn!(typeof(super)) != "__flow.data.Data")
+		static if(__flow.type.fqn!(typeof(super)) != "__flow.data.Data")
 			value = super.getGeneric(name);
 
 		if(value is null)
@@ -228,7 +226,7 @@ mixin template TData()
 	override bool setGeneric(string name, Object value)
 	{
 		auto set = false;
-		static if(fqn!(typeof(super)) != "__flow.data.Data")
+		static if(__flow.type.fqn!(typeof(super)) != "__flow.data.Data")
 			super.setGeneric(name, value);
 
 		if(!set)
@@ -249,7 +247,7 @@ mixin template TData()
 
 	override protected void dupInternal(Data c)
 	{
-		static if(fqn!(typeof(super)) != "__flow.data.Data")
+		static if(__flow.type.fqn!(typeof(super)) != "__flow.data.Data")
 			super.dupInternal(c);
 
 		auto clone = cast(typeof(this))c;
@@ -257,17 +255,17 @@ mixin template TData()
 			d(this, clone);
 	}
 		
-	override Json toJsonStruct()
+	override __flow.lib.vibe.data.json.Json toJsonStruct()
 	{
-		auto j = Json(["dataType" : Json(this.dataType)]);
+		auto j = __flow.lib.vibe.data.json.Json(["dataType" : __flow.lib.vibe.data.json.Json(this.dataType)]);
 		this.toJson(j);
 		return j;
 	}
 
 	alias toJson = Data.toJson;
-	override protected void toJson(Json j)
+	override protected void toJson(__flow.lib.vibe.data.json.Json j)
 	{
-		static if(fqn!(typeof(super)) != "__flow.data.Data")
+		static if(__flow.type.fqn!(typeof(super)) != "__flow.data.Data")
 			super.toJson(j);
 		
 		auto len = _toJsons.length;
@@ -277,19 +275,19 @@ mixin template TData()
 
 	static typeof(this) fromJson(string s)
 	{
-		return fromJson(parseJsonString(s));
+		return fromJson(__flow.lib.vibe.data.json.parseJsonString(s));
 	}
 
-	static typeof(this) fromJson(Json j)
+	static typeof(this) fromJson(__flow.lib.vibe.data.json.Json j)
 	{
 		auto obj = new typeof(this);
 		obj.fillFromJson(j);
 		return obj;	
 	}
 
-	override void fillFromJson(Json j)
+	override void fillFromJson(__flow.lib.vibe.data.json.Json j)
 	{
-		static if(fqn!(typeof(super)) != "__flow.data.Data")
+		static if(__flow.type.fqn!(typeof(super)) != "__flow.data.Data")
 			super.fillFromJson(j);
 			
 		foreach(fj; _fromJsons)
@@ -302,11 +300,11 @@ template TFieldHelper(PropertyMeta p)
 	string events()
 	{
 		return "
-			private ETypedPropertyChanging!("~p.type~") _"~p.name~ "Changing;
-			private ETypedPropertyChanged!("~p.type~") _"~p.name~"Changed;
-			@property ETypedPropertyChanging!("~p.type~") "~p.name~"Changing()
+			private __flow.event.ETypedPropertyChanging!("~p.type~") _"~p.name~ "Changing;
+			private __flow.event.ETypedPropertyChanged!("~p.type~") _"~p.name~"Changed;
+			@property __flow.event.ETypedPropertyChanging!("~p.type~") "~p.name~"Changing()
 			{return this._"~p.name~"Changing;}
-			@property ETypedPropertyChanged!("~p.type~") "~p.name~"Changed()
+			@property __flow.event.ETypedPropertyChanged!("~p.type~") "~p.name~"Changed()
 			{return this._"~p.name~"Changed;}
 		";
 	}
@@ -337,6 +335,8 @@ template TFieldHelper(PropertyMeta p)
 			
 			void "~p.name~"Internal("~p.type~" value)
 			{
+				import __flow.event;
+
 				if(this._"~p.name~" != value)
 				{
 					"~p.type~" oldValue = this._"~p.name~";
@@ -360,7 +360,10 @@ template TFieldHelper(PropertyMeta p)
 	string init()
 	{
 		string initString = "
-			_inits ~= (t){
+			_inits ~= (t) {
+				import core.sync.rwmutex;
+				import __flow.event;
+
 				t._"~p.name~"Lock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
 				t._"~p.name~"Changing = new ETypedPropertyChanging!("~p.type~")();
 				t._"~p.name~"Changed = new ETypedPropertyChanged!("~p.type~")();
@@ -368,7 +371,7 @@ template TFieldHelper(PropertyMeta p)
 		";
 
 		string getterString = "
-			_getter ~= (t, name){
+			_getter ~= (t, name) {
 				if(name == \""~p.name~"\")
 					return "~p.refPrefix~"t."~p.name~p.refPostfix~";
 				else
@@ -377,7 +380,9 @@ template TFieldHelper(PropertyMeta p)
 		";
 
 		string setterString = "
-			_setter ~= (t, name, value){
+			_setter ~= (t, name, value) {
+				import __flow.type;
+
 				if(name == \""~p.name~"\")
 				{
 					t."~p.name~" = "~(!p.isData ? "(cast(Ref!("~p.type~"))value).value" : "cast("~p.type~")value")~";
@@ -388,14 +393,14 @@ template TFieldHelper(PropertyMeta p)
 		";
 
 		string dupString = "
-			_dups ~= (t, c){
+			_dups ~= (t, c) {
 				static if("~p.isData.stringof~")
 				{if(t."~p.name~" !is null) c._"~p.name~" = t."~p.name~".dup;}
 				else{c._"~p.name~" = t."~p.name~";}
 			};
 		";
 
-		string toJsonString = "_toJsons ~= (t, j){";
+		string toJsonString = "_toJsons ~= (t, j) {";
 		if(p.isData)
 			toJsonString ~= "if(t."~p.name~" !is null) j[\""~p.name~"\"] = t."~p.name~".toJsonStruct();};";
 		else if(p.isArray)
@@ -420,8 +425,11 @@ template TFieldHelper(PropertyMeta p)
 			fromJsonString ~= "t._"~p.name~" = j[\""~p.name~"\"].get!("~p.type~");};";
 
 		return "
-			shared static this()
-			{
+			shared static this() {
+				import std.uuid;
+				import __flow.data, __flow.type, __flow.type;
+				import __flow.exception, __flow.lib.vibe.data.json, __flow.data;
+
 				DataProperties[\""~p.name~"\"] = cast(shared(PropertyInfo))PropertyInfo(typeid("~p.type~"), false, "~(p.isData ? "true" : "false")~");
 				
 				"~initString~"
@@ -442,6 +450,10 @@ template TListHelper(PropertyMeta p)
 		return "
 			shared static this()
 			{
+				import std.uuid;
+				import __flow.data, __flow.type, __flow.type;
+				import __flow.exception, __flow.lib.vibe.data.json, __flow.data;
+
 				DataProperties[\""~p.name~"\"] = cast(shared(PropertyInfo))PropertyInfo(typeid("~p.type~"), true, false);
 
 				_inits ~= (t){
@@ -466,6 +478,8 @@ template TListHelper(PropertyMeta p)
 				};
 
 				_toJsons ~= (t, j){
+					import std.array;
+
 					Json[] "~p.name~";
 					foreach(e; t."~p.name~")
 					{
@@ -490,6 +504,8 @@ template TListHelper(PropertyMeta p)
 				};
 
 				_fromJsons ~= (t, j){
+					import std.array;
+
 					if(\""~p.name~"\" in j)
 					{
 						"~p.type~"[] "~p.name~"; 
@@ -524,27 +540,27 @@ template TListHelper(PropertyMeta p)
 mixin template TField(T, string name)
 	if ((is(T : Data) || isScalarType!T || is(T == UUID) || is(T == SysTime) || is(T == DateTime) || (isArray!T && isScalarType!(ElementType!T))))
 {
-	import core.sync.rwmutex;
-	import std.traits, std.array, std.conv;
-	import __flow.lib.vibe.data.json, __flow.lib.vibe.data.serialization;
-	import __flow.event, __flow.type, __flow.data;	
+	static import core.sync.rwmutex;
+	static import std.traits, std.array, std.conv;
+	static import __flow.lib.vibe.data.json, __flow.lib.vibe.data.serialization;
+	static import __flow.event, __flow.type, __flow.data;	
 
 	enum isData = is(T : Data);
-	enum p = PropertyMeta(
+	enum p = __flow.data.PropertyMeta(
 		T.stringof,
 		name,
 		false,
 		isData,
-		isArray!T || isData,
-		isArray!T,
-		!isData && !isArray!T,
-		isData ? "" : "new Ref!("~T.stringof~")(",
+		std.traits.isArray!T || isData,
+		std.traits.isArray!T,
+		!isData && !std.traits.isArray!T,
+		isData ? "" : "new __flow.type.Ref!("~T.stringof~")(",
 		isData ? "" : ")"
 	);
 
-	alias h = TFieldHelper!p;
+	alias h = __flow.data.TFieldHelper!p;
 	enum mixinString = "
-		private ReadWriteMutex _"~p.name~"Lock;
+		private core.sync.rwmutex.ReadWriteMutex _"~p.name~"Lock;
 		private "~p.type~" _"~p.name~";
 		"~h.events~"
 		"~h.getter~"
@@ -560,25 +576,25 @@ mixin template TField(T, string name)
 mixin template TList(T, string name)
 	if ((is(T : Data) || isScalarType!T || is(T == UUID) || is(T == SysTime) || is(T == DateTime) || (isArray!T && isScalarType!(ElementType!T))))
 {
-	import core.sync.rwmutex;
-	import std.traits, std.array, std.conv;
-	import __flow.lib.vibe.data.json, __flow.lib.vibe.data.serialization;
-	import __flow.event, __flow.type, __flow.data;
+	static import core.sync.rwmutex;
+	static import std.traits, std.array, std.conv;
+	static import __flow.lib.vibe.data.json, __flow.lib.vibe.data.serialization;
+	static import __flow.event, __flow.type, __flow.data;
 
 	enum isData = is(T : Data);
-	enum p = PropertyMeta(
+	enum p = __flow.data.PropertyMeta(
 		T.stringof,
 		name,
 		true,
 		isData,
-		isArray!T || is(T : Data),
-		isArray!T,
-		!isData && !isArray!T);
+		std.traits.isArray!T || is(T : Data),
+		std.traits.isArray!T,
+		!isData && !std.traits.isArray!T);
 	
-	alias h = TListHelper!p;
+	alias h = __flow.data.TListHelper!p;
 	enum mixinString = "
-		private DataList!("~p.type~") _"~p.name~";
-		@property DataList!("~p.type~") "~p.name~"() { return this._"~p.name~"; }
+		private __flow.type.DataList!("~p.type~") _"~p.name~";
+		@property __flow.type.DataList!("~p.type~") "~p.name~"() { return this._"~p.name~"; }
 		"~h.init~"
 	";
 

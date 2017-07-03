@@ -73,11 +73,11 @@ void run(uint amount, string search) {
     import std.datetime, std.conv, std.stdio;
     import flow.base.dev;
 
-    debugMsg("#######################################", 0);
-    debugMsg("#######################################", 0);
-    debugMsg("### "~amount.to!string~" type writing monkeys, one translator", 0);
-    debugMsg("### and an overseer looking out for the bible", 0);
-    debugMsg("#######################################", 0);
+    Debug.msg(DL.Info, "#######################################");
+    Debug.msg(DL.Info, "#######################################");
+    Debug.msg(DL.Info, "### "~amount.to!string~" type writing monkeys, one translator");
+    Debug.msg(DL.Info, "### and an overseer looking out for the bible");
+    Debug.msg(DL.Info, "#######################################");
 
     // unimportant for example
     ulong pages;
@@ -107,20 +107,21 @@ void run(uint amount, string search) {
         //writeln(h.snap().json);
 
         // shut down local swarm writing causal state to console
-        foreach(m; flow.stop())
+        foreach(m; flow.snap())
             writeln(m.json);
+
+        flow.dispose();
     };
 
     
     auto b = benchmark!(f)(1);
-    debugMsg("time required for finding \"" ~ search ~ "\" "
+    Debug.msg(DL.Info, "time required for finding \"" ~ search ~ "\" "
         ~ "using " ~ amount.to!string ~ " monkeys "
         ~ "reviewed " ~ pages.to!string ~ " pages "
         ~ "searched " ~ ((pages*4)/1024).to!string ~ " MB of random data"
         ~ ": " ~ b[0].usecs.to!string
-        ~ "usecs", 0);
-    debugMsg("#######################################", 0);
-    debugMsg("", 0);
+        ~ "usecs");
+    Debug.msg(DL.Info, "#######################################"~Debug.sep);
 }
 
 /** two kicker playing ball and one trainer

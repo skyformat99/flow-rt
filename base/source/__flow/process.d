@@ -158,7 +158,7 @@ class Flow : StateMachine!FlowState {
             string addr = m.info.ptr.id~"@"~m.info.ptr.domain;  
             try {
                 Debug.msg(DL.Info, m, "adding entity");
-                e = Entity.create(m.info.ptr.type);
+                e = Entity.create(this, m);
                 if(e !is null)
                     this._local[addr] = e;
                 else Debug.msg(DL.Warning, "could not create entity");

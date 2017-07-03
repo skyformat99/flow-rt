@@ -38,12 +38,11 @@ class Search : Tick {
         if(cfg.search !is null && cfg.search != "" && canFind(s.data.text, cfg.search)) {
             c.found = true;
 
-            debugMsg(this.entity.ptr.type~"|"~this.entity.ptr.id~"@"~this.entity.ptr.domain
-                ~" found \""~cfg.search
+            this.msg(DL.Debug, "found \""~cfg.search
                 ~"\" after searching "
                 ~c.pages.to!string~" pages and "
                 ~(c.pages*4).to!string
-                ~"kB of random bytes", 1);
+                ~"kB of random bytes");
 
                 /* notifying herself that she found something
                 you may now ask, why do this via signalling?
@@ -74,7 +73,7 @@ class Found : Tick {
 /** and finally defining her
 (black hair, deep green eyes) */
 class Overseer : Entity {
-    mixin entity!(OverseerContext);
+    mixin entity;
     
     mixin listen!(fqn!GermanText, fqn!Search);    
     mixin listen!(fqn!FoundNotify, fqn!Found);

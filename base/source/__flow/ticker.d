@@ -84,8 +84,8 @@ class Ticker : Thread
         this._coming = this.actual;
     }
     
-    public ListeningMeta listen(string s, string t) {
-        return this._entity.listen(s, t);
+    public ListeningMeta listenFor(string s, string t) {
+        return this._entity.listenFor(s, t);
     }
 
     public void shut(ListeningMeta l) {
@@ -164,21 +164,21 @@ class Ticker : Thread
 }
 
 mixin template TTick() {
-    import __flow.type, __flow.ticker;
+    static import __flow.type, __flow.ticker;
     static import flow.base.data;
 
-    override @property string __fqn() {return fqn!(typeof(this));}
+    override @property string __fqn() {return __flow.type.fqn!(typeof(this));}
 
-    static Tick create(flow.base.data.TickMeta m, Ticker t) {
+    static __flow.ticker.Tick create(flow.base.data.TickMeta m, __flow.ticker.Ticker t) {
         auto tick = new typeof(this)(m, t);
         return tick;
     }
 
     shared static this() {
-        Tick.register(fqn!(typeof(this)), &create);
+        __flow.ticker.Tick.register(__flow.type.fqn!(typeof(this)), &create);
     }
 
-    this(TickMeta m, Ticker t) {super(m, t);}
+    this(flow.base.data.TickMeta m, __flow.ticker.Ticker t) {super(m, t);}
 }
 
 abstract class Tick : __IFqn {

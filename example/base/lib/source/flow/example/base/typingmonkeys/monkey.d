@@ -1,7 +1,7 @@
 module flow.example.base.typingmonkeys.monkey;
 import flow.example.base.typingmonkeys.signals;
 
-import flow.base.blocks, flow.base.data;
+import flow.base.blocks, flow.base.data, flow.base.dev;
 
 enum MonkeyEmotionalState {
     Calm,
@@ -37,7 +37,6 @@ class Write : Tick {
         /* some imports necessary
         for the d and phobos functionality used */
         import std.random, std.conv;
-        import flow.base.dev;
 
         /* sadly at the moment the context has
         to be casted to its type or interface */
@@ -65,8 +64,7 @@ class Write : Tick {
             c.counter = c.counter + 1;
 
             // just something for us to see
-            debugMsg(this.entity.ptr.type~"|"~this.entity.ptr.id~"@"~this.entity.ptr.domain
-                ~" amount of typed pages: "~c.counter.to!string, 1);
+            this.msg(DL.Debug, "amount of typed pages: "~c.counter.to!string);
             
             // tell the ticker to repeat this tick (natural while loop)
             this.repeat();
@@ -79,8 +77,6 @@ class GetCandy : Tick {
 	mixin tick;
 
 	override void run() {
-        import flow.base.dev;
-
         auto c = this.context.as!MonkeyContext;
 
         c.state = MonkeyEmotionalState.Happy;
@@ -88,8 +84,7 @@ class GetCandy : Tick {
         this.send(new ShowCandy);
 
         // just something for us to see
-        debugMsg(this.entity.ptr.type~"|"~this.entity.ptr.id~"@"~this.entity.ptr.domain
-            ~" got happy", 1);
+        this.msg(DL.Debug, "got happy");
     }
 }
 
@@ -98,16 +93,13 @@ class SeeCandy : Tick {
 	mixin tick;
 
 	override void run() {
-        import flow.base.dev;
-
         if(!this.signal.source.identWith(this.entity.ptr)) {
             auto c = this.context.as!MonkeyContext;
 
             c.state = MonkeyEmotionalState.Dissapointed;
 
             // just something for us to see
-            debugMsg(this.entity.ptr.type~"|"~this.entity.ptr.id~"@"~this.entity.ptr.domain
-                ~" got dissapointed", 1);
+            this.msg(DL.Debug, "got dissapointed");
         }
     }
 }
@@ -117,7 +109,7 @@ what it listens to and how it reacts
 * so there is one main sequential tick string
 * and two just setting something */
 class Monkey : Entity {
-    mixin entity!(MonkeyContext);
+    mixin entity;
 
     mixin listen!(
         // type id of a candy
