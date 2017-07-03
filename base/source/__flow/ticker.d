@@ -95,12 +95,15 @@ class Ticker : Thread
     private void loop() {
         this._entity.msg(DL.Debug, "ticker starts");
 
-        while(!this._entity.state == EntityState.Running) {
+        while(this._entity.state == EntityState.Running && this.coming !is null) {
             this._actual = this.coming;
             this._coming = null;
 
             if(Tick.canCreate(this.actual.info.type)) {
                 auto t = Tick.create(this.actual, this);
+
+                if(t.info.id == UUID.init)
+                    t.info.id = randomUUID;
                 
                 if(this._entity.flow.config.tracing &&
                     this._entity.as!IStealth is null &&

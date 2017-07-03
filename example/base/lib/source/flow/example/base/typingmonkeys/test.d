@@ -39,8 +39,9 @@ private EntityMeta createMeta(string domain, uint amount, string search) {
         mm.info.ptr = new EntityPtr;
         mm.info.ptr.id = "monkey_"~i.to!string;
         mm.info.ptr.type = "flow.example.base.typingmonkeys.monkey.Monkey";
-        mm.info.ptr.domain = domain~".monkeys";
+        mm.info.ptr.domain = domain;
         mm.context = new MonkeyContext;
+        mm.context.as!MonkeyContext.state = MonkeyEmotionalState.Calm;
 
         // in this constructed causality snap its about to execute write tick
         auto t = new TickMeta;
@@ -56,9 +57,9 @@ private EntityMeta createMeta(string domain, uint amount, string search) {
 }
 
 /// waiter for process to wait for an event before exiting
-private bool waitForMonkeys(EntityMeta om) {
-    foreach(em; om.children) {
-        auto c = em.context.as!MonkeyContext;
+private bool waitForMonkeys(Flow f, EntityInfo i) {
+    foreach(m; f.get(i).children) {
+        auto c = m.meta.context.as!MonkeyContext;
         if(c !is null && c.state == MonkeyEmotionalState.Calm) {
             return false;
         }
@@ -84,7 +85,7 @@ void run(uint amount, string search) {
     
     // unimportant for example
     auto f = {
-        auto domain = "flow.example.typeingmonkeys";
+        auto domain = "flow.example.typingmonkeys";
 
         // build flow config
         auto fc = new FlowConfig;
@@ -99,7 +100,7 @@ void run(uint amount, string search) {
         flow.add(em);
 
         // wait for an event indicating that swarm can be shut down
-        flow.wait((){return waitForMonkeys(em);});
+        flow.wait((){return waitForMonkeys(flow, em.info);});
 
         // write causal snap to console
         //auto h = flwo.get(em.info);

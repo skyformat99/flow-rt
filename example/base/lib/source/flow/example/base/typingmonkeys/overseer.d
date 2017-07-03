@@ -35,7 +35,7 @@ class Search : Tick {
         auto s = this.signal.as!GermanText;
 
         // search
-        if(cfg.search !is null && cfg.search != "" && canFind(s.data.text, cfg.search)) {
+        if(!c.found && cfg.search !is null && cfg.search != "" && canFind(s.data.text, cfg.search)) {
             c.found = true;
 
             this.msg(DL.Debug, "found \""~cfg.search

@@ -35,7 +35,18 @@ mixin template TEntity() {
         });
     }
 
-    this(__flow.process.Flow f, flow.base.data.EntityMeta m) {super(f, m);}
+    this(__flow.process.Flow f, flow.base.data.EntityMeta m) {
+        string[string] typeListenings;
+        
+        this(f, m, typeListenings);
+    }
+
+    protected this(__flow.process.Flow f, flow.base.data.EntityMeta m, string[string] typeListenings) {
+        foreach(s; typeof(this)._typeListenings.keys)
+            typeListenings[s] = typeof(this)._typeListenings[s];
+
+        super(f, m, typeListenings);
+    }
 }
 
 /// generates listener meta informations to use by an entity
@@ -46,8 +57,7 @@ mixin template TListen(string s, string t) {
 }
 
 public abstract class Entity : StateMachine!EntityState, __IFqn {
-    private shared static Entity function(Flow, EntityMeta)[string] _reg;    
-    private shared static string[string] _typeListenings;
+    private shared static Entity function(Flow, EntityMeta)[string] _reg;
 
     public static void register(string dataType, Entity function(Flow, EntityMeta) creator) {
         _reg[dataType] = creator;
@@ -72,6 +82,7 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
     private EntityMeta _meta;
     private Entity _parent;
     private List!Entity _children;
+    private string[string] _typeListenings;
 
     package Flow flow;
     package List!Ticker ticker;
@@ -84,10 +95,11 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
     public @property Entity parent() {return this._parent;}
     public @property Entity[] children() {return this._children.array;}
 
-    protected this(Flow f, EntityMeta m) {
+    protected this(Flow f, EntityMeta m, string[string] typeListenings) {
         if(m is null || m.damages is null || !m.damages.empty)
             throw new DataDamageException("given meta data is damaged", m);
 
+        this._typeListenings = typeListenings;
         this.flow = f;
         this.meta = m;
         this.meta.info.signals.clear();
@@ -137,7 +149,13 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
             ti.entity = this.meta.info.ptr.dup();
             ti.type = tt;
             ti.group = s.group;
-            auto ticker = new Ticker(this, s, ti, (t){this.ticker.remove(t);});
+            auto ticker = new Ticker(this, s, ti, (t) {
+                synchronized(this.lock.reader) {
+                    if(t.coming !is null)
+                        this.meta.ticks.put(t.coming);
+                    this.ticker.remove(t);
+                }
+            });
             this.ticker.put(ticker);
             ticker.start();
         }
@@ -185,10 +203,8 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
     
     public bool send(Unicast s, EntityPtr e) {
         this.msg(DL.Debug, "waiting for send");
-        synchronized(this.lock.reader) {
-            this._preventIdTheft(s);
-            return this.flow.send(s, e);
-        }
+        this._preventIdTheft(s);
+        return this.flow.send(s, e);
     }
 
     public bool send(Unicast s, EntityInfo e) {
@@ -197,26 +213,20 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
 
     public bool send(Unicast s) {
         this.msg(DL.Debug, "waiting for send");
-        synchronized(this.lock.reader) {
-            this._preventIdTheft(s);
-            return this.flow.send(s);
-        }
+        this._preventIdTheft(s);
+        return this.flow.send(s);
     }
 
     public bool send(Multicast s) {
         this.msg(DL.Debug, "waiting for send");
-        synchronized(this.lock.reader) {
-            this._preventIdTheft(s);
-            return this.flow.send(s);
-        }
+        this._preventIdTheft(s);
+        return this.flow.send(s);
     }
 
     public bool send(Anycast s) {
         this.msg(DL.Debug, "waiting for send");
-        synchronized(this.lock.reader) {
-            this._preventIdTheft(s);
-            return this.flow.send(s);
-        }
+        this._preventIdTheft(s);
+        return this.flow.send(s);
     }
     
     public ListeningMeta listenFor(string s, string t) {
@@ -339,21 +349,22 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
     }
 
     override protected void onStateChanged(EntityState oldState, EntityState newState) {
-        synchronized(this.lock.writer)
-            switch(newState) {
-                case EntityState.Initializing:
-                    this.onInitializing(); break;
-                case EntityState.Resuming:
-                    this.onResuming(); break;
-                case EntityState.Suspending:
-                    this.onSuspending(); break;
-                case EntityState.Damaged:
-                    this.onDamaged(); break;
-                case EntityState.Disposing:
-                    this.onDisposing(); break;
-                default:
-                    break;
-            }
+        switch(newState) {
+            case EntityState.Initializing:
+                this.onInitializing(); break;
+            case EntityState.Resuming:
+                this.onResuming(); break;
+            case EntityState.Running:
+                this.onRunning(); break;
+            case EntityState.Suspending:
+                this.onSuspending(); break;
+            case EntityState.Damaged:
+                this.onDamaged(); break;
+            case EntityState.Disposing:
+                this.onDisposing(); break;
+            default:
+                break;
+        }
     }
 
     protected void onInitializing() {
@@ -383,8 +394,6 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
                 this.createChildren();
                 this.meta.children.clear();
             }
-
-            this.state = EntityState.Resuming;
         } catch(Exception ex) {
             this.damage("initializing", ex);
         }
@@ -399,11 +408,6 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
                 this.start();
 
                 this.resumeChildren();
-
-                foreach(tm; this.meta.ticks.dup()) {
-                    this.tick(tm);
-                    this.meta.ticks.remove(tm);
-                }
             }
 
             this.state = EntityState.Running;
@@ -411,18 +415,24 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
             this.damage("resuming", ex);
             return;
         }
+    }
 
+    protected void onRunning() {
         try {
-            this.msg(DL.Debug, "waiting for resuming inbound signals");
+            this.msg(DL.Debug, "waiting for running");
             synchronized(this.lock.reader) {
-                if(this.state == EntityState.Running) {
-                    this.msg(DL.Info, "resuming inboud signals");
-                    Signal s = !this.meta.inbound.empty() ? this.meta.inbound.front() : null;
-                    while(s !is null) {
-                        this.receive(s);
-                        this.meta.inbound.remove(s);
-                        s = !this.meta.inbound.empty() ? this.meta.inbound.front() : null;
-                    }
+                this.msg(DL.Info, "running");
+                foreach(tm; this.meta.ticks.dup()) {
+                    this.tick(tm);
+                    this.meta.ticks.remove(tm);
+                }
+
+                this.msg(DL.Info, "resuming inboud signals");
+                Signal s = !this.meta.inbound.empty() ? this.meta.inbound.front() : null;
+                while(s !is null) {
+                    this.receive(s);
+                    this.meta.inbound.remove(s);
+                    s = !this.meta.inbound.empty() ? this.meta.inbound.front() : null;
                 }
             }
         } catch(Exception ex) {
@@ -433,14 +443,14 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
     protected void onSuspending() {
         try {
             this.msg(DL.Debug, "waiting for suspending");
+
+            // waiting for all ticker to finish
+            while(!this.ticker.empty())
+                Thread.sleep(WAITINGTIME);
+
             synchronized(this.lock.reader) {
                 this.msg(DL.Info, "suspending");
-
-                this.meta.ticks.clear();
                 
-                while(!this.ticker.empty())
-                    Thread.sleep(WAITINGTIME);
-
                 this.stop();
                 
                 this.suspendChildren();

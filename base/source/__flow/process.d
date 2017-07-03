@@ -55,13 +55,12 @@ class Flow : StateMachine!FlowState {
     }
 
     override protected void onStateChanged(FlowState oldState, FlowState newState) {
-        synchronized(this.lock.writer)
-            switch(newState) {
-                case FlowState.Disposing:
-                    this.onDisposing(); break;
-                default:
-                    break;
-            }
+        switch(newState) {
+            case FlowState.Disposing:
+                this.onDisposing(); break;
+            default:
+                break;
+        }
     }
 
     private List!Entity GetTop() {
@@ -141,13 +140,15 @@ class Flow : StateMachine!FlowState {
 
     public Entity add(EntityMeta m) {
         this.ensureState(FlowState.Running);
-        synchronized(this.lock.writer) {
-            return this.addInternal(m);
-        }
+        Entity e = null;
+        synchronized(this.lock.writer)
+            e = this.addInternal(m);
+        e.resume();
+
+        return e;
     }
 
     package Entity addInternal(EntityMeta m) {
-        this.ensureState(FlowState.Running);
         Entity e = null;
         if(m is null)
             throw new ParameterException("entity meta can't be null");
@@ -178,7 +179,6 @@ class Flow : StateMachine!FlowState {
     }
 
     package void removeInternal(EntityInfo i) {
-        this.ensureState(FlowState.Running);
         string addr = i.ptr.id~"@"~i.ptr.domain;        
         if(addr in this._local) try {
             Debug.msg(DL.Info, i, "removing entity");
@@ -231,9 +231,9 @@ class Flow : StateMachine!FlowState {
     }
 
     public bool send(Unicast s) {
-        this.ensureState(FlowState.Running);
         Debug.msg(DL.Debug, s, "sending unicast signal");
         try {
+            this.ensureState(FlowState.Running);
             auto d = s.destination;
             if(d !is null) {
                 this.giveIdAndTypeIfHasnt(s);
@@ -253,15 +253,17 @@ class Flow : StateMachine!FlowState {
     }
 
     public bool send(Multicast s) {
-        this.ensureState(FlowState.Running);
         Debug.msg(DL.Debug, s, "sending multicast signal");
         auto found = false;
         try {
+            this.ensureState(FlowState.Running);
             this.giveIdAndTypeIfHasnt(s);
             
             // sending only to acceptable
             foreach(i; this.getReceiver(s.type)) {
-                auto acceptable = i.ptr.domain.startsWith(s.domain);
+                auto srcDomain = s.domain;
+                auto dstDomain = i.ptr.domain;
+                auto acceptable = dstDomain.startsWith(srcDomain);
                 if(acceptable) {
                     this.deliver(s, i.ptr);
                     found = true;
@@ -275,15 +277,17 @@ class Flow : StateMachine!FlowState {
     }
 
     public bool send(Anycast s) {
-        this.ensureState(FlowState.Running);
         Debug.msg(DL.Debug, s, "sending anycast signal");
         auto delivered = false;
         try {
+            this.ensureState(FlowState.Running);
             this.giveIdAndTypeIfHasnt(s);
             
             // sending only to acceptable
             foreach(i; this.getReceiver(s.type)) {
-                auto acceptable = i.ptr.domain.startsWith(s.domain);
+                auto srcDomain = s.domain;
+                auto dstDomain = i.ptr.domain;
+                auto acceptable = dstDomain.startsWith(srcDomain);
                 if(acceptable) {
                     delivered = this.deliver(s, i.ptr);
                     if(delivered) break;
@@ -331,24 +335,24 @@ class Flow : StateMachine!FlowState {
         return false;
     }
     
-    private InputRange!EntityInfo getReceiver(string signal) {
-        return this.getListener(signal).inputRangeObject;
+    private InputRange!EntityInfo getReceiver(string s) {
+        return this.getListener(s).inputRangeObject;
         // TODO when using thrift call InputRange!EntityInfo getReceiver(FlowPtr process, string type) of others and merge results
     }
 
-    private DataList!EntityInfo getListener(string type) {
-        DataList!EntityInfo ret;
+    private DataList!EntityInfo getListener(string s) {
+        DataList!EntityInfo ret = new DataList!EntityInfo;
         
         Debug.msg(DL.Debug, "waiting for searching destination of signal");
         synchronized(this.lock.reader) {
-            Debug.msg(DL.Debug, "searching destination of signal type "~type);
+            Debug.msg(DL.Debug, "searching destination of signal type "~s);
             foreach(id; this._local.keys) {
                 auto e = this._local[id];
                 auto i = e.meta.info;
-                foreach(s; i.signals) {
-                    if(s == type) {
+                foreach(es; i.signals) {
+                    if(es == s) {
                         ret.put(i);
-                        Debug.msg(DL.Debug, i, "found destination of signal");
+                        Debug.msg(DL.Debug, i, "found destination for signal");
                         break;
                     }
                 }
