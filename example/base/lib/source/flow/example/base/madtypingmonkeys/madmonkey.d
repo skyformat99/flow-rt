@@ -43,14 +43,13 @@ class GoMad : Tick {
                 
             auto sent = this.answer(new Punch);
             // just something for us to see
-            debugMsg(this.entity.ptr.type~"|"~this.entity.ptr.id~"@"~this.entity.ptr.domain
-                ~" got dissapointed and "~(sent ? "successfully" : "unsuccessfully")~" punches "
-                ~s.source.type~"("~s.source.id~")", 1);
+            this.msg(DL.Debug, "got dissapointed and "~(sent ? "successfully" : "unsuccessfully")~" punches "
+                ~s.source.type~"("~s.source.id~")");
         }
     }
 }
 
-class TakePunch : Tick, ISync {
+class TakePunch : Tick {
     mixin tick;
 
     override void run() {
@@ -70,10 +69,9 @@ class TakePunch : Tick, ISync {
                 c.isKo = c.health <= cfg.koAt;
                             
                 // just something for us to see
-                debugMsg(this.entity.ptr.type~"|"~this.entity.ptr.id~"@"~this.entity.ptr.domain
-                    ~" got punched(left health "
+                this.msg(DL.Debug, "got punched(left health "
                     ~(c.health-cfg.koAt).to!string ~ ") and is "~(!c.isKo ? "not " : "")~"KO by "
-                    ~s.source.type~" ("~s.source.id~")", 1);
+                    ~s.source.type~" ("~s.source.id~")");
             }
 
             this.next(fqn!Punched);
@@ -88,16 +86,14 @@ class Punched : Tick {
         import std.random;
         import flow.base.dev;
 
-        auto s = this.trigger.as!Punch;
-        auto c = this.entity.context.as!MadMonkeyContext;
+        auto s = this.signal.as!Punch;
+        auto c = this.context.as!MadMonkeyContext;
 
         if(c.isKo) {
             auto sent = this.send(new DropCandy);
             // just something for us to see
-            debugMsg(fqnOf(this.entity) ~ " (" ~ this.entity.id.toString
-                ~ ") was koed by "
-                ~ s.source.type ~ " (" ~ s.source.id.toString ~ ")"
-                ~ " and "~(sent ? "successfully" : "unsuccessfully")~" drops candy", 1);
+            this.msg(DL.Debug, s.source, "was koed and "
+                ~(sent ? "successfully" : "unsuccessfully")~" drops candy");
 
             this.send(new NotifyKo);
         }
@@ -105,15 +101,13 @@ class Punched : Tick {
             if(uniform(0, 1) == 0) {
                 auto sent2 = this.answer(new Punch);
                 // just something for us to see
-                debugMsg(fqnOf(this.entity) ~ " (" ~ this.entity.id.toString
-                    ~ ") "~(sent2 ? "successfully" : "unsuccessfully")~" punches back at "
-                    ~ s.source.type ~ " (" ~ s.source.id.toString ~ ")", 1);
+                this.msg(DL.Debug, s.source, (sent2 ? "successfully" : "unsuccessfully")~" punches back"
+                    ~ s.source.type);
             }
 
             auto sent = this.send(new NotifyNoKo, s.source);
-            debugMsg(fqnOf(this.entity) ~ " (" ~ this.entity.id.toString
-                ~ ") "~(sent ? "successfully" : "unsuccessfully")~" notifies "
-                ~ s.source.type ~ " (" ~ s.source.id.toString ~ ") that it isn't KO'", 1);
+            this.msg(DL.Debug, s, (sent ? "successfully" : "unsuccessfully")
+                ~" notifies that it isn't KO'");
         }
     }
 }
@@ -125,36 +119,36 @@ class CatchCandy : Tick {
         import std.random;
         import flow.base.dev;
 
-        auto e = this.entity;
-        auto c = e.context.as!MadMonkeyContext;
+        auto s = this.signal.as!DropCandy;
+        auto c = this.context.as!MadMonkeyContext;
         
-        if(!s.source.identWith(e) && !c.isKo) { // it may happen
-            c.state = MonkeyEmotionalState.Happy;
-            c.candyHidden = uniform(0, 50) == 0; // 1/50 chance to hide
+        c.state = MonkeyEmotionalState.Happy;
+        c.candyHidden = uniform(0, 50) == 0; // 1/50 chance to hide
 
-            // is it hiding or showing it?
-            if(c.candyHidden) {
-                // just something for us to see
-                debugMsg(fqnOf(this.entity) ~ " (" ~ this.entity.id.toString
-                    ~ ") catched dropped candy and hides it", 1);
-            }
-            else {
-                // just something for us to see
-                debugMsg(fqnOf(this.entity) ~ " (" ~ this.entity.id.toString
-                    ~ ") catched dropped candy and shows it", 1);
-
-                this.send(new ShowCandy);
-            }
+        // is it hiding or showing it?
+        if(c.candyHidden) {
+            // just something for us to see
+            this.msg(DL.Debug, "catched dropped candy and hides it");
         }
-        else this.send(new DropCandy);
+        else {
+            // just something for us to see
+            this.msg(DL.Debug, "catched dropped candy and shows it");
+
+            this.send(new ShowCandy);
+        }
     }
 }
 
 class MadMonkey : Monkey {
-    mixin entity!(MadMonkeyContext);
+    mixin entity;
 
     mixin listen!(fqn!ShowCandy, fqn!GoMad);    
     mixin listen!(fqn!NotifyNoKo, fqn!GoMad);
     mixin listen!(fqn!Punch, fqn!TakePunch);
     mixin listen!(fqn!DropCandy, fqn!CatchCandy);
+
+    override bool accept(Signal s) {
+        // an ko monkey can't accept anything but usually you will use a switch
+        return !this.context.as!MadMonkeyContext.isKo;
+    }
 }

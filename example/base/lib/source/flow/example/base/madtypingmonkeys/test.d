@@ -1,12 +1,15 @@
 module flow.example.base.madtypingmonkeys.test;
 import flow.example.base.typingmonkeys.overseer;
 import flow.example.base.typingmonkeys.translator;
+import flow.example.base.typingmonkeys.monkey;
 import flow.example.base.madtypingmonkeys.madmonkey;
 
-import flow.base.blocks, flow.base.data;
+import flow.base.blocks, flow.base.data, flow.base.dev;
 
 /// we construct an initial causal snap for the system
 private EntityMeta createMeta(string domain, uint amount, string search) {
+    import std.conv;
+
     // build overseer meta
     auto om = new EntityMeta;
     om.info = new EntityInfo;
@@ -37,11 +40,11 @@ private EntityMeta createMeta(string domain, uint amount, string search) {
         mm.info.ptr = new EntityPtr;
         mm.info.ptr.id = "monkey_"~i.to!string;
         mm.info.ptr.type = "flow.example.base.madtypingmonkeys.madmonkey.MadMonkey";
-        mm.info.ptr.domain = domain~".madmonkeys";
+        mm.info.ptr.domain = domain;
         auto mc = new MadMonkeyConfig;
         mc.koAt = -100;
         mm.info.config = mc;
-        mm.context = new MonkeyContext;
+        mm.context = new MadMonkeyContext;
 
         // in this constructed causality snap its about to execute write tick
         auto t = new TickMeta;
@@ -57,15 +60,23 @@ private EntityMeta createMeta(string domain, uint amount, string search) {
 }
 
 /// waiter for process to wait for an event before exiting
-private bool waitForMonkeys(EntityMeta om) {
-    foreach(em; om.children) {
-        auto c = em.context.as!MonkeyContext;
-        if(c !is null && c.state == MonkeyEmotionalState.Calm) {
-            return true;
+private bool waitForMonkeys(uint amount, Flow f, EntityInfo i) {
+    auto koCount = 0;
+    foreach(m; f.get(i).children) {
+        auto c = m.meta.context.as!MadMonkeyContext;
+        if(c !is null) {
+            if(c.state == MonkeyEmotionalState.Calm)
+                return false;
+
+            if(c.candyHidden)
+                return true;
+
+            if(c.isKo)
+                koCount++;
         }
     }
 
-    return false;
+    return koCount >= amount-1;
 }
 
 /// finally we run that
@@ -75,57 +86,60 @@ void run(uint amount, string search)
     import std.datetime, std.conv;
     import flow.base.dev, flow.base.blocks;
 
-    debugMsg("#######################################", 0);
-    debugMsg("#######################################", 0);
-    debugMsg("### "~amount.to!string~" type writing monkeys, one translator", 0);
-    debugMsg("### and an overseer looking out for the bible", 0);
-    debugMsg("#######################################", 0);
-
-    // unimportant for example
-    ulong pages;
-    bool didOneHideCandy;
-    ulong amountOfActive;
+    Debug.msg(DL.Info, "#######################################");
+    Debug.msg(DL.Info, "#######################################");
+    Debug.msg(DL.Info, "### "~amount.to!string~" type writing monkeys, one translator");
+    Debug.msg(DL.Info, "### and an overseer looking out for the bible");
+    Debug.msg(DL.Info, "#######################################");
     
-    // unimportant for example
+
+    // build flow config
+    auto fc = new FlowConfig;
+    fc.ptr = new FlowPtr;
+    fc.tracing = false;
+    fc.preventIdTheft = true;
+    auto p = new Flow(fc);
+
+    auto domain = "flow.example.madtypingmonkeys";
+    auto em = createMeta(domain, amount, search);
+
     auto f = {
-        auto domain = "flow.example.typeingmonkeys";
-
-        // build flow config
-        auto fc = new FlowConfig;
-        fc.ptr = new FlowPtr;
-        fc.tracing = true;
-        fc.preventIdTheft = true;
-
-        auto em = createMeta(domain, amount, search);
-
         // create a new flow hosting the local swarm
-        auto flow = new Flow(fc);
-        flow.add(em);
+        p.add(em);
 
         // wait for an event indicating that swarm can be shut down
-        flow.wait(&waitForMonkeys);
-
-        // write causal snap to console
-        //auto h = flwo.get(em.info);
-        //h.suspend();
-        //writeln(h.snap().toJson());
-
-        // shut down local swarm writing causal state to console
-        foreach(m; flow.stop())
-            writeln(m.toJson());
+        p.wait((){return waitForMonkeys(amount, p, em.info);});
     };
-    
+
     auto b = benchmark!(f)(1);
-    debugMsg("time required for finding \"" ~ search ~ "\" "
+
+    // shut down local swarm writing causal state to console
+    auto m = p.snap().front;
+
+    p.dispose();
+
+    auto candyHidden = false;
+    auto koCount = 0;
+    foreach(em; m.children) {
+        auto c = em.context.as!MadMonkeyContext;
+        if(c !is null) {
+            if(c.candyHidden)
+                candyHidden = true;
+
+            if(c.isKo) koCount++;
+        }
+    }
+
+    Debug.msg(DL.Info, "#######################################");
+    Debug.msg(DL.Info, "time required for finding \"" ~ search ~ "\" "
         ~ "using " ~ amount.to!string ~ " monkeys "
-        ~ "reviewed " ~ pages.to!string ~ " pages "
-        ~ "searched " ~ ((pages*4)/1024).to!string ~ " MB of random data "
-        ~ "the candy is " ~ (didOneHideCandy ? "hidden " : "not hidden ")
-        ~ "and " ~ amountOfActive.to!string ~ " monkeys are left "
+        ~ "reviewed " ~ m.context.as!OverseerContext.pages.to!string ~ " pages "
+        ~ "searched " ~ ((m.context.as!OverseerContext.pages*4)/1024).to!string ~ " MB of random data "
+        ~ "the candy is " ~ (candyHidden ? "hidden " : "not hidden ")
+        ~ "and " ~ (amount-koCount).to!string ~ " monkeys are left "
         ~ ": " ~ b[0].usecs.to!string
-        ~ "usecs", 0);
-    debugMsg("#######################################", 0);
-    debugMsg("", 0);
+        ~ "usecs"~Debug.sep~m.json);
+    Debug.msg(DL.Info, "#######################################");
 }
 
 /** two kicker playing ball and one trainer

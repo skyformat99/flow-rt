@@ -41,9 +41,13 @@ mixin template TEntity() {
         this(f, m, typeListenings);
     }
 
-    protected this(__flow.process.Flow f, flow.base.data.EntityMeta m, string[string] typeListenings) {
+    protected this(__flow.process.Flow f, flow.base.data.EntityMeta m, string[string] tl) {
+        string[string] typeListenings;
         foreach(s; typeof(this)._typeListenings.keys)
             typeListenings[s] = typeof(this)._typeListenings[s];
+
+        foreach(s; tl.keys)
+            typeListenings[s] = tl[s];
 
         super(f, m, typeListenings);
     }
@@ -92,6 +96,7 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
     package @property ReadWriteMutex sync() {return this.lock;}
 
     public @property EntityMeta meta() {return this._meta;}
+    public @property Data context() {return this._meta.context;}
     public @property Entity parent() {return this._parent;}
     public @property Entity[] children() {return this._children.array;}
 
@@ -142,50 +147,48 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
     }
 
     public void tick(Signal s, string tt) {
-        this.msg(DL.Debug, "waiting for tick");
+        this.msg(DL.FDebug, "waiting for tick");
         synchronized(this.lock.reader) {
             auto ti = new TickInfo;
             ti.id = randomUUID;
             ti.entity = this.meta.info.ptr.dup();
             ti.type = tt;
             ti.group = s.group;
-            auto ticker = new Ticker(this, s, ti, (t) {
-                synchronized(this.lock.reader) {
-                    if(t.coming !is null)
-                        this.meta.ticks.put(t.coming);
-                    this.ticker.remove(t);
-                }
-            });
+            auto ticker = new Ticker(this, s, ti);
             this.ticker.put(ticker);
             ticker.start();
         }
     }
 
     public void tick(TickMeta tm) {        
-        this.msg(DL.Debug, "waiting for tick");
-        synchronized(this.lock.reader) {
-            auto ticker = new Ticker(this, tm, (t){this.ticker.remove(t);});
-            this.ticker.put(ticker);
-            ticker.start();
-        }
+        this.msg(DL.FDebug, "waiting for tick");
+        auto ticker = new Ticker(this, tm);
+        this.ticker.put(ticker);
+        ticker.start();
+    }
+
+    package void stopTick(Ticker t) {
+        if(t.coming !is null)
+            this.meta.ticks.put(t.coming);
+        this.ticker.remove(t);
     }
 
     public bool receive(Signal s) {
         auto accepted = false;
         try {
-            this.msg(DL.Debug, "waiting for receiving");
-            synchronized(this.lock.reader) {                
-                this.msg(DL.Debug, "receiving");
+            this.msg(DL.FDebug, "waiting for receiving");
+            synchronized(this.lock.reader) {
+                this.msg(DL.FDebug, "receiving");
 
                 foreach(ms; this.meta.info.signals)
-                    if(ms == s.type) {
+                    if(ms == s.type && this.accept(s)) {
                         if(this.state == EntityState.Running)
                             accepted = this.process(s);
                         else if(s.as!Anycast is null && (
                             this.state == EntityState.Suspending ||
                             this.state == EntityState.Suspended ||
                             this.state == EntityState.Resuming)) {
-                            this.msg(DL.Debug, "enqueuing signal");
+                            this.msg(DL.FDebug, "enqueuing signal");
                             // anycasts cannot be received anymore,
                             // all other signals are stored in meta
                             this.meta.inbound.put(s);
@@ -202,7 +205,7 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
     }
     
     public bool send(Unicast s, EntityPtr e) {
-        this.msg(DL.Debug, "waiting for send");
+        this.msg(DL.FDebug, "waiting for send");
         this._preventIdTheft(s);
         return this.flow.send(s, e);
     }
@@ -212,27 +215,27 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
     }
 
     public bool send(Unicast s) {
-        this.msg(DL.Debug, "waiting for send");
+        this.msg(DL.FDebug, "waiting for send");
         this._preventIdTheft(s);
         return this.flow.send(s);
     }
 
     public bool send(Multicast s) {
-        this.msg(DL.Debug, "waiting for send");
+        this.msg(DL.FDebug, "waiting for send");
         this._preventIdTheft(s);
         return this.flow.send(s);
     }
 
     public bool send(Anycast s) {
-        this.msg(DL.Debug, "waiting for send");
+        this.msg(DL.FDebug, "waiting for send");
         this._preventIdTheft(s);
         return this.flow.send(s);
     }
     
     public ListeningMeta listenFor(string s, string t) {
-        this.msg(DL.Debug, "waiting for listen");
+        this.msg(DL.FDebug, "waiting for listen");
         synchronized(this.lock.reader) {
-            this.ensureStateOr([EntityState.Initializing, EntityState.Running]);
+            this.ensureStateOr(EntityState.Initializing, EntityState.Running);
 
             auto found = false;
             foreach(ml; this.meta.listenings) {
@@ -263,9 +266,9 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
     }
     
     public void shut(ListeningMeta l) {
-        this.msg(DL.Debug, "waiting for shut");
+        this.msg(DL.FDebug, "waiting for shut");
         synchronized(this.lock.reader) {
-            this.ensureStateOr([EntityState.Disposing, EntityState.Running]);
+            this.ensureStateOr(EntityState.Disposing, EntityState.Running);
             foreach(ms; this.meta.info.signals.dup())
                 if(ms == l.signal) {
                     this.meta.info.signals.remove(l.signal);
@@ -286,7 +289,7 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
     }
 
     public EntityMeta snap() {
-        this.msg(DL.Debug, "waiting for snap");
+        this.msg(DL.FDebug, "waiting for snap");
         synchronized(this.lock.reader) {
             this.ensureState(EntityState.Suspended);
 
@@ -314,7 +317,7 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
     }
 
     public bool spawn(EntityMeta m) {
-        this.msg(DL.Debug, "waiting for listen");
+        this.msg(DL.FDebug, "waiting for listen");
         synchronized(this.lock.reader) {
             this.ensureState(EntityState.Running);
 
@@ -369,28 +372,28 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
 
     protected void onInitializing() {
         try {
-            this.msg(DL.Debug, "waiting for initializing");
+            this.msg(DL.FDebug, "waiting for initializing");
             synchronized(this.lock.reader) {
-                this.msg(DL.Debug, "initializing");
+                this.msg(DL.FDebug, "initializing");
                 auto type = this.meta.info.ptr.type;
                 this.meta.info.ptr.flowptr = this.flow.config.ptr;
                 
-                this.msg(DL.Debug, "registering type listenings");
+                this.msg(DL.FDebug, "registering type listenings");
                 foreach(s; _typeListenings.keys)
                     this.meta.info.signals.put(s);
 
                 // if its not quiet react at ping (this should be done at runtime and added to typelistenings)
                 if(this.as!IQuiet is null) {
-                    this.msg(DL.Debug, "registering ping listenings");
+                    this.msg(DL.FDebug, "registering ping listenings");
                     this.meta.info.signals.put(fqn!Ping);
                     this.meta.info.signals.put(fqn!UPing);
                 }
 
-                this.msg(DL.Debug, "registering dynamic listenings");
+                this.msg(DL.FDebug, "registering dynamic listenings");
                 foreach(l; this.meta.listenings)
                     this.listenFor(l.signal, l.tick);
 
-                this.msg(DL.Debug, "creating children entities");
+                this.msg(DL.FDebug, "creating children entities");
                 this.createChildren();
                 this.meta.children.clear();
             }
@@ -401,9 +404,9 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
 
     protected void onResuming() {
         try {
-            this.msg(DL.Debug, "waiting for resuming");
+            this.msg(DL.FDebug, "waiting for resuming");
             synchronized(this.lock.reader) {
-                this.msg(DL.Debug, "resuming");
+                this.msg(DL.FDebug, "resuming");
                 
                 this.start();
 
@@ -419,15 +422,15 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
 
     protected void onRunning() {
         try {
-            this.msg(DL.Debug, "waiting for running");
+            this.msg(DL.FDebug, "waiting for running");
             synchronized(this.lock.reader) {
-                this.msg(DL.Debug, "running");
+                this.msg(DL.FDebug, "running");
                 foreach(tm; this.meta.ticks.dup()) {
                     this.tick(tm);
                     this.meta.ticks.remove(tm);
                 }
 
-                this.msg(DL.Debug, "resuming inboud signals");
+                this.msg(DL.FDebug, "resuming inboud signals");
                 Signal s = !this.meta.inbound.empty() ? this.meta.inbound.front() : null;
                 while(s !is null) {
                     this.receive(s);
@@ -442,14 +445,14 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
 
     protected void onSuspending() {
         try {
-            this.msg(DL.Debug, "waiting for suspending");
+            this.msg(DL.FDebug, "waiting for suspending");
 
             // waiting for all ticker to finish
-            while(!this.ticker.empty())
+            while(!this.ticker.empty)
                 Thread.sleep(WAITINGTIME);
 
             synchronized(this.lock.reader) {
-                this.msg(DL.Debug, "suspending");
+                this.msg(DL.FDebug, "suspending");
                 
                 this.stop();
                 
@@ -463,7 +466,7 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
     }
 
     protected void onDamaged() {
-        this.msg(DL.Debug, "waiting for damaged");
+        this.msg(DL.FDebug, "waiting for damaged");
         synchronized(this.lock.reader) {
             this.msg(DL.Warning, "damaged");
                 
@@ -481,9 +484,9 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
 
     protected void onDisposing() {
         try {
-            this.msg(DL.Debug, "waiting for disposing");
+            this.msg(DL.FDebug, "waiting for disposing");
             synchronized(this.lock.writer) {
-                this.msg(DL.Debug, "disposing");
+                this.msg(DL.FDebug, "disposing");
                 this.disposeChildren();
 
                 this.meta.info.signals.clear();
@@ -498,6 +501,8 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
     protected void start() {}
 
     protected void stop() {}
+
+    protected bool accept(Signal s) {return true;}
 
     private void damageMeta(string msg, Data d = null) {
         try {
@@ -596,9 +601,9 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
     private bool process(Signal s) {
         auto accepted = false;
         try {
-            this.msg(DL.Debug, "processing");
+            this.msg(DL.FDebug, "processing");
             
-            this.msg(DL.Debug, "processing type listenings");
+            this.msg(DL.FDebug, "processing type listenings");
             foreach(tls; _typeListenings.keys) {
                 if(tls == s.type) {
                     this.tick(s, _typeListenings[tls]);
@@ -606,13 +611,13 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
                 }
             }
 
-            this.msg(DL.Debug, "processing ping listenings");
+            this.msg(DL.FDebug, "processing ping listenings");
             if(this.as!IQuiet is null && (s.type == fqn!Ping || s.type == fqn!UPing)) {
                 this.tick(s, fqn!SendPong);
                 accepted = true;
             }
 
-            this.msg(DL.Debug, "processing dynamic listenings");
+            this.msg(DL.FDebug, "processing dynamic listenings");
             foreach(l; this.meta.listenings) {
                 if(l.signal == s.type) {
                     this.tick(s, l.tick);

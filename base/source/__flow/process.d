@@ -98,8 +98,8 @@ class Flow : StateMachine!FlowState {
     }
 
     public DataList!EntityMeta snap() {
-        this.ensureState(FlowState.Running);
         synchronized(this.lock.reader) {
+            this.ensureState(FlowState.Running);
             auto m = new DataList!EntityMeta;
             auto top = this.GetTop();
             auto rTop = this.GetRunningTop();
@@ -119,7 +119,7 @@ class Flow : StateMachine!FlowState {
 
     protected void onDisposing() {
         try {
-            Debug.msg(DL.Debug, "waiting for disposing");
+            Debug.msg(DL.FDebug, "waiting for disposing");
             synchronized(this.lock.writer) {
                 Debug.msg(DL.Info, "disposing");
                 foreach(e; this.GetTop())
@@ -135,13 +135,14 @@ class Flow : StateMachine!FlowState {
     }
 
     public Entity add(EntityMeta m) {
-        this.ensureState(FlowState.Running);
-        Entity e = null;
-        synchronized(this.lock.writer)
+        synchronized(this.lock.writer) {
+            this.ensureState(FlowState.Running);
+            Entity e = null;
             e = this.addInternal(m);
-        e.resume();
+            e.resume();
 
-        return e;
+            return e;
+        }
     }
 
     package Entity addInternal(EntityMeta m) {
@@ -169,13 +170,14 @@ class Flow : StateMachine!FlowState {
     }
 
     public void remove(EntityInfo i) {
-        this.ensureState(FlowState.Running);
-        synchronized(this.lock.writer)
+        synchronized(this.lock.writer) {
+            this.ensureState(FlowState.Running);
             this.removeInternal(i);
+        }
     }
 
     package void removeInternal(EntityInfo i) {
-        string addr = i.ptr.id~"@"~i.ptr.domain;        
+        auto addr = i.ptr.id~"@"~i.ptr.domain;        
         if(addr in this._local) try {
             Debug.msg(DL.Info, i, "removing entity");
             auto e = this._local[addr];
@@ -193,9 +195,9 @@ class Flow : StateMachine!FlowState {
     }
 
     public Entity get(EntityInfo i) {
-        this.ensureState(FlowState.Running);
-        string addr = i.ptr.id~"@"~i.ptr.domain;   
         synchronized(this.lock.reader) {
+            this.ensureState(FlowState.Running);
+            auto addr = i.ptr.id~"@"~i.ptr.domain;
             if(addr in this._local)
                 return this._local[addr];
         }
@@ -204,7 +206,6 @@ class Flow : StateMachine!FlowState {
     }
 
     public void wait(bool delegate() expr) {
-        this.ensureState(FlowState.Running);
         while(!expr())
             Thread.sleep(WAITINGTIME);
     }
@@ -227,7 +228,7 @@ class Flow : StateMachine!FlowState {
     }
 
     public bool send(Unicast s) {
-        Debug.msg(DL.Debug, s, "sending unicast signal");
+        Debug.msg(DL.FDebug, s, "sending unicast signal");
         try {
             this.ensureState(FlowState.Running);
             auto d = s.destination;
@@ -235,10 +236,15 @@ class Flow : StateMachine!FlowState {
                 this.giveIdAndTypeIfHasnt(s);
                 
                 // sending only to acceptable
-                foreach(r; this.getReceiver(s.type)) {
-                    auto acceptable = r.ptr.id == d.id;
-                    if(acceptable)
-                        return this.deliver(s, r.ptr);
+                foreach(i; this.getReceiver(s.type)) {
+                    auto saddr = s.source.id~"@"~s.source.domain;
+                    auto raddr = i.ptr.id~"@"~i.ptr.domain;
+                    if(saddr != raddr) {
+                        auto acceptable = i.ptr.id == d.id;
+                        if(acceptable) {
+                            return this.deliver(s, i.ptr);
+                        }
+                    }
                 }
             }
         } catch(Exception ex) {
@@ -249,7 +255,7 @@ class Flow : StateMachine!FlowState {
     }
 
     public bool send(Multicast s) {
-        Debug.msg(DL.Debug, s, "sending multicast signal");
+        Debug.msg(DL.FDebug, s, "sending multicast signal");
         auto found = false;
         try {
             this.ensureState(FlowState.Running);
@@ -257,12 +263,16 @@ class Flow : StateMachine!FlowState {
             
             // sending only to acceptable
             foreach(i; this.getReceiver(s.type)) {
-                auto srcDomain = s.domain;
-                auto dstDomain = i.ptr.domain;
-                auto acceptable = dstDomain.startsWith(srcDomain);
-                if(acceptable) {
-                    this.deliver(s, i.ptr);
-                    found = true;
+                auto saddr = s.source.id~"@"~s.source.domain;
+                auto raddr = i.ptr.id~"@"~i.ptr.domain;
+                if(saddr != raddr) {
+                    auto srcDomain = s.domain;
+                    auto dstDomain = i.ptr.domain;
+                    auto acceptable = dstDomain.startsWith(srcDomain);
+                    if(acceptable) {
+                        this.deliver(s, i.ptr);
+                        found = true;
+                    }
                 }
             }
         } catch(Exception ex) {
@@ -273,7 +283,7 @@ class Flow : StateMachine!FlowState {
     }
 
     public bool send(Anycast s) {
-        Debug.msg(DL.Debug, s, "sending anycast signal");
+        Debug.msg(DL.FDebug, s, "sending anycast signal");
         auto delivered = false;
         try {
             this.ensureState(FlowState.Running);
@@ -281,12 +291,16 @@ class Flow : StateMachine!FlowState {
             
             // sending only to acceptable
             foreach(i; this.getReceiver(s.type)) {
-                auto srcDomain = s.domain;
-                auto dstDomain = i.ptr.domain;
-                auto acceptable = dstDomain.startsWith(srcDomain);
-                if(acceptable) {
-                    delivered = this.deliver(s, i.ptr);
-                    if(delivered) break;
+                auto saddr = s.source.id~"@"~s.source.domain;
+                auto raddr = i.ptr.id~"@"~i.ptr.domain;
+                if(saddr != raddr) {
+                    auto srcDomain = s.domain;
+                    auto dstDomain = i.ptr.domain;
+                    auto acceptable = dstDomain.startsWith(srcDomain);
+                    if(acceptable) {
+                        delivered = this.deliver(s, i.ptr);
+                        if(delivered) break;
+                    }
                 }
             }
         } catch(Exception ex) {
@@ -309,20 +323,18 @@ class Flow : StateMachine!FlowState {
     }
 
     private bool deliverInternal(Signal s, EntityPtr p) {
-        this.ensureState(FlowState.Running);
-        Debug.msg(DL.Debug, "waiting for delivering signal");
+        Debug.msg(DL.FDebug, "waiting for delivering signal");
         try {
-            synchronized(this.lock.reader) {
-                Debug.msg(DL.Debug, s, "delivering signal");
-                auto addr = p.id~"@"~p.domain;
-                if(addr in this._local) {
-                    auto e = this._local[addr];
-                    s = this.config.isolateMem ? s.dup().as!Signal : s;
-                    return e.receive(s);
-                } else {
-                    Debug.msg(DL.Debug, "delivering signal failed since entity is not present");
-                    return false;/* TODO search online when implementing junction*/
-                }
+            this.ensureState(FlowState.Running);
+            Debug.msg(DL.FDebug, s, "delivering signal");
+            auto addr = p.id~"@"~p.domain;
+            if(addr in this._local) {
+                auto e = this._local[addr];
+                s = this.config.isolateMem ? s.dup().as!Signal : s;
+                return e.receive(s);
+            } else {
+                Debug.msg(DL.FDebug, "delivering signal failed since entity is not present");
+                return false;/* TODO search online when implementing junction*/
             }
         } catch(Exception ex) {
             Debug.msg(DL.Info, ex, "delivering signal failed");
@@ -339,16 +351,16 @@ class Flow : StateMachine!FlowState {
     private DataList!EntityInfo getListener(string s) {
         DataList!EntityInfo ret = new DataList!EntityInfo;
         
-        Debug.msg(DL.Debug, "waiting for searching destination of signal");
+        Debug.msg(DL.FDebug, "waiting for searching destination of signal");
         synchronized(this.lock.reader) {
-            Debug.msg(DL.Debug, "searching destination of signal type "~s);
+            Debug.msg(DL.FDebug, "searching destination of signal type "~s);
             foreach(id; this._local.keys) {
                 auto e = this._local[id];
                 auto i = e.meta.info;
                 foreach(es; i.signals) {
                     if(es == s) {
                         ret.put(i);
-                        Debug.msg(DL.Debug, i, "found destination for signal");
+                        Debug.msg(DL.FDebug, i, "found destination for signal");
                         break;
                     }
                 }

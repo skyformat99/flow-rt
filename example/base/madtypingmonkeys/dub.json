@@ -9,13 +9,13 @@
 		"flow-base": "==0.2.0",
 		"flow-example-base-lib": "==0.2.0"
 	},
-	"name": "flow-example-base-madtypingmonkey",
+	"name": "flow-example-base-madtypingmonkeys",
 	"version": "0.2.0",
 	"license": "GPL-3.0",
-	"targetName": "flow-example-base-madtypingmonkey",
+	"targetName": "flow-example-base-madtypingmonkeys",
 	"targetType": "executable",
 	"targetPath": "bin",
-	"description": "FLOW example madtypingmonkey.",
+	"description": "FLOW example madtypingmonkeys.",
 	"homepage": "https://github.com/RalphBariz/flow",
 	"sourcePaths": [
 		"source/"

@@ -9,7 +9,6 @@ import flow.base.dev, flow.base.data, flow.base.signals, flow.base.interfaces;
 /// ticker executing chains of ticks
 class Ticker : Thread
 {
-    private void delegate(Ticker) _exitHandler;
     private ulong _seq;
 
     private Entity _entity;
@@ -19,12 +18,10 @@ class Ticker : Thread
     public @property TickMeta actual() {return this._actual;}
     public @property TickMeta coming() {return this._coming;}
 
-    this(Entity e, Signal signal, TickInfo initTick, void delegate(Ticker) exitHandler) {
-        this._exitHandler = exitHandler;
-        
+    this(Entity e, Signal signal, TickInfo initTick) {        
         this._entity = e;
 
-        this._entity.msg(DL.Debug, initTick, "enqueuing tick");
+        this._entity.msg(DL.FDebug, initTick, "enqueuing tick");
         this._coming = this.createTick(initTick);
         this.coming.trigger = signal.id;
         this.coming.signal = signal;
@@ -32,12 +29,10 @@ class Ticker : Thread
         super(&this.loop);
     }
     
-    this(Entity e, TickMeta initTick, void delegate(Ticker) exitHandler) {
-        this._exitHandler = exitHandler;
-        
+    this(Entity e, TickMeta initTick) {        
         this._entity = e;
 
-        this._entity.msg(DL.Debug, initTick, "enqueuing tick");
+        this._entity.msg(DL.FDebug, initTick, "enqueuing tick");
         this._coming = initTick;
 
         super(&this.loop);
@@ -66,13 +61,13 @@ class Ticker : Thread
 
     /// creates a new ticker initialized with given tick
     public void fork(TickMeta m) {
-        this._entity.msg(DL.Debug, m, "forking tick");
+        this._entity.msg(DL.FDebug, m, "forking tick");
         this._entity.tick(m);
     }
 
     /// enques next tick in the chain
     public void next(TickInfo i, Data d = null) {
-        this._entity.msg(DL.Debug, i, "enqueuing tick");
+        this._entity.msg(DL.FDebug, i, "enqueuing tick");
         auto m = this.createTick(i, d);
         m.trigger = this.actual.info.id;
         m.signal = this.actual.signal;
@@ -93,76 +88,83 @@ class Ticker : Thread
     }
 
     private void loop() {
-        this._entity.msg(DL.Debug, "ticker starts");
+        this._entity.msg(DL.FDebug, "ticker starts");
 
-        while(this._entity.state == EntityState.Running && this.coming !is null) {
-            this._actual = this.coming;
-            this._coming = null;
+        try {
+            try {
+                while(this._entity.state == EntityState.Running && this.coming !is null) {
+                    this._actual = this.coming;
+                    this._coming = null;
 
-            if(Tick.canCreate(this.actual.info.type)) {
-                auto t = Tick.create(this.actual, this);
+                    if(Tick.canCreate(this.actual.info.type)) {
+                        auto t = Tick.create(this.actual, this);
 
-                if(t.info.id == UUID.init)
-                    t.info.id = randomUUID;
-                
-                if(this._entity.flow.config.tracing &&
-                    this._entity.as!IStealth is null &&
-                    t.as!IStealth is null) {
-                    auto td = new TraceTickData;
-                    auto ts = new TraceBeginTick;
-                    ts.type = ts.dataType;
-                    ts.data = td;
-                    ts.data.group = this.actual.info.group;
-                    ts.data.nature = "Tick";
-                    ts.data.id = this.actual.info.id;
-                    ts.data.trigger = this.actual.trigger;
-                    ts.data.time = Clock.currTime.toUTC();
-                    ts.data.entity = this._entity.meta.info.ptr;
-                    ts.data.tick = this.actual.info.type;
-                    this._entity.send(ts);
-                }
-
-                synchronized(t.as!ISync !is null ? this._entity.sync.writer : this._entity.sync.reader) {
-                    try {
-                        this._entity.msg(DL.Debug, this.actual, "executing tick");
-                        t.run();
-                        this._entity.msg(DL.Debug, this.actual, "finished tick");
-                    }
-                    catch(Exception ex) {
-                        this._entity.msg(DL.Info, ex, "tick failed");
-                        try {
-                            this._entity.msg(DL.Info, this.actual, "handling tick error");
-                            t.error(ex);
-                            this._entity.msg(DL.Info, this.actual, "tick error handled");
+                        if(t.info.id == UUID.init)
+                            t.info.id = randomUUID;
+                        
+                        if(this._entity.flow.config.tracing &&
+                            this._entity.as!IStealth is null &&
+                            t.as!IStealth is null) {
+                            auto td = new TraceTickData;
+                            auto ts = new TraceBeginTick;
+                            ts.type = ts.dataType;
+                            ts.data = td;
+                            ts.data.group = this.actual.info.group;
+                            ts.data.nature = "Tick";
+                            ts.data.id = this.actual.info.id;
+                            ts.data.trigger = this.actual.trigger;
+                            ts.data.time = Clock.currTime.toUTC();
+                            ts.data.entity = this._entity.meta.info.ptr;
+                            ts.data.tick = this.actual.info.type;
+                            this._entity.send(ts);
                         }
-                        catch(Exception ex2) {
-                            this._entity.msg(DL.Warning, ex2, "handling tick error failed");
+
+                        synchronized(this._entity.sync.reader) {
+                            try {
+                                this._entity.msg(DL.FDebug, this.actual, "executing tick");
+                                t.run();
+                                this._entity.msg(DL.FDebug, this.actual, "finished tick");
+                            }
+                            catch(Exception ex) {
+                                this._entity.msg(DL.Info, ex, "tick failed");
+                                try {
+                                    this._entity.msg(DL.Info, this.actual, "handling tick error");
+                                    t.error(ex);
+                                    this._entity.msg(DL.Info, this.actual, "tick error handled");
+                                }
+                                catch(Exception ex2) {
+                                    this._entity.msg(DL.Warning, ex2, "handling tick error failed");
+                                }
+                            }
+                        }
+                        
+                        if(this._entity.flow.config.tracing &&
+                            this._entity.as!IStealth is null &&
+                            t.as!IStealth is null) {
+                            auto td = new TraceTickData;
+                            auto ts = new TraceEndTick;
+                            ts.type = ts.dataType;
+                            ts.data = td;
+                            ts.data.group = this.actual.info.group;
+                            ts.data.nature = "Tick";
+                            ts.data.id = this.actual.info.id;
+                            ts.data.trigger = this.actual.trigger;
+                            ts.data.time = Clock.currTime.toUTC();
+                            ts.data.entity = this._entity.meta.info.ptr;
+                            ts.data.tick = this.actual.info.type;
+                            this._entity.send(ts);
                         }
                     }
+                    else break;
                 }
-                
-                if(this._entity.flow.config.tracing &&
-                    this._entity.as!IStealth is null &&
-                    t.as!IStealth is null) {
-                    auto td = new TraceTickData;
-                    auto ts = new TraceEndTick;
-                    ts.type = ts.dataType;
-                    ts.data = td;
-                    ts.data.group = this.actual.info.group;
-                    ts.data.nature = "Tick";
-                    ts.data.id = this.actual.info.id;
-                    ts.data.trigger = this.actual.trigger;
-                    ts.data.time = Clock.currTime.toUTC();
-                    ts.data.entity = this._entity.meta.info.ptr;
-                    ts.data.tick = this.actual.info.type;
-                    this._entity.send(ts);
-                }
+            } finally {
+                this._entity.stopTick(this);
             }
-            else break;
-        }
 
-        if(this._exitHandler !is null) this._exitHandler(this);
-        this._entity.msg(DL.Debug, "ticker ends");
+            this._entity.msg(DL.FDebug, "ticker ends");
+        } catch(Exception ex) {
+            this._entity.damage("ticker died", ex);
+        }
     }
 }
 

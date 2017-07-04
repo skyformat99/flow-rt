@@ -3,9 +3,6 @@ import flow.example.base.typingmonkeys.signals;
 
 import flow.base.blocks, flow.base.signals, flow.base.interfaces;
 
-// just an internal signal, therefor located here
-class FoundNotify : Unicast{mixin signal!(GermanPage);}
-
 /// she needs to know a few things
 class OverseerConfig : Data {
 	mixin data;
@@ -43,30 +40,13 @@ class Search : Tick {
                 ~c.pages.to!string~" pages and "
                 ~(c.pages*4).to!string
                 ~"kB of random bytes");
-
-                /* notifying herself that she found something
-                you may now ask, why do this via signalling?
-                by doing this via signalling its possible
-                to override signal from a derrived overseer */
-                auto found = new FoundNotify;
-                found.data = s.data;
-                this.send(found, this.entity.ptr);
+                
+                /* she is a real sweetheart giving
+                the successful monkey a candy */
+                this.send(new Candy, s.data.author);
         }
 
         c.pages = c.pages + 1;
-    }
-}
-
-class Found : Tick {
-	mixin tick;
-
-	override void run() {
-        if(this.signal.source.identWith(this.entity.ptr)) {
-            auto s = this.signal.as!FoundNotify;
-            /* she is a real sweetheart giving
-            the successful monkey a candy */
-            this.send(new Candy, s.data.author);
-        }
     }
 }
 
@@ -75,6 +55,5 @@ class Found : Tick {
 class Overseer : Entity {
     mixin entity;
     
-    mixin listen!(fqn!GermanText, fqn!Search);    
-    mixin listen!(fqn!FoundNotify, fqn!Found);
+    mixin listen!(fqn!GermanText, fqn!Search);
 }

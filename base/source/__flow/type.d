@@ -417,7 +417,8 @@ class StateMachine(T) if (isScalarType!T) {
     protected @property ReadWriteMutex lock() {return this._lock;}
 
     @property T state() {
-        synchronized(this._lock.reader) return this._state;
+        // no lock required since primitives are synced by D
+        return this._state;
     }
 
     protected @property void state(T value) {
@@ -443,21 +444,28 @@ class StateMachine(T) if (isScalarType!T) {
     }
 
     protected void ensureState(T requiredState) {
-        if(this.state != requiredState)
+        // no lock required since primitives are synced by D
+        if(this._state != requiredState)
             throw new InvalidStateException();
     }
 
-    protected void ensureStateOr(T[] possibleStates) {
-        synchronized(this._lock.reader) {
-            auto found = false;
-            foreach(ps; possibleStates)
-                if(ps == this._state) {
-                    found = true;
-                    break;
-                }
-            if(!found)
-                throw new InvalidStateException();
-        }
+    // TODO replace ensure state or overloadings with template
+    protected void ensureStateOr(T state1, T state2) {
+        auto state = this._state;
+        if(state != state1 && state != state2)
+            throw new InvalidStateException();
+    }
+
+    protected void ensureStateOr(T state1, T state2, T state3) {
+        auto state = this._state;
+        if(state != state1 && state != state2 && state != state3)
+            throw new InvalidStateException();
+    }
+
+    protected void ensureStateOr(T state1, T state2, T state3, T state4) {
+        auto state = this._state;
+        if(state != state1 && state != state2 && state != state3 && state != state4)
+            throw new InvalidStateException();
     }
 
     protected bool onStateChanging(T oldState, T newState) {return true;}

@@ -12,8 +12,6 @@ interface IStealth{}
 
 interface IQuiet{}
 
-interface ISync{}
-
 interface IIdentified
 {
     @property UUID id();

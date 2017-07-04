@@ -60,9 +60,8 @@ private EntityMeta createMeta(string domain, uint amount, string search) {
 private bool waitForMonkeys(Flow f, EntityInfo i) {
     foreach(m; f.get(i).children) {
         auto c = m.meta.context.as!MonkeyContext;
-        if(c !is null && c.state == MonkeyEmotionalState.Calm) {
+        if(c !is null && c.state == MonkeyEmotionalState.Calm)
             return false;
-        }
     }
 
     return true;
@@ -71,7 +70,7 @@ private bool waitForMonkeys(Flow f, EntityInfo i) {
 /// finally we run that
 void run(uint amount, string search) {
     import core.time;
-    import std.datetime, std.conv, std.stdio, std.ascii;
+    import std.datetime, std.conv;
     import flow.base.dev;
 
     Debug.msg(DL.Info, "#######################################");
@@ -80,44 +79,38 @@ void run(uint amount, string search) {
     Debug.msg(DL.Info, "### and an overseer looking out for the bible");
     Debug.msg(DL.Info, "#######################################");
 
-    // unimportant for example
-    ulong pages;
-    EntityMeta m;
+    // build flow config
+    auto fc = new FlowConfig;
+    fc.ptr = new FlowPtr;
+    fc.tracing = false;
+    fc.preventIdTheft = true;
+    auto p = new Flow(fc);
 
-    // unimportant for example
+    auto domain = "flow.example.typingmonkeys";
+    auto em = createMeta(domain, amount, search);
+
     auto f = {
-        auto domain = "flow.example.typingmonkeys";
-
-        // build flow config
-        auto fc = new FlowConfig;
-        fc.ptr = new FlowPtr;
-        fc.tracing = false;
-        fc.preventIdTheft = true;
-
-        auto em = createMeta(domain, amount, search);
-
         // create a new flow hosting the local swarm
-        auto flow = new Flow(fc);
-        flow.add(em);
+        p.add(em);
 
         // wait for an event indicating that swarm can be shut down
-        flow.wait((){return waitForMonkeys(flow, em.info);});
-
-        // shut down local swarm writing causal state to console
-        m = flow.snap().front;
-
-        flow.dispose();
+        p.wait((){return waitForMonkeys(p, em.info);});
     };
-
     
     auto b = benchmark!(f)(1);
+
+    // shut down local swarm writing causal state to console
+    auto m = p.snap().front;
+
+    p.dispose();
+
     Debug.msg(DL.Info, "#######################################");
     Debug.msg(DL.Info, "time required for finding \"" ~ search ~ "\" "
         ~ "using " ~ amount.to!string ~ " monkeys "
         ~ "reviewed " ~ m.context.as!OverseerContext.pages.to!string ~ " pages "
         ~ "searched " ~ ((m.context.as!OverseerContext.pages*4)/1024).to!string ~ " MB of random data"
         ~ ": " ~ b[0].usecs.to!string
-        ~ "usecs"~newline~m.json);
+        ~ "usecs"~Debug.sep~m.json);
     Debug.msg(DL.Info, "#######################################");
 }
 
