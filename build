@@ -24,8 +24,6 @@ buildLib base &&
 #buildLib alien &&
 buildLib example/base/lib &&
 
-#buildBin example/base/simplekicker &&
-#buildBin example/base/trainingkicker &&
 buildBin example/base/typingmonkeys &&
 buildBin example/base/madtypingmonkeys #&&
 #buildBin example/net/http &&
