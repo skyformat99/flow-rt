@@ -207,7 +207,7 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
     public bool send(Unicast s, EntityPtr e) {
         this.msg(DL.FDebug, "waiting for send");
         this._preventIdTheft(s);
-        return this.flow.send(s, e);
+        return this.state == EntityState.Running && this.flow.send(s, e);
     }
 
     public bool send(Unicast s, EntityInfo e) {
@@ -215,21 +215,18 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
     }
 
     public bool send(Unicast s) {
-        this.msg(DL.FDebug, "waiting for send");
         this._preventIdTheft(s);
-        return this.flow.send(s);
+        return this.state == EntityState.Running && this.flow.send(s);
     }
 
     public bool send(Multicast s) {
-        this.msg(DL.FDebug, "waiting for send");
         this._preventIdTheft(s);
-        return this.flow.send(s);
+        return this.state == EntityState.Running && this.flow.send(s);
     }
 
     public bool send(Anycast s) {
-        this.msg(DL.FDebug, "waiting for send");
         this._preventIdTheft(s);
-        return this.flow.send(s);
+        return this.state == EntityState.Running && this.flow.send(s);
     }
     
     public ListeningMeta listenFor(string s, string t) {

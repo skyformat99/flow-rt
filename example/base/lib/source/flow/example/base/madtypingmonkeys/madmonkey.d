@@ -37,15 +37,13 @@ class GoMad : Tick {
 
         auto s = this.signal;
         auto c = this.context.as!MadMonkeyContext;
-
-        if(!s.source.identWith(this.entity.ptr) && !c.isKo) {
-            c.state = MonkeyEmotionalState.Dissapointed;
-                
-            auto sent = this.answer(new Punch);
-            // just something for us to see
-            this.msg(DL.Debug, "got dissapointed and "~(sent ? "successfully" : "unsuccessfully")~" punches "
-                ~s.source.type~"("~s.source.id~")");
-        }
+        
+        c.state = MonkeyEmotionalState.Dissapointed;
+            
+        auto sent = this.answer(new Punch);
+        // just something for us to see
+        this.msg(DL.Debug, "got dissapointed and "~(sent ? "successfully" : "unsuccessfully")~" punches "
+            ~s.source.type~"("~s.source.id~")");
     }
 }
 
@@ -97,17 +95,19 @@ class Punched : Tick {
 
             this.send(new NotifyKo);
         }
-        else {         
-            if(uniform(0, 1) == 0) {
+        else {
+            auto punch = uniform(0, 1) == 0; // 50% chance to punch back
+
+            auto sent = this.send(new NotifyNoKo, s.source);
+            this.msg(DL.Debug, s, (sent ? "successfully" : "unsuccessfully")
+                ~" notifies that it isn't KO'");
+
+            if(punch) { 
                 auto sent2 = this.answer(new Punch);
                 // just something for us to see
                 this.msg(DL.Debug, s.source, (sent2 ? "successfully" : "unsuccessfully")~" punches back"
                     ~ s.source.type);
             }
-
-            auto sent = this.send(new NotifyNoKo, s.source);
-            this.msg(DL.Debug, s, (sent ? "successfully" : "unsuccessfully")
-                ~" notifies that it isn't KO'");
         }
     }
 }
@@ -123,7 +123,7 @@ class CatchCandy : Tick {
         auto c = this.context.as!MadMonkeyContext;
         
         c.state = MonkeyEmotionalState.Happy;
-        c.candyHidden = uniform(0, 50) == 0; // 1/50 chance to hide
+        c.candyHidden = uniform(0, 3) == 0; // 25% chance to hide the candy
 
         // is it hiding or showing it?
         if(c.candyHidden) {

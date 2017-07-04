@@ -80,7 +80,7 @@ class Flow : StateMachine!FlowState {
     }
 
     public void suspend() {
-        synchronized(this.lock.writer) {
+        synchronized(this.lock.reader) {
             auto rTop = this.GetRunningTop();
             
             foreach(e; rTop)
@@ -89,7 +89,7 @@ class Flow : StateMachine!FlowState {
     }
 
     public void resume() {
-        synchronized(this.lock.writer) {
+        synchronized(this.lock.reader) {
             auto top = this.GetTop();
             
             foreach(e; top)
@@ -119,6 +119,7 @@ class Flow : StateMachine!FlowState {
 
     protected void onDisposing() {
         try {
+            this.suspend();
             Debug.msg(DL.FDebug, "waiting for disposing");
             synchronized(this.lock.writer) {
                 Debug.msg(DL.Info, "disposing");
@@ -181,8 +182,10 @@ class Flow : StateMachine!FlowState {
         if(addr in this._local) try {
             Debug.msg(DL.Info, i, "removing entity");
             auto e = this._local[addr];
+
             if(e.state == EntityState.Running)
-                e.suspend();
+                throw new ParameterException("entity cannot be in a running state");
+
             if(e.state != EntityState.Disposed)
                 e.dispose();
             this._local.remove(addr);
