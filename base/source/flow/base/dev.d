@@ -16,7 +16,7 @@ enum DL : uint {
 
 class Debug {
     public static immutable sep = newline~"--------------------------------------------------"~newline;
-    public static DL debugLevel = DL.Debug;
+    public static DL debugLevel = DL.Info;
     public static void msg(DL level, string msg) {
         if(level <= debugLevel) {
             auto t = "["~level.to!string~"] ";

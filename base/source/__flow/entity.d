@@ -175,7 +175,7 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
         try {
             this.msg(DL.Debug, "waiting for receiving");
             synchronized(this.lock.reader) {                
-                this.msg(DL.Info, "receiving");
+                this.msg(DL.Debug, "receiving");
 
                 foreach(ms; this.meta.info.signals)
                     if(ms == s.type) {
@@ -371,7 +371,7 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
         try {
             this.msg(DL.Debug, "waiting for initializing");
             synchronized(this.lock.reader) {
-                this.msg(DL.Info, "initializing");
+                this.msg(DL.Debug, "initializing");
                 auto type = this.meta.info.ptr.type;
                 this.meta.info.ptr.flowptr = this.flow.config.ptr;
                 
@@ -403,7 +403,7 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
         try {
             this.msg(DL.Debug, "waiting for resuming");
             synchronized(this.lock.reader) {
-                this.msg(DL.Info, "resuming");
+                this.msg(DL.Debug, "resuming");
                 
                 this.start();
 
@@ -421,13 +421,13 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
         try {
             this.msg(DL.Debug, "waiting for running");
             synchronized(this.lock.reader) {
-                this.msg(DL.Info, "running");
+                this.msg(DL.Debug, "running");
                 foreach(tm; this.meta.ticks.dup()) {
                     this.tick(tm);
                     this.meta.ticks.remove(tm);
                 }
 
-                this.msg(DL.Info, "resuming inboud signals");
+                this.msg(DL.Debug, "resuming inboud signals");
                 Signal s = !this.meta.inbound.empty() ? this.meta.inbound.front() : null;
                 while(s !is null) {
                     this.receive(s);
@@ -449,7 +449,7 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
                 Thread.sleep(WAITINGTIME);
 
             synchronized(this.lock.reader) {
-                this.msg(DL.Info, "suspending");
+                this.msg(DL.Debug, "suspending");
                 
                 this.stop();
                 
@@ -483,7 +483,7 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
         try {
             this.msg(DL.Debug, "waiting for disposing");
             synchronized(this.lock.writer) {
-                this.msg(DL.Info, "disposing");
+                this.msg(DL.Debug, "disposing");
                 this.disposeChildren();
 
                 this.meta.info.signals.clear();
@@ -596,7 +596,7 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
     private bool process(Signal s) {
         auto accepted = false;
         try {
-            this.msg(DL.Info, "processing");
+            this.msg(DL.Debug, "processing");
             
             this.msg(DL.Debug, "processing type listenings");
             foreach(tls; _typeListenings.keys) {

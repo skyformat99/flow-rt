@@ -33,10 +33,6 @@ class Flow : StateMachine!FlowState {
         this.state = FlowState.Running;
     }
 
-    ~this() {
-        this.dispose();
-    }
-
     public void dispose() {
         this.state = FlowState.Disposing;
     }
@@ -127,7 +123,7 @@ class Flow : StateMachine!FlowState {
             synchronized(this.lock.writer) {
                 Debug.msg(DL.Info, "disposing");
                 foreach(e; this.GetTop())
-                    this.remove(e.meta.info);
+                    this.removeInternal(e.meta.info);
             }
 
             this.state = FlowState.Disposed;
@@ -158,7 +154,7 @@ class Flow : StateMachine!FlowState {
             
             string addr = m.info.ptr.id~"@"~m.info.ptr.domain;  
             try {
-                Debug.msg(DL.Info, m, "adding entity");
+                Debug.msg(DL.Info, m.info, "adding entity");
                 e = Entity.create(this, m);
                 if(e !is null)
                     this._local[addr] = e;

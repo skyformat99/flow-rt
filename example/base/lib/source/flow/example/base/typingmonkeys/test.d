@@ -71,7 +71,7 @@ private bool waitForMonkeys(Flow f, EntityInfo i) {
 /// finally we run that
 void run(uint amount, string search) {
     import core.time;
-    import std.datetime, std.conv, std.stdio;
+    import std.datetime, std.conv, std.stdio, std.ascii;
     import flow.base.dev;
 
     Debug.msg(DL.Info, "#######################################");
@@ -82,7 +82,8 @@ void run(uint amount, string search) {
 
     // unimportant for example
     ulong pages;
-    
+    EntityMeta m;
+
     // unimportant for example
     auto f = {
         auto domain = "flow.example.typingmonkeys";
@@ -102,27 +103,22 @@ void run(uint amount, string search) {
         // wait for an event indicating that swarm can be shut down
         flow.wait((){return waitForMonkeys(flow, em.info);});
 
-        // write causal snap to console
-        //auto h = flwo.get(em.info);
-        //h.suspend();
-        //writeln(h.snap().json);
-
         // shut down local swarm writing causal state to console
-        foreach(m; flow.snap())
-            writeln(m.json);
+        m = flow.snap().front;
 
         flow.dispose();
     };
 
     
     auto b = benchmark!(f)(1);
+    Debug.msg(DL.Info, "#######################################");
     Debug.msg(DL.Info, "time required for finding \"" ~ search ~ "\" "
         ~ "using " ~ amount.to!string ~ " monkeys "
-        ~ "reviewed " ~ pages.to!string ~ " pages "
-        ~ "searched " ~ ((pages*4)/1024).to!string ~ " MB of random data"
+        ~ "reviewed " ~ m.context.as!OverseerContext.pages.to!string ~ " pages "
+        ~ "searched " ~ ((m.context.as!OverseerContext.pages*4)/1024).to!string ~ " MB of random data"
         ~ ": " ~ b[0].usecs.to!string
-        ~ "usecs");
-    Debug.msg(DL.Info, "#######################################"~Debug.sep);
+        ~ "usecs"~newline~m.json);
+    Debug.msg(DL.Info, "#######################################");
 }
 
 /** two kicker playing ball and one trainer
