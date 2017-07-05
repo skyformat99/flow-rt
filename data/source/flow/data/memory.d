@@ -2,10 +2,9 @@ module flow.data.memory;
 
 import std.uuid, std.array, std.datetime;
 
-import flow.base.blocks, flow.base.data, flow.base.interfaces;
+import flow.base.blocks, flow.base.signals, flow.base.data, flow.base.interfaces;
 
-class RevisionInfo : Data
-{
+class RevisionInfo : Data {
     mixin data;
 
     mixin field!(long, "id");
@@ -13,8 +12,7 @@ class RevisionInfo : Data
 }
 
 /// holds a list of revisions for specific data
-class MemoryInfo : IdData
-{
+class MemoryInfo : IdData {
     mixin data;
 
     mixin field!(string, "name");
@@ -23,16 +21,14 @@ class MemoryInfo : IdData
 }
 
 /// adresses a specific revision of specific data
-class RequestInfo : IdData
-{
+class RequestInfo : IdData {
     mixin data;
 
     mixin field!(long, "revision");
 }
 
 /// meta informations of data stored in url
-class MemoryInfos : Data
-{
+class MemoryInfos : Data {
     mixin data;
 
     mixin list!(string, "types");
@@ -40,31 +36,26 @@ class MemoryInfos : Data
 }
 
 /// file format enumeration
-enum MemoryFormat : uint
-{
+enum MemoryFormat : uint {
     Json = 1
 }
 
 /// context of memory entity
-class MemoryContext : Data
-{
+class MemoryContext : Data {
     mixin data;
 
-    mixin field!(MemorySettings, "settings");
-
+    mixin field!(MemoryConfig, "settings");
     mixin field!(MemoryInfos, "infos");
 }
 
 /// settings of memory entity
-class MemorySettings : Data
-{
+class MemoryConfig : EntityConfig {
     mixin data;
     
     mixin list!(string, "types");
 }
 
-class FileMemorySettings : MemorySettings
-{
+class FileMemoryConfig : MemoryConfig {
     mixin data;
     
     mixin field!(string, "url");
@@ -72,8 +63,7 @@ class FileMemorySettings : MemorySettings
 }
 
 /// container holding data
-class MemoryContainer : IdData
-{
+class MemoryContainer : IdData {
     mixin data;
 
     mixin field!(long, "revision");
@@ -110,8 +100,7 @@ class UpdateMsg : Multicast{mixin signal!(UUID);}
 class RemoveMsg : Multicast{mixin signal!(UUID);}
 
 /// can memory store a specific data type?
-private bool canStore(MemorySettings se, MemoryContainer d)
-{
+private bool canStore(MemoryConfig se, MemoryContainer d) {
     import std.algorithm.searching;
 
     return d !is null && d.data !is null &&
@@ -120,8 +109,7 @@ private bool canStore(MemorySettings se, MemoryContainer d)
 }
 
 /// do memory contain specific data
-private bool contains(MemoryContext c, UUID d)
-{
+private bool contains(MemoryContext c, UUID d) {
     import std.algorithm.searching;
 
     return d != UUID.init &&
@@ -129,8 +117,7 @@ private bool contains(MemoryContext c, UUID d)
 }
 
 /// do memory contain a specific revision of specific data
-private bool contains(MemoryContext c, RequestInfo d)
-{
+private bool contains(MemoryContext c, RequestInfo d) {
     import std.algorithm.searching;
 
     return d.id != UUID.init &&
@@ -142,15 +129,14 @@ private bool contains(MemoryContext c, RequestInfo d)
 
 /// inform swarm that memories were loaded
 class LoadedMsg : Multicast{mixin signal!();}
-class Loaded : Tick
-{
+class Loaded : Tick {
 	mixin tick;
 
 	override void run()
 	{
         import flow.base.dev;
         
-        debugMsg("memory successfully loaded", 1);
+        this.msg(DL.Debug, "memory successfully loaded");
         this.answer(new LoadedMsg);
     }
 }
@@ -158,8 +144,7 @@ class Loaded : Tick
 /// inform the requestor memory isn't loaded yet
 class NotLoadedMsg : Unicast{mixin signal!();}
 
-class NotLoaded : Tick
-{
+class NotLoaded : Tick {
 	mixin tick;
 
 	override void run()
@@ -168,8 +153,7 @@ class NotLoaded : Tick
     }
 }
 
-RevisionInfo lastRevOf(MemoryInfo i, UUID id)
-{
+RevisionInfo lastRevOf(MemoryInfo i, UUID id) {
     import std.algorithm.comparison, std.algorithm.iteration;
 
     if(!i.revisions.empty)
@@ -178,8 +162,7 @@ RevisionInfo lastRevOf(MemoryInfo i, UUID id)
     return null;
 }
 
-enum StoreType
-{
+enum StoreType {
     Add,
     Update
 }
@@ -187,54 +170,58 @@ class StoreSuccessMsg : Unicast{mixin signal!(string);}
 class StoreFailedMsg : Unicast{mixin signal!(string);}
 
 /// stores data to disk
-class Store : Tick
-{
+class Store : Tick {
 	mixin tick;
 
 	override void run()
 	{
         import std.conv, std.algorithm.iteration;
 
-        auto s = this.trigger.as!StoreRequest;
-        auto c = this.entity.context.as!MemoryContext;
+        auto s = this.signal.as!StoreRequest;
+        auto c = this.context.as!MemoryContext;
+        auto cfg = this.entity.config.as!MemoryConfig;
 
-        MemoryInfo mi;
-        if(c.contains(s.data.id))
-            mi = c.infos.data.array.filter!(i=>i.id == s.data.id).front;
-        else
-        {
-            mi = new MemoryInfo;
-            mi.id = s.data.id;
-            c.infos.data.put(mi);
+        if(!cfg.canStore(s.data))
+            this.answer(new IncompatibleResponse);
+        else {
+            MemoryInfo mi;
+            if(c.contains(s.data.id))
+                mi = c.infos.data.array.filter!(i=>i.id == s.data.id).front;
+            else
+            {
+                mi = new MemoryInfo;
+                mi.id = s.data.id;
+                c.infos.data.put(mi);
+            }
+
+            mi.name = s.data.name;
+            mi.description = s.data.description;
+
+            auto revision = new RevisionInfo;
+            auto lr = mi.lastRevOf(s.data.id);
+            revision.id = lr !is null ? lr.id + 1 : 0;
+            s.data.revision = revision.id;
+            revision.time = Clock.currTime.toUTC().as!DateTime;
+            mi.revisions.put(revision);
+
+            auto mc = s.data.as!MemoryContainer;
+            auto st = this.entity.as!Memory.store(mc);
+
+            if(st == StoreType.Add)
+            {
+                auto ns = new AddedMsg;
+                ns.data = s.data.id;
+                this.send(ns);
+            }
+            else if(st == StoreType.Update)
+            {
+                auto ns = new UpdateMsg;
+                ns.data = s.data.id;
+                this.send(ns);
+            }
+
+            this.answer(new StoreSuccessMsg);
         }
-
-        mi.name = s.data.name;
-        mi.description = s.data.description;
-
-        auto revision = new RevisionInfo;
-        auto lr = mi.lastRevOf(s.data.id);
-        revision.id = lr !is null ? lr.id + 1 : 0;
-        s.data.revision = revision.id;
-        revision.time = Clock.currTime.toUTC().as!DateTime;
-        mi.revisions.put(revision);
-
-        auto mc = s.data.as!MemoryContainer;
-        auto st = this.entity.as!Memory.store(mc);
-
-        if(st == StoreType.Add)
-        {
-            auto ns = new AddedMsg;
-            ns.data = s.data.id;
-            this.send(ns);
-        }
-        else if(st == StoreType.Update)
-        {
-            auto ns = new UpdateMsg;
-            ns.data = s.data.id;
-            this.send(ns);
-        }
-
-        this.answer(new StoreSuccessMsg);
     }
     
     override void error(Exception e)
@@ -248,34 +235,13 @@ class Store : Tick
 /// inform the requestor memory cannot store that data type
 class IncompatibleResponse : Unicast{mixin signal!();}
 
-class IncompatibleMemory : Tick
-{
-	mixin tick;
-
-	override void run()
-	{
-        this.answer(new IncompatibleResponse);
-    }
-}
-
 /// inform requestor that data or revision wasn't found
 class NotFoundMsg : Unicast{mixin signal!();}
-
-class NotFound : Tick
-{
-	mixin tick;
-
-	override void run()
-	{
-        this.answer(new NotFoundMsg);
-    }
-}
 
 class RemoveSuccessMsg : Unicast{mixin signal!(string);}
 class RemoveFailedMsg : Unicast{mixin signal!(string);}
 
-class Remove : Tick
-{
+class Remove : Tick {
 	mixin tick;
 
 	override void run()
@@ -283,20 +249,24 @@ class Remove : Tick
         import std.conv, std.algorithm.iteration;
         import flow.base.dev;
 
-        auto s = this.trigger.as!RemoveRequest;
-        auto c = this.entity.context.as!MemoryContext;
+        auto s = this.signal.as!RemoveRequest;
+        auto c = this.context.as!MemoryContext;
         auto id = s.data;
 
-        MemoryInfo mi = c.infos.data.array.filter!(i=>i.id == id).front;
-        c.infos.data.remove(mi);
+        if(!c.contains(s.data))
+            this.answer(new NotFoundMsg);
+        else {
+            MemoryInfo mi = c.infos.data.array.filter!(i=>i.id == id).front;
+            c.infos.data.remove(mi);
 
-        this.entity.as!Memory.remove(id);
+            this.entity.as!Memory.remove(id);
 
-        auto ns = new RemoveMsg;
-        ns.data = id;
-        this.send(ns);
+            auto ns = new RemoveMsg;
+            ns.data = id;
+            this.send(ns);
 
-        this.answer(new RemoveSuccessMsg);
+            this.answer(new RemoveSuccessMsg);
+        }
     }
     
     override void error(Exception e)
@@ -308,8 +278,7 @@ class Remove : Tick
 }
 
 /// holds a list of data
-class StoredInfo : Data
-{
+class StoredInfo : Data {
 	mixin data;
 
     mixin list!(UUID, "data");
@@ -317,15 +286,14 @@ class StoredInfo : Data
 
 class OverviewResponse : Unicast{mixin signal!(StoredInfo);}
 
-class SendList : Tick
-{
+class SendList : Tick {
 	mixin tick;
 
 	override void run()
 	{
         import std.algorithm.iteration;
 
-        auto c = this.entity.context.as!MemoryContext;
+        auto c = this.context.as!MemoryContext;
 
         auto si = new StoredInfo;
         si.data.put(c.infos.data.array.map!(i=>i.id).array);
@@ -339,52 +307,57 @@ class SendList : Tick
 /// response to InfoRequest
 class InfoResponse : Unicast{mixin signal!(MemoryInfo);}
 
-class SendRevisions : Tick
-{
+class SendRevisions : Tick {
 	mixin tick;
 
 	override void run()
 	{
         import std.algorithm.iteration;
 
-        auto c = this.entity.context.as!MemoryContext;
-        auto s = this.trigger.as!InfoRequest;
+        auto c = this.context.as!MemoryContext;
+        auto s = this.signal.as!InfoRequest;
 
-        auto mi = c.infos.data.array.filter!(i=>i.id == s.data).front;
-        auto r = new InfoResponse;
-        r.data = mi;
-        this.answer(r);
+        if(!c.contains(s.data))
+            this.answer(new NotFoundMsg);
+        else {
+            auto mi = c.infos.data.array.filter!(i=>i.id == s.data).front;
+            auto r = new InfoResponse;
+            r.data = mi;
+            this.answer(r);
+        }
     }
 }
 
 /// answer to Request
 class Response : Unicast{mixin signal!(MemoryContainer);}
 
-class Send : Tick
-{
+class Send : Tick {
 	mixin tick;
 
 	override void run()
 	{
-        auto s = this.trigger.as!Request;
-        auto c = this.entity.context.as!MemoryContext;
+        auto s = this.signal.as!Request;
+        auto c = this.context.as!MemoryContext;
 
-        auto data = this.entity.as!Memory.get(s.data.id, s.data.revision);
+        if(!c.contains(s.data))
+            this.answer(new NotFoundMsg);
+        else {
+            auto data = this.entity.as!Memory.get(s.data.id, s.data.revision);
 
-        auto rs = new Response;
-        rs.data = data;
-        this.answer(rs);
+            auto rs = new Response;
+            rs.data = data;
+            this.answer(rs);
+        }
     }
 }
 
-class SendNew : Tick
-{
+class SendNew : Tick {
 	mixin tick;
 
 	override void run()
 	{
-        auto s = this.trigger.as!RequestNew;
-        auto c = this.entity.context.as!MemoryContext;
+        auto s = this.signal.as!RequestNew;
+        auto c = this.context.as!MemoryContext;
 
         auto cont = new MemoryContainer;
         cont.id = randomUUID;
@@ -411,8 +384,7 @@ class UrlContainsUnknownMemoriesException : Exception
 class NoStorageException : Exception
 {this(string msg){super(msg);}}
 
-abstract class MemoryStorage
-{
+abstract class MemoryStorage {
     protected Memory _memory;
 
     this(Memory memory)
@@ -427,8 +399,7 @@ abstract class MemoryStorage
     abstract protected void remove(UUID id);
 }
 
-class FileMemoryStorage : MemoryStorage
-{
+class FileMemoryStorage : MemoryStorage {
     this(Memory memory){super(memory);}
 
     override void start()
@@ -436,7 +407,7 @@ class FileMemoryStorage : MemoryStorage
         import std.file, std.path, std.algorithm.searching;
 
         auto c = this._memory.context.as!MemoryContext;
-        auto se = c.settings.as!FileMemorySettings;
+        auto se = c.settings.as!FileMemoryConfig;
 
         if(se.url.isValidPath && se.url.isDir)
         {
@@ -467,7 +438,7 @@ class FileMemoryStorage : MemoryStorage
     override protected MemoryContainer get(UUID id, long revId)
     {
         auto c = this._memory.context.as!MemoryContext;
-        auto se = c.settings.as!FileMemorySettings;
+        auto se = c.settings.as!FileMemoryConfig;
         import std.file, std.path, std.conv, std.algorithm.iteration, std.algorithm.searching;
         import flow.base.dev;
 
@@ -491,7 +462,7 @@ class FileMemoryStorage : MemoryStorage
     {
         import std.file, std.path, std.conv;
         auto c = this._memory.context.as!MemoryContext;
-        auto se = c.settings.as!FileMemorySettings;
+        auto se = c.settings.as!FileMemoryConfig;
         auto dataPath = se.url.buildPath(mc.id.toString);
         auto exists = dataPath.exists;
         if(!exists)
@@ -511,7 +482,7 @@ class FileMemoryStorage : MemoryStorage
     {
         import std.file, std.path;
         auto c = this._memory.context.as!MemoryContext;
-        auto se = c.settings.as!FileMemorySettings;
+        auto se = c.settings.as!FileMemoryConfig;
         auto dataPath = se.url.buildPath(id.toString);
         dataPath.rmdirRecurse();
 
@@ -522,31 +493,14 @@ class FileMemoryStorage : MemoryStorage
 
 class Memory : Entity
 {
-    mixin entity!(MemoryContext);
+    mixin entity;
 
-    mixin listen!(fqn!OverviewRequest,
-        (e, s) => new SendList
-    );
-
-    mixin listen!(fqn!StoreRequest,
-        (e, s) => e.as!Memory.handleStoreRequest(s.as!StoreRequest)
-    );
-
-    mixin listen!(fqn!RemoveRequest,
-        (e, s) => e.as!Memory.handleDataRequest!Remove(s.as!RemoveRequest.data)
-    );
-
-    mixin listen!(fqn!InfoRequest,
-        (e, s) => e.as!Memory.handleDataRequest!SendRevisions(s.as!InfoRequest.data)
-    );
-
-    mixin listen!(fqn!Request,
-        (e, s) => e.as!Memory.handleDataRequest!Send(s.as!Request.data.id)
-    );
-
-    mixin listen!(fqn!RequestNew,
-        (e, s) => new SendNew 
-    );
+    mixin listen!(fqn!OverviewRequest, fqn!SendList);
+    mixin listen!(fqn!StoreRequest, fqn!Store);
+    mixin listen!(fqn!RemoveRequest, fqn!Remove);
+    mixin listen!(fqn!InfoRequest, fqn!SendRevisions);
+    mixin listen!(fqn!Request, fqn!Send);
+    mixin listen!(fqn!RequestNew, fqn!SendNew);
 
     private MemoryStorage _storage;
     @property MemoryStorage storage() {return this._storage;}
@@ -564,27 +518,6 @@ class Memory : Entity
         if(this._storage !is null)
             this._storage.stop();
         //else throw new NoStorageException("storage missing");
-    }
-
-    private Object handleStoreRequest(StoreRequest s)
-    {
-        auto c = this.context;
-        auto se = c.settings.as!MemorySettings;
-
-        if(se.canStore(s.data))
-            return new Store;
-        else
-            return new IncompatibleMemory;
-    }
-
-    private Object handleDataRequest(T)(UUID d) if(is(T:ITick) && hasDefaultConstructor!T)
-    {
-        auto c = this.context;
-
-        if(c.contains(d))
-            return new T;
-        else
-            return new NotFound; 
     }
 
     MemoryContainer get(UUID id, long revId)
