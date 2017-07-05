@@ -90,10 +90,10 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
 
     package Flow flow;
     package List!Ticker ticker;
+    package ReadWriteMutex sync;
     package List!Exception damages;
     package @property void meta(EntityMeta m) {this._meta = m;}
     package @property void parent(Entity e) {this._parent = e;}
-    package @property ReadWriteMutex sync() {return this.lock;}
     package @property EntityMeta meta() {return this._meta;}
 
     public @property Data context() {return this._meta.context;}
@@ -109,6 +109,7 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
         this.meta = m;
         this.meta.info.signals.clear();
         this._children = new List!Entity;
+        this.sync = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
         this.damages = new List!Exception;
         this.ticker = new List!Ticker;
 
@@ -249,8 +250,9 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
                             // all other signals are stored in meta
                             this.meta.inbound.put(s);
                             accepted = true;
-                            break;
                         }
+
+                        break;
                     }
             }
         } catch(Exception ex) {

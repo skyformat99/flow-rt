@@ -15,8 +15,8 @@ class Ticker : Thread
     private TickMeta _actual;
     private TickMeta _coming;
 
-    public @property TickMeta actual() {return this._actual;}
-    public @property TickMeta coming() {return this._coming;}
+    package @property TickMeta actual() {return this._actual;}
+    package @property TickMeta coming() {return this._coming;}
 
     this(Entity e, Signal signal, TickInfo initTick) {        
         this._entity = e;
@@ -52,7 +52,7 @@ class Ticker : Thread
     }
 
     /// creates a new ticker initialized with given tick
-    public void fork(TickInfo i, Data d = null) {
+    package void fork(TickInfo i, Data d = null) {
         auto m = this.createTick(i, d);
         m.trigger = this.actual.info.id;
         m.signal = this.actual.signal;
@@ -60,13 +60,13 @@ class Ticker : Thread
     }
 
     /// creates a new ticker initialized with given tick
-    public void fork(TickMeta m) {
+    package void fork(TickMeta m) {
         this._entity.msg(DL.FDebug, m, "forking tick");
         this._entity.tick(m);
     }
 
     /// enques next tick in the chain
-    public void next(TickInfo i, Data d = null) {
+    package void next(TickInfo i, Data d = null) {
         this._entity.msg(DL.FDebug, i, "enqueuing tick");
         auto m = this.createTick(i, d);
         m.trigger = this.actual.info.id;
@@ -75,15 +75,15 @@ class Ticker : Thread
         this._coming = m;
     }
 
-    public void repeat() {
+    package void repeat() {
         this._coming = this.actual;
     }
     
-    public ListeningMeta listenFor(string s, string t) {
+    package ListeningMeta listenFor(string s, string t) {
         return this._entity.listenFor(s, t);
     }
 
-    public void shut(ListeningMeta l) {
+    package void shut(ListeningMeta l) {
         this._entity.shut(l);
     }
 
@@ -119,7 +119,7 @@ class Ticker : Thread
                             this._entity.send(ts);
                         }
 
-                        synchronized(this._entity.sync.reader) {
+                        synchronized(t.sync ? this._entity.sync.writer : this._entity.sync.reader) {
                             try {
                                 this._entity.msg(DL.FDebug, this.actual, "executing tick");
                                 t.run();
@@ -183,7 +183,25 @@ mixin template TTick() {
         __flow.ticker.Tick.register(__flow.type.fqn!(typeof(this)), &create);
     }
 
-    this(flow.base.data.TickMeta m, __flow.ticker.Ticker t) {super(m, t);}
+    this(flow.base.data.TickMeta m, __flow.ticker.Ticker t) {super(m, t, false);}
+}
+
+mixin template TSync() {
+    static import __flow.type, __flow.ticker;
+    static import flow.base.data;
+
+    override @property string __fqn() {return __flow.type.fqn!(typeof(this));}
+
+    static __flow.ticker.Tick create(flow.base.data.TickMeta m, __flow.ticker.Ticker t) {
+        auto tick = new typeof(this)(m, t);
+        return tick;
+    }
+
+    shared static this() {
+        __flow.ticker.Tick.register(__flow.type.fqn!(typeof(this)), &create);
+    }
+
+    this(flow.base.data.TickMeta m, __flow.ticker.Ticker t) {super(m, t, true);}
 }
 
 abstract class Tick : __IFqn {
@@ -211,6 +229,8 @@ abstract class Tick : __IFqn {
     private TickMeta _meta;
     private Ticker _ticker;
 
+    package bool sync;
+
     protected @property EntityInfo entity() {return this._ticker._entity.meta.info;}
     protected @property TickInfo info() {return this._meta.info;}
     protected @property UUID trigger() {return this._meta.trigger;}
@@ -219,9 +239,10 @@ abstract class Tick : __IFqn {
     protected @property Data context() {return this._ticker._entity.meta.context;}
     protected @property Data data() {return this._meta.data;}
 
-    protected this(TickMeta m, Ticker t) {
+    protected this(TickMeta m, Ticker t, bool sync) {
         this._meta = m;
         this._ticker = t;
+        this.sync = sync;
     }
 
     public abstract void run();

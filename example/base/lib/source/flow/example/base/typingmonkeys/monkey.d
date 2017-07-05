@@ -74,7 +74,7 @@ class Write : Tick {
 
 /** this one is pretty simple */
 class GetCandy : Tick {
-	mixin tick;
+	mixin sync;
 
 	override void run() {
         auto c = this.context.as!MonkeyContext;
@@ -90,7 +90,7 @@ class GetCandy : Tick {
 
 /** this one too */
 class SeeCandy : Tick {
-	mixin tick;
+	mixin sync;
 
 	override void run() {
         if(!this.signal.source.identWith(this.entity.ptr)) {

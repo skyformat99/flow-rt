@@ -30,7 +30,7 @@ class MadMonkeyContext : MonkeyContext {
 }
 
 class GoMad : Tick {
-	mixin tick;
+	mixin sync;
 
 	override void run() {
         import flow.base.dev;
@@ -48,7 +48,7 @@ class GoMad : Tick {
 }
 
 class TakePunch : Tick {
-    mixin tick;
+    mixin sync;
 
     override void run() {
         import std.conv, std.random;
@@ -113,7 +113,7 @@ class Punched : Tick {
 }
 
 class CatchCandy : Tick {
-	mixin tick;
+	mixin sync;
 
 	override void run() {
         import std.random;

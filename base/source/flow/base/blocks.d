@@ -24,6 +24,7 @@ static import __flow.ticker;
 //alias Ticker = __flow.tick.Ticker;
 alias Tick = __flow.ticker.Tick;
 alias tick = __flow.ticker.TTick;
+alias sync = __flow.ticker.TSync;
 
 // templates for entity generation
 /// generates a listener for an entity handling a signal
