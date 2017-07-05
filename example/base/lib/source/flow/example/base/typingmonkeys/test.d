@@ -58,8 +58,8 @@ private EntityMeta createMeta(string domain, uint amount, string search) {
 
 /// waiter for process to wait for an event before exiting
 private bool waitForMonkeys(Flow f, EntityInfo i) {
-    foreach(m; f.get(i).children) {
-        auto c = m.meta.context.as!MonkeyContext;
+    foreach(e; f.get(i).children) {
+        auto c = e.context.as!MonkeyContext;
         if(c !is null && c.state == MonkeyEmotionalState.Calm)
             return false;
     }

@@ -62,8 +62,8 @@ private EntityMeta createMeta(string domain, uint amount, string search) {
 /// waiter for process to wait for an event before exiting
 private bool waitForMonkeys(uint amount, Flow f, EntityInfo i) {
     auto koCount = 0;
-    foreach(m; f.get(i).children) {
-        auto c = m.meta.context.as!MadMonkeyContext;
+    foreach(e; f.get(i).children) {
+        auto c = e.context.as!MadMonkeyContext;
         if(c !is null) {
             if(c.state == MonkeyEmotionalState.Calm)
                 return false;

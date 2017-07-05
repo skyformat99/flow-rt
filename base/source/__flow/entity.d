@@ -94,8 +94,8 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
     package @property void meta(EntityMeta m) {this._meta = m;}
     package @property void parent(Entity e) {this._parent = e;}
     package @property ReadWriteMutex sync() {return this.lock;}
+    package @property EntityMeta meta() {return this._meta;}
 
-    public @property EntityMeta meta() {return this._meta;}
     public @property Data context() {return this._meta.context;}
     public @property Entity parent() {return this._parent;}
     public @property Entity[] children() {return this._children.array;}
@@ -146,7 +146,63 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
         this.state = EntityState.Damaged;
     }
 
-    public void tick(Signal s, string tt) {
+    public EntityMeta snap() {
+        this.msg(DL.FDebug, "waiting for snap");
+        synchronized(this.lock.reader) {
+            this.ensureState(EntityState.Suspended);
+
+            EntityMeta m = null;
+            auto meta = this.meta.dup();
+            if(meta !is null) {
+                m = meta.as!EntityMeta;
+
+                if(m is null)
+                    this.damageMeta("meta of entity is of invalid type", meta);
+            } else this.damageMeta("meta of entity is null");
+
+            m = m !is null ? m : new EntityMeta;
+            try {
+                m.children.put(this.snapChildren());
+            } catch(Exception ex) {
+                this.damageMeta(ex, "snapping children failed");
+            }
+            
+            if(!this.meta.damages.empty)
+                this.damage("meta data is damaged");
+
+            return m;
+        }
+    }
+
+    public Entity spawn(EntityMeta m) {
+        this.msg(DL.FDebug, "waiting for spawn");
+        synchronized(this.lock.reader) {
+            this.ensureState(EntityState.Running);
+
+            return this.addChild(m);
+        }
+    }
+
+    public EntityMeta kill(EntityInfo i) {
+        this.msg(DL.FDebug, "waiting for kill");
+        synchronized(this.lock.reader) {
+            this.ensureState(EntityState.Running);
+
+            auto e = this.flow.get(i);
+            e.suspend();
+            auto m = e.snap();
+
+            // if its some child, let parent remove it
+            if(e.parent !is null)
+                e.parent.removeChild(e);
+            else
+                this.flow.remove(i);
+
+            return m;
+        }
+    }
+
+    package void tick(Signal s, string tt) {
         this.msg(DL.FDebug, "waiting for tick");
         synchronized(this.lock.reader) {
             auto ti = new TickInfo;
@@ -160,7 +216,7 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
         }
     }
 
-    public void tick(TickMeta tm) {        
+    package void tick(TickMeta tm) {        
         this.msg(DL.FDebug, "waiting for tick");
         auto ticker = new Ticker(this, tm);
         this.ticker.put(ticker);
@@ -173,7 +229,7 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
         this.ticker.remove(t);
     }
 
-    public bool receive(Signal s) {
+    package bool receive(Signal s) {
         auto accepted = false;
         try {
             this.msg(DL.FDebug, "waiting for receiving");
@@ -204,32 +260,32 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
         return accepted;
     }
     
-    public bool send(Unicast s, EntityPtr e) {
+    package bool send(Unicast s, EntityPtr e) {
         this.msg(DL.FDebug, "waiting for send");
         this._preventIdTheft(s);
         return this.state == EntityState.Running && this.flow.send(s, e);
     }
 
-    public bool send(Unicast s, EntityInfo e) {
+    package bool send(Unicast s, EntityInfo e) {
         return this.send(s, e.ptr);
     }
 
-    public bool send(Unicast s) {
+    package bool send(Unicast s) {
         this._preventIdTheft(s);
         return this.state == EntityState.Running && this.flow.send(s);
     }
 
-    public bool send(Multicast s) {
+    package bool send(Multicast s) {
         this._preventIdTheft(s);
         return this.state == EntityState.Running && this.flow.send(s);
     }
 
-    public bool send(Anycast s) {
+    package bool send(Anycast s) {
         this._preventIdTheft(s);
         return this.state == EntityState.Running && this.flow.send(s);
     }
     
-    public ListeningMeta listenFor(string s, string t) {
+    package ListeningMeta listenFor(string s, string t) {
         this.msg(DL.FDebug, "waiting for listen");
         synchronized(this.lock.reader) {
             this.ensureStateOr(EntityState.Initializing, EntityState.Running);
@@ -262,7 +318,7 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
         }
     }
     
-    public void shut(ListeningMeta l) {
+    package void shut(ListeningMeta l) {
         this.msg(DL.FDebug, "waiting for shut");
         synchronized(this.lock.reader) {
             this.ensureStateOr(EntityState.Disposing, EntityState.Running);
@@ -283,43 +339,6 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
                     break;
                 }
         }        
-    }
-
-    public EntityMeta snap() {
-        this.msg(DL.FDebug, "waiting for snap");
-        synchronized(this.lock.reader) {
-            this.ensureState(EntityState.Suspended);
-
-            EntityMeta m = null;
-            auto meta = this.meta.dup();
-            if(meta !is null) {
-                m = meta.as!EntityMeta;
-
-                if(m is null)
-                    this.damageMeta("meta of entity is of invalid type", meta);
-            } else this.damageMeta("meta of entity is null");
-
-            m = m !is null ? m : new EntityMeta;
-            try {
-                m.children.put(this.snapChildren());
-            } catch(Exception ex) {
-                this.damageMeta(ex, "snapping children failed");
-            }
-            
-            if(!this.meta.damages.empty)
-                this.damage("meta data is damaged");
-
-            return m;
-        }
-    }
-
-    public bool spawn(EntityMeta m) {
-        this.msg(DL.FDebug, "waiting for listen");
-        synchronized(this.lock.reader) {
-            this.ensureState(EntityState.Running);
-
-            return this.addChild(m);
-        }
     }
 
     override protected bool onStateChanging(EntityState oldState, EntityState newState) {
@@ -528,13 +547,14 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
         } catch(Throwable)  {}
     }
 
-    private bool addChild(EntityMeta m) {
+    private Entity addChild(EntityMeta m) {
         auto e = this.flow.addInternal(m);
         if(e !is null) {
             e.parent = this;
             this._children.put(e);
-            return true;
-        } else return false;
+        }
+
+        return e;
     }
 
     private void removeChild(Entity e) {
