@@ -1,10 +1,10 @@
 module flow.example.base.typingmonkeys.overseer;
 import flow.example.base.typingmonkeys.signals;
 
-import flow.base.blocks, flow.base.signals, flow.base.interfaces;
+import flow.base.blocks, flow.base.signals, flow.base.data;
 
 /// she needs to know a few things
-class OverseerConfig : Data {
+class OverseerConfig : EntityConfig {
 	mixin data;
     
     mixin field!(string, "search");

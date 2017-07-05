@@ -96,6 +96,7 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
     package @property void parent(Entity e) {this._parent = e;}
     package @property EntityMeta meta() {return this._meta;}
 
+    public @property EntityInfo info() {return this._meta.info;}
     public @property Data context() {return this._meta.context;}
     public @property Entity parent() {return this._parent;}
     public @property Entity[] children() {return this._children.array;}
@@ -107,6 +108,8 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
         this._typeListenings = typeListenings;
         this.flow = f;
         this.meta = m;
+        if(this.info.config is null)
+            this.info.config = new EntityConfig;
         this.meta.info.signals.clear();
         this._children = new List!Entity;
         this.sync = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
@@ -238,7 +241,7 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
                 this.msg(DL.FDebug, "receiving");
 
                 foreach(ms; this.meta.info.signals)
-                    if(ms == s.type && this.accept(s)) {
+                    if(ms == s.type && this.acceptInternal(s)) {
                         if(this.state == EntityState.Running)
                             accepted = this.process(s);
                         else if(s.as!Anycast is null && (
@@ -332,7 +335,7 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
                         if(ml == l) {
                             this.meta.listenings.remove(l);
 
-                            if(!(l.signal in _typeListenings || (this.as!IQuiet !is null && (l.signal == fqn!Ping || l.signal == fqn!UPing))))
+                            if(!(l.signal in _typeListenings || l.signal == fqn!Ping || l.signal == fqn!UPing))
                                 this.meta.info.signals.remove(l.signal);
 
                             break;
@@ -401,11 +404,9 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
                     this.meta.info.signals.put(s);
 
                 // if its not quiet react at ping (this should be done at runtime and added to typelistenings)
-                if(this.as!IQuiet is null) {
-                    this.msg(DL.FDebug, "registering ping listenings");
-                    this.meta.info.signals.put(fqn!Ping);
-                    this.meta.info.signals.put(fqn!UPing);
-                }
+                this.msg(DL.FDebug, "registering ping listenings");
+                this.meta.info.signals.put(fqn!Ping);
+                this.meta.info.signals.put(fqn!UPing);
 
                 this.msg(DL.FDebug, "registering dynamic listenings");
                 foreach(l; this.meta.listenings)
@@ -522,6 +523,16 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
 
     protected bool accept(Signal s) {return true;}
 
+    private bool acceptInternal(Signal s) {
+        switch(s.type) {
+            case fqn!Ping:
+            case fqn!UPing:
+                return !this.info.config.quiet;
+            default:
+                return this.accept(s);
+        }
+    }
+
     private void damageMeta(string msg, Data d = null) {
         try {
                 auto emd = new EntityMetaDamage;
@@ -631,7 +642,7 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
             }
 
             this.msg(DL.FDebug, "processing ping listenings");
-            if(this.as!IQuiet is null && (s.type == fqn!Ping || s.type == fqn!UPing)) {
+            if(!this.info.config.quiet && (s.type == fqn!Ping || s.type == fqn!UPing)) {
                 this.tick(s, fqn!SendPong);
                 accepted = true;
             }

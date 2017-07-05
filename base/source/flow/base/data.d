@@ -47,8 +47,7 @@ class ListeningMeta : Data {
 }
 
 /// referencing a specific entity 
-class EntityPtr : Data
-{
+class EntityPtr : Data {
     mixin TData;
 
     mixin TField!(string, "id");
@@ -57,14 +56,19 @@ class EntityPtr : Data
     mixin TField!(FlowPtr, "flowptr");
 }
 
+class EntityConfig : Data {
+    mixin TData;
+
+    mixin TField!(bool, "quiet");
+}
+
 /// referencing a specific entity 
-class EntityInfo : Data
-{
+class EntityInfo : Data {
     mixin TData;
 
     mixin TField!(EntityPtr, "ptr");
     mixin TField!(EntityScope, "availability");
-    mixin TField!(Data, "config");
+    mixin TField!(EntityConfig, "config");
 
     mixin TList!(string, "signals");
 }
@@ -76,8 +80,7 @@ class EntityMetaDamage : Data {
     mixin TField!(Data, "recovery");
 }
 
-class EntityMeta : Data
-{
+class EntityMeta : Data {
     mixin TData;
 
     mixin TList!(EntityMetaDamage, "damages");

@@ -10,8 +10,6 @@ interface ITyped
 
 interface IStealth{}
 
-interface IQuiet{}
-
 interface IIdentified
 {
     @property UUID id();

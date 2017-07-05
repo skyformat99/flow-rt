@@ -15,7 +15,7 @@ class NotifyNoKo : Unicast{mixin signal!();}
 
 class DropCandy : Anycast{mixin signal!();}
 
-class MadMonkeyConfig : Data {
+class MadMonkeyConfig : EntityConfig {
 	mixin data;
 
     mixin field!(int, "koAt");
