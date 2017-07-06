@@ -80,11 +80,15 @@ private bool waitForMonkeys(uint amount, Flow f, EntityInfo i) {
 }
 
 /// finally we run that
-void run(uint amount, string search)
-{
-    import core.time;
-    import std.datetime, std.conv;
-    import flow.base.dev, flow.base.blocks;
+void run(uint amount, string search) {
+    import core.cpuid, core.sys.linux.sched, core.time;
+    import std.datetime, std.conv, std.math;
+    import flow.base.dev;
+
+    // limiting the flow to half of the vcores
+    auto vcores = threadsPerCPU();
+    auto cpusetp = cast(cpu_set_t)(pow(2, vcores/2)-1);
+    sched_setaffinity(0, cpusetp.sizeof, &cpusetp);
 
     Debug.msg(DL.Info, "#######################################");
     Debug.msg(DL.Info, "#######################################");
