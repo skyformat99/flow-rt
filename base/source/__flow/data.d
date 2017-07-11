@@ -6,24 +6,21 @@ import __flow.lib.vibe.data.json;
 import __flow.type, __flow.event;
 
 /// an error occured in data reflection layer (error stops execution of app)
-class DataingError : Error
-{
+class DataingError : Error {
     this(string msg) {
         super(msg);
     }
 }
 
 /// an exception occured in data reflection layer (exception is catchable)
-class DataingException : Exception
-{
+class DataingException : Exception {
     this(string msg) {
         super(msg);
     }
 }
 
 /// data property meta informations
-struct PropertyMeta
-{
+struct PropertyMeta {
 	string type;
 	string name;
 	bool isList;
@@ -36,16 +33,14 @@ struct PropertyMeta
 }
 
 /// data property informations
-struct PropertyInfo
-{
+struct PropertyInfo {
 	TypeInfo typeInfo;
 	bool isList;
 	bool isData;
 }
 
 /// get the value of a data field by its name
-T get(T)(Data obj, string name) if(is(T : Data))
-{
+T get(T)(Data obj, string name) if(is(T : Data)) {
 	if(name !in obj.dataProperties)
 		throw new DataingException("no data property named \""~name~"\" found");
 
@@ -53,8 +48,8 @@ T get(T)(Data obj, string name) if(is(T : Data))
 }
 
 /// get the value of a data field by its name
-T get(T)(Data obj, string name) if(isScalarType!T || is(T == UUID) || is(T == SysTime) || is(T == DateTime) || (isArray!T && isScalarType!(ElementType!T)))
-{
+T get(T)(Data obj, string name)
+if(isScalarType!T || is(T == UUID) || is(T == SysTime) || is(T == DateTime) || (isArray!T && isScalarType!(ElementType!T))) {
 	if(name !in obj.dataProperties)
 		throw new DataingException("no data property named \""~name~"\" found");
 
@@ -62,8 +57,7 @@ T get(T)(Data obj, string name) if(isScalarType!T || is(T == UUID) || is(T == Sy
 }
 
 /// set the value of a data property by its name
-Data set(T)(Data obj, string name, T value) if(is(T : Data))
-{
+Data set(T)(Data obj, string name, T value) if(is(T : Data)) {
 	if(name !in obj.dataProperties)
 		throw new DataingException("no data property named \""~name~"\" found");
 
@@ -79,8 +73,8 @@ Data set(T)(Data obj, string name, T value) if(is(T : Data))
 }
 
 /// set the value of a data property by its name
-Data set(T)(Data obj, string name, T value) if(isScalarType!T || is(T == UUID) || is(T == SysTime) || is(T == DateTime) || (isArray!T && isScalarType!(ElementType!T)))
-{
+Data set(T)(Data obj, string name, T value)
+if(isScalarType!T || is(T == UUID) || is(T == SysTime) || is(T == DateTime) || (isArray!T && isScalarType!(ElementType!T))) {
 	if(name !in obj.dataProperties)
 		throw new DataingException("no data property named \""~name~"\" found");
 
@@ -92,36 +86,30 @@ Data set(T)(Data obj, string name, T value) if(isScalarType!T || is(T == UUID) |
 	return obj;
 }
 
-abstract class Data : __IFqn
-{	
+abstract class Data : __IFqn, __IEq {	
 	private shared static Data function()[string] _reg;
 
-	static void register(string dataType, Data function() creator)
-	{
+	static void register(string dataType, Data function() creator) {
 		_reg[dataType] = creator;
 	}
 
-	static bool knows(string dataType)
-	{
+	static bool knows(string dataType) {
 		return dataType in _reg ? true : false;
 	}
 
-	static Data create(string dataType)
-	{
+	static Data create(string dataType) {
 		if(dataType in _reg)
 			return _reg[dataType]();
 		else
 			return null;
 	}
 
-	static Data fromJson(string s)
-	{
+	static Data fromJson(string s) {
 		auto j = parseJsonString(s);
 		return fromJson(j);
 	}
 
-	static Data fromJson(Json j)
-	{
+	static Data fromJson(Json j) {
 		auto type = j["dataType"].deserializeJson!string;
 		auto obj = create(type);
 		if(obj !is null) obj.fillFromJson(j);
@@ -132,34 +120,31 @@ abstract class Data : __IFqn
 	private EPropertyChanging _propertyChanging;
 	private EPropertyChanged _propertyChanged;
 	
-	@property EPropertyChanging propertyChanging()
-	{
+	@property EPropertyChanging propertyChanging() {
 		return this._propertyChanging;
 	}
 
-	@property EPropertyChanged propertyChanged()
-	{
+	@property EPropertyChanged propertyChanged() {
 		return this._propertyChanged;
 	}
 	
 	abstract @property string __fqn();
 	@property string dataType(){return this.__fqn;}
 
-	this()
-	{
+	this() {
 		// create events
 		this._propertyChanging = new EPropertyChanging();
 		this._propertyChanged = new EPropertyChanged();
 	}
 
-	Data clone()
-	{
+	/*Data clone() {
 		return this.dup;
-	}
+	}*/
 
 	@property string json(){return this.toJsonStruct().toString();}
 
 	abstract Data dup();
+	abstract bool eq(__IEq c);
 	abstract protected void dupInternal(Data c);
 	abstract Object getGeneric(string name);
 	abstract bool setGeneric(string name, Object value);
@@ -181,6 +166,7 @@ mixin template TData()
 	private shared static Object function(typeof(this), string)[] _getter;
 	private shared static bool function(typeof(this), string, Object)[] _setter;
 	private shared static void function(typeof(this), typeof(this))[] _dups;
+	private shared static bool function(typeof(this), typeof(this))[] _eqs;
 	private shared static void function(typeof(this), __flow.lib.vibe.data.json.Json)[] _toJsons;
 	private shared static void function(typeof(this), __flow.lib.vibe.data.json.Json)[] _fromJsons;
 
@@ -243,6 +229,22 @@ mixin template TData()
 		auto c = new typeof(this);
 		this.dupInternal(c);
 		return c;
+	}
+
+	override bool eq(__flow.type.__IEq c) {
+		auto result = true;
+		static if(__flow.type.fqn!(typeof(super)) != "__flow.data.Data")
+			result = super.eq(c);
+		
+		if(result) {
+			auto cmp = cast(typeof(this))c;
+			foreach(e; _eqs) {
+				result = e(this, cmp);
+				if(!result) break;
+			}
+		}
+
+		return result;
 	}
 
 	override protected void dupInternal(Data c)
@@ -319,33 +321,28 @@ template TFieldHelper(PropertyMeta p)
 	string setter()
 	{
 		return "
-			@property void "~p.name~"("~p.type~" value)
-			{
+			@property void "~p.name~"("~p.type~" value) {
 				synchronized(this._"~p.name~"Lock.writer)
 					this."~p.name~"Internal(value);
 			}
 			
-			bool "~p.name~"Try("~p.type~" value)
-			{
+			bool "~p.name~"Try("~p.type~" value) {
 				auto locked = this._"~p.name~"Lock.writer.tryLock();
 				try{if(locked) this."~p.name~"Internal(value);}
 				finally {this._"~p.name~"Lock.writer.unlock();}
 				return locked;
 			}
 			
-			void "~p.name~"Internal("~p.type~" value)
-			{
+			void "~p.name~"Internal("~p.type~" value) {
 				import __flow.event;
 
-				if(this._"~p.name~" != value)
-				{
+				if(this._"~p.name~" != value) {
 					"~p.type~" oldValue = this._"~p.name~";
 					auto changingArgs = new PropertyChangingEventArgs(\""~p.name~"\", typeid(this), "~p.refPrefix~"oldValue"~p.refPostfix~", "~p.refPrefix~"value"~p.refPostfix~");
 					auto typedChangingArgs = new TypedPropertyChangingEventArgs!("~p.type~")(oldValue, value);
 					this."~p.name~"Changing.emit(this, typedChangingArgs);
 					this.propertyChanging.emit(this, changingArgs);
-					if(!typedChangingArgs.cancel && !changingArgs.cancel)
-					{
+					if(!typedChangingArgs.cancel && !changingArgs.cancel) {
 						this._"~p.name~" =  value;
 						auto typedChangedArgs = new TypedPropertyChangedEventArgs!("~p.type~")(oldValue, value);
 						auto changedArgs = new PropertyChangedEventArgs(\""~p.name~"\", typeid(this), "~p.refPrefix~"oldValue"~p.refPostfix~", "~p.refPrefix~"value"~p.refPostfix~");
@@ -374,8 +371,7 @@ template TFieldHelper(PropertyMeta p)
 			_getter ~= (t, name) {
 				if(name == \""~p.name~"\")
 					return "~p.refPrefix~"t."~p.name~p.refPostfix~";
-				else
-					return null;
+				else return null;
 			};
 		";
 
@@ -383,20 +379,30 @@ template TFieldHelper(PropertyMeta p)
 			_setter ~= (t, name, value) {
 				import __flow.type;
 
-				if(name == \""~p.name~"\")
-				{
+				if(name == \""~p.name~"\") {
 					t."~p.name~" = "~(!p.isData ? "(cast(Ref!("~p.type~"))value).value" : "cast("~p.type~")value")~";
 					return true;
-				}
-				else return false;
+				} else return false;
 			};
 		";
 
 		string dupString = "
 			_dups ~= (t, c) {
-				static if("~p.isData.stringof~")
-				{if(t."~p.name~" !is null) c._"~p.name~" = t."~p.name~".dup;}
-				else{c._"~p.name~" = t."~p.name~";}
+				static if("~p.isData.stringof~") {
+					if(t."~p.name~" !is null) c._"~p.name~" = t."~p.name~".dup;
+				} else {
+					c._"~p.name~" = t."~p.name~";
+				}
+			};
+		";
+
+		string eqString = "
+			_eqs ~= (t, c) {
+				static if("~p.isData.stringof~" || "~p.isList.stringof~") {
+					return t."~p.name~" !is null && c._"~p.name~".eq(t."~p.name~");
+				} else {
+					return c._"~p.name~" == t."~p.name~";
+				}
 			};
 		";
 
@@ -436,6 +442,7 @@ template TFieldHelper(PropertyMeta p)
 				"~getterString~"
 				"~setterString~"
 				"~dupString~"
+				"~eqString~"
 				"~toJsonString~"
 				"~fromJsonString~"
 			}

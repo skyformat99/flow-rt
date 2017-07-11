@@ -29,13 +29,6 @@ class Anycast : Signal
     mixin TField!(string, "domain");
 }
 
-class WrappedSignalData : Data
-{
-	mixin TData;
-
-    mixin TField!(Signal, "signal");
-}
-
 class Ping : Multicast, IStealth
 {
     mixin TSignal;
@@ -72,4 +65,4 @@ class TraceEndTick : Multicast, IStealth
     mixin TSignal!(TraceTickData);
 }
 
-class WrappedSignal : Unicast, IStealth {mixin TSignal!(WrappedSignalData);}
+class WrappedSignal : Unicast, IStealth {mixin TSignal;}

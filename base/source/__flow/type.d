@@ -340,6 +340,25 @@ mixin template TMainOfList(LT, T) {
 
         return clone;
     }
+
+    bool eq(__IEq c) {
+        synchronized(this._lock.reader) {
+            auto cmp = c.as!(typeof(this));
+            auto result = cmp !is null && this.length == cmp.length;
+            if(result) {
+                for(size_t i = 0; i<this.length; i++) {
+                    static if(is(T : __IEq)) {
+                        result = this[i].eq(cmp[i]);
+                    } else {
+                        result = this[i] == cmp[i];
+                    }
+                    if(!result) break;
+                }
+            }
+
+            return result;
+        }
+    }
 }
 
 /// mask scalar, uuid and string types into nullable ptr types
@@ -481,6 +500,11 @@ template fqn(T) {
 /// enables a type to be aware of its fully qualified name
 interface __IFqn {
     public @property string __fqn();
+}
+
+/// enables a type to be aware of its fully qualified name
+interface __IEq {
+    public bool eq(__IEq c);
 }
 
 /// gets the fully qualified name of an element's type implementing __IFqn

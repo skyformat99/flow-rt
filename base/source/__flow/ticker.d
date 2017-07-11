@@ -231,6 +231,7 @@ abstract class Tick : __IFqn {
 
     package bool sync;
 
+    /*protected @property bool tracing() {return this._ticker._entity.flow.config.tracing;}*/
     protected @property EntityInfo entity() {return this._ticker._entity.meta.info;}
     protected @property TickInfo info() {return this._meta.info;}
     protected @property UUID trigger() {return this._meta.trigger;}

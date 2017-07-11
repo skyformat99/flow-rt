@@ -5,8 +5,11 @@ import std.uuid, std.array, std.string, std.datetime, std.conv, std.algorithm.se
 import flow.base.interfaces, flow.base.blocks;
 import flow.base.data, flow.base.signals;
 
-class StartBeacon : Unicast{mixin signal!();}
-class StopBeacon : Unicast{mixin signal!();}
+class StartBeacon : Unicast{mixin signal;}
+class StopBeacon : Unicast{mixin signal;}
+
+class PublishSuccessMsg : Unicast{mixin signal;}
+class PublishFailMsg : Unicast{mixin signal;}
 
 class BeaconContext : Data {
 	mixin data;
@@ -52,11 +55,36 @@ class Incoming : Tick, IStealth {
 
 	override void run() {
         auto c = this.context.as!BeaconSessionContext;
-        auto wd = new WrappedSignalData;
-        wd.signal = this.signal.json;
         auto ws = new WrappedSignal;
-        ws.data = wd;
+        ws.data = this.signal.json;
         this.send(ws, c.beacon);
+    }
+}
+
+class Publish : Tick, IStealth {
+    mixin tick;
+
+    override void run() {
+        auto ws = this.signal.as!WrappedSignal;
+        auto s = Data.create(ws.data);
+
+        auto success = false;
+        if(s.as!Unicast !is null)
+            success = this.send(s.as!Unicast);
+        else if(s.as!Multicast !is null)
+            success = this.hull.send(s.as!Multicast);
+        else if(s.as!Anycast !is null)
+            success = this.hull.send(s.as!Anycast);
+
+        if(success) {
+            auto pss = new PublishSuccessMsg;
+            pss.data = ws.id;
+            this.answer(pfs);
+        } else {
+            auto pfs = new PublishFailMsg;
+            pfs.data = ws.id;
+            this.answer(pfs);
+        }
     }
 }
 

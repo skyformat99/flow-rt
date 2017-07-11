@@ -81,11 +81,10 @@ class Read : Tick {
         auto s = this.signal.as!WrappedSignal;
         auto c = this.context.as!BeaconContext;
 
-        if(c.sessions.array.any!(i=>i.session.id == s.source.id)) {
+        if(c.sessions.array.any!(i=>i.session.ptr == s.source)) {
             // getting 
-            auto i = c.sessions.array.filter!(i=>i.session.id == s.source.id).front;
-            auto session = this.entity.hull.get(s.source.id);
-            if(this.entity.hull.tracing && s.as!IStealth is null) {
+            //auto i = c.sessions.array.filter!(i=>i.session.id == s.source.id).front;
+            /*if(this.tracing && s.as!IStealth is null) {
                 auto td = new TraceTickData;
                 auto ts = new TraceBeginTick;
                 ts.type = ts.dataType;
@@ -96,12 +95,12 @@ class Read : Tick {
                 ts.data.entityType = session.__fqn;
                 ts.data.entityId = session.id;
                 ts.data.tick = session.__fqn;
-                this.entity.hull.send(ts);
-            }
+                this.send(ts);
+            }*/
 
             i.incoming.put(s);
         } else { // this session should not exist, so kill it
-            this.entity.hull.remove(s.source.id);
+            this.entity.hull.remove(s.source);
         }
     }
 }
