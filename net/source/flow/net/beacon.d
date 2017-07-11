@@ -8,8 +8,7 @@ import flow.base.data, flow.base.signals;
 class StartBeacon : Unicast{mixin signal!();}
 class StopBeacon : Unicast{mixin signal!();}
 
-class BeaconContext : Data
-{
+class BeaconContext : Data {
 	mixin data;
 
     mixin field!(string, "error");
@@ -17,133 +16,58 @@ class BeaconContext : Data
     mixin field!(string, "defSession");
 }
 
-class BeaconSessionRequestData : Data
-{
-	mixin data;
-
-    mixin list!(string, "listenings");
-}
-
-class BeaconSessionContext : Data
-{
+class BeaconSessionContext : Data {
 	mixin data;
 
     mixin field!(EntityPtr, "beacon");
 }
 
-class BeaconSessionListening : IdData
-{
+/*class BeaconSessionListening : IdData {
     mixin data;
 
     mixin field!(string, "signal");
     mixin list!(UUID, "sources");
-}
+}*/
 
-class BeaconSessionInfo : Data
-{
+class BeaconSessionInfo : Data {
 	mixin data;
 
     mixin field!(EntityPtr, "session");
     mixin field!(DateTime, "lastActivity");
-    mixin list!(BeaconSessionListening, "listenings");
-    mixin list!(WrappedSignal, "inQueue");
+    //mixin list!(BeaconSessionListening, "listenings");
+    mixin list!(string, "signals");
+    mixin list!(WrappedSignal, "incoming");
 }
 
-class PullWrappedSignal : Tick
-{
-	mixin tick;
+class Read : Tick {
+    mixin tick;
 
-	override void run()
-	{
-        auto s = this.trigger.as!WrappedSignal;
-        auto c = this.entity.context.as!BeaconContext;
-
-        if(c.sessions.array.any!(i=>i.session.id == s.source.id))
-        {
-            auto info = c.sessions.array.filter!(i=>i.session.id == s.source.id).front;
-            auto session = this.entity.hull.get(s.source.id);
-            if(this.entity.hull.tracing && s.as!IStealth is null)
-            {
-                auto td = new TraceTickData;
-                auto ts = new TraceBeginTick;
-                ts.type = ts.dataType;
-                ts.source = session.info.ptr;
-                ts.data = td;
-                ts.data.id = session.id;
-                ts.data.time = Clock.currTime.toUTC();
-                ts.data.entityType = session.__fqn;
-                ts.data.entityId = session.id;
-                ts.data.tick = session.__fqn;
-                this.entity.hull.send(ts);
-            }
-
-            info.inQueue.put(s);
-        }
-        else // this session should not exist, so kill it
-        {
-            this.entity.hull.remove(s.source.id);
-        }
+    override void run() {
+        throw new ImplementationError("beacon needs to listen to WrappedSignal cominf from a session");
     }
 }
 
-class PushWrappedSignal : Tick, IStealth
-{
+class Incoming : Tick, IStealth {
 	mixin tick;
 
-	override void run()
-	{
-        auto c = this.entity.context.as!BeaconSessionContext;
+	override void run() {
+        auto c = this.context.as!BeaconSessionContext;
         auto wd = new WrappedSignalData;
-        wd.signal = this.trigger.json;
+        wd.signal = this.signal.json;
         auto ws = new WrappedSignal;
         ws.data = wd;
         this.send(ws, c.beacon);
     }
 }
 
-class BeaconAlreadyStarted : Tick
-{
-	mixin tick;
-
-	override void run()
-	{
-    }
-}
-
-class BeaconAlreadyStopped : Tick
-{
-	mixin tick;
-
-	override void run()
-	{
-    }
-}
-
-class BeaconSession : Entity, IQuiet
-{
-    mixin entity!(BeaconSessionContext);
-
-    /*mixin listen!(fqn!WrappedSignal,
-        (e, s) => new PushWrappedSignal
-    );*/
-}
-
-class Beacon : Entity, IStealth, IQuiet
-{
+class BeaconSession : Entity {
     mixin entity;
 
-    mixin listen!(fqn!StartBeacon,
-        (e, s) => e.as!Beacon.onStartBeacon(s)
-    );
+    mixin listen!(fqn!WrappedSignal, fqn!Publish);
+}
+
+class Beacon : Entity, IStealth {
+    mixin entity;
     
-    mixin listen!(fqn!WrappedSignal,
-        (e, s) => new PullWrappedSignal
-    ); 
-
-    mixin listen!(fqn!StopBeacon,
-        (e, s) => e.as!Beacon.onStopBeacon(s)
-    );
-
-    protected Object onStartBeacon(Signal s) {return null;} 
-    protected Object onStopBeacon(Signal s) {return null;} 
+    mixin listen!(fqn!WrappedSignal, fqn!Read);
 }

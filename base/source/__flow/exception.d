@@ -73,6 +73,10 @@ class NotImplementedError : FlowError {
     mixin TError;
 }
 
+class ImplementationError : FlowError {
+    mixin TError;
+}
+
 class ParameterException : FlowException {
     mixin TException;
 }

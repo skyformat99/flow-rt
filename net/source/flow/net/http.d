@@ -8,31 +8,28 @@ import flow.base.dev, flow.base.blocks, flow.base.data, flow.base.interfaces, fl
 
 import flow.net.beacon;
 
-class HttpBeaconContext : BeaconContext
-{
+class HttpBeaconContext : BeaconContext {
 	mixin data;
 
-    mixin field!(UUID, "server");
+    mixin field!(UUID, "service");
     mixin field!(ushort, "port");
     mixin field!(ushort, "listenerAmount");
     mixin field!(string, "root");
 }
 
-private class HttpBeaconService : WebServer
-{
+private class HttpBeaconService : WebServer {
     import core.sync.mutex;
     private static Mutex _lock;
     private static HttpBeaconService[UUID] _listenerReg;
 
-    shared static this()
-    {
+    shared static this() {
         _lock = new Mutex;
     }
 
-    static UUID add(Entity entity, ushort port, ushort listenerAmount, bool delegate(Entity, WebRequest) handleReq, bool delegate(Entity, WebRequest, string) handleMsg)
-    {
-        synchronized(_lock)
-        {
+    static UUID add(Entity entity, ushort port, ushort listenerAmount,
+                    bool delegate(Entity, WebRequest) handleReq,
+                    bool delegate(Entity, WebRequest, string) handleMsg) {
+        synchronized(_lock) {
             auto id = randomUUID;
             _listenerReg[id] = new HttpBeaconService(entity, port, handleReq, handleMsg);
             _listenerReg[id].listenerAmount = listenerAmount;
@@ -41,12 +38,9 @@ private class HttpBeaconService : WebServer
         }
     }
 
-    static void remove(UUID id)
-    {
-        synchronized(_lock)
-        {
-            if(id in _listenerReg)
-            {
+    static void remove(UUID id) {
+        synchronized(_lock) {
+            if(id in _listenerReg) {
                 _listenerReg[id].stop();
                 _listenerReg.remove(id);
             }
@@ -60,8 +54,9 @@ private class HttpBeaconService : WebServer
 
     @property ushort port(){return this._port;}
 
-    private this(Entity entity, ushort port, bool delegate(Entity, WebRequest) handleReq, bool delegate(Entity, WebRequest, string) handleMsg)
-    {
+    private this(Entity entity, ushort port,
+                 bool delegate(Entity, WebRequest) handleReq,
+                 bool delegate(Entity, WebRequest, string) handleMsg) {
         this._entity = entity;
         this._port = port;
         this._handleReq = handleReq;
@@ -79,111 +74,65 @@ private class HttpBeaconService : WebServer
     }
 }
 
-class HttpBeaconStart : Tick
-{
+class Read : Tick {
 	mixin tick;
 
-	override void run()
-	{
-    }
-}
+	override void run() {
+        auto s = this.signal.as!WrappedSignal;
+        auto c = this.context.as!BeaconContext;
 
-class HttpBeaconStop : Tick
-{
-	mixin tick;
-
-	override void run()
-	{
-        auto c = this.entity.context.as!HttpBeaconContext;
-        c.server = UUID.init;
-    }
-}
-
-class HttpBeaconStartError : Tick
-{
-	mixin tick;
-
-	override void run()
-	{
-    }
-}
-
-class HttpBeaconStopError : Tick
-{
-	mixin tick;
-
-	override void run()
-	{
-    }
-}
-
-class HttpBeacon : Beacon, IStealth, IQuiet
-{
-    mixin entity!(HttpBeaconContext);
-    
-    mixin listen!(fqn!WrappedSignal,
-        (e, s) => new PullWrappedSignal
-    );
-
-    override Object onStartBeacon(Signal s)
-    {
-        auto c = this.context;
-        if(c.server == UUID.init)
-        {
-            try
-            {
-                c.server = HttpBeaconService.add(
-                    this, 
-                    c.port,
-                    c.listenerAmount,
-                    (e, req) => this.onWebRequest(req), 
-                    (e, req, msg) => this.onWebMessage(req, msg)
-                );
-                
-                return new HttpBeaconStart;
+        if(c.sessions.array.any!(i=>i.session.id == s.source.id)) {
+            // getting 
+            auto i = c.sessions.array.filter!(i=>i.session.id == s.source.id).front;
+            auto session = this.entity.hull.get(s.source.id);
+            if(this.entity.hull.tracing && s.as!IStealth is null) {
+                auto td = new TraceTickData;
+                auto ts = new TraceBeginTick;
+                ts.type = ts.dataType;
+                ts.source = session.info.ptr;
+                ts.data = td;
+                ts.data.id = session.id;
+                ts.data.time = Clock.currTime.toUTC();
+                ts.data.entityType = session.__fqn;
+                ts.data.entityId = session.id;
+                ts.data.tick = session.__fqn;
+                this.entity.hull.send(ts);
             }
-            catch(Exception exc)
-            {
-                c.error= exc.toString();
-                return new HttpBeaconStartError;
-            }
+
+            i.incoming.put(s);
+        } else { // this session should not exist, so kill it
+            this.entity.hull.remove(s.source.id);
         }
-        
-        return new BeaconAlreadyStarted;
+    }
+}
+
+class HttpBeacon : Beacon, IStealth {
+    mixin entity;
+    
+    override void start() {
+        auto c = this.context;
+        c.service = HttpBeaconService.add(
+            this, 
+            c.port,
+            c.listenerAmount,
+            (e, req) => this.onWebRequest(req), 
+            (e, req, msg) => this.onWebMessage(req, msg)
+        );
     } 
 
-    override Object onStopBeacon(Signal s)
-    {
-        if(this.context.server != UUID.init)
-        {
-            try
-            {
-                HttpBeaconService.remove(this.context.server);
-                
-                return new HttpBeaconStop;
-            }
-            catch(Exception exc)
-            {
-                this.context.error= exc.toString();
-                return new HttpBeaconStopError;
-            }
-        }
-    
-        return new BeaconAlreadyStopped;
+    override void stop() {
+        HttpBeaconService.remove(this.context.service);
     }
 
-    private bool onHttpRequestSession(WebRequest req)
-    {
+    private bool onHttpRequestSession(WebRequest req) {
         auto c = this.context;
 
         debugMsg("http request \""~req.url~"\" is a session request", 2);
         
-        try
-        {
+        try {
             UUID existing;
             try{existing = parseUUID(req.getCookie("flowsession"));}catch(Exception exc){}
-            if(existing != UUID.init && c.sessions.array.any!(i=>i.session.id == existing))
-            {
+            if(existing != UUID.init && c.sessions.array.any!(i=>i.session.id == existing)) {
                 auto session = c.sessions.array.filter!(i=>i.session.id == existing).front;
                 this.hull.remove(existing);
                 c.sessions.remove(session);
@@ -203,9 +152,7 @@ class HttpBeacon : Beacon, IStealth, IQuiet
 
             req.sendText("true");
             return true;
-        }
-        catch(Exception exc)
-        {
+        } catch(Exception exc) {
             debugMsg("http request \""~req.url~"\" caused an exception \""~exc.msg~"\"", 2);
         }
         

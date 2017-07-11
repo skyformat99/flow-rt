@@ -29,7 +29,7 @@ class NotifyThatFound : Tick
 
 	override void run()
 	{
-        auto s = this.trigger.as!FoundNotify;
+        auto s = this.signal.as!FoundNotify;
         auto found = new OverseerFound;
         found.data = s.data;
         this.send(found);
@@ -42,7 +42,7 @@ class GiveCandy : Tick
 
 	override void run()
 	{
-        auto s = this.trigger.as!OverseerGiveCandy;
+        auto s = this.signal.as!OverseerGiveCandy;
         this.send(new Candy, s.data);
     }
 }
@@ -53,8 +53,8 @@ class Search : Tick
 
 	override void run()
 	{
-        auto s = this.trigger.as!OverseerSearch;
-        auto c = this.entity.context.as!OverseerContext;
+        auto s = this.signal.as!OverseerSearch;
+        auto c = this.context.as!OverseerContext;
         c.search = s.data.search;
         this.send(new Whisper);
     }
