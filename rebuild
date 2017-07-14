@@ -1,6 +1,6 @@
 #!/bin/bash
 
-compiler=dmd
+compiler=ldc
 defBuildParams="--compiler=$compiler"
 if [ $1 ]; then buildType=$1; else buildType=debug; fi
 buildParams=${@:2}
@@ -21,7 +21,7 @@ function buildBin {
 $rootDir/clean
 
 buildLib base &&
-#buildLib data &&
+buildLib data &&
 #buildLib net &&
 #buildLib alien &&
 buildLib example/base/lib &&

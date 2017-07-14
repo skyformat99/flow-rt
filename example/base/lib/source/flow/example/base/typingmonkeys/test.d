@@ -74,9 +74,9 @@ void run(uint amount, string search) {
     import flow.base.dev;
 
     // limiting the flow to half of the vcores
-    auto vcores = threadsPerCPU();
-    auto cpusetp = cast(cpu_set_t)(pow(2, vcores/2)-1);
-    sched_setaffinity(0, cpusetp.sizeof, &cpusetp);
+    //auto vcores = threadsPerCPU();
+    //auto cpusetp = cast(cpu_set_t)(pow(2, vcores/2)-1);
+    //sched_setaffinity(0, cpusetp.sizeof, &cpusetp);
 
     Debug.msg(DL.Info, "#######################################");
     Debug.msg(DL.Info, "#######################################");
