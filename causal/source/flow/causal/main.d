@@ -60,6 +60,7 @@ int main(string[] args)
     auto cc = Data.fromJson(ccFile.readText);
 
     auto fc = new FlowConfig;
+    fc.workers = threadsPerCPU();
     fc.tracing = true;
 
     writeln("creating swarm...");

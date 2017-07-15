@@ -1,7 +1,7 @@
 module __flow.process;
 
-import core.thread, core.sync.rwmutex, std.uuid;
-import std.algorithm, std.range.interfaces, std.string;
+import core.cpuid, core.thread, core.sync.mutex, core.sync.rwmutex, std.uuid;
+import std.algorithm, std.algorithm.sorting, std.range.interfaces, std.string;
 
 import __flow.exception, __flow.type, __flow.data, __flow.signal, __flow.entity;
 import flow.base.dev, flow.base.interfaces, flow.base.data, flow.base.signals;
@@ -14,9 +14,36 @@ enum FlowState {
     Died
 }
 
+class Worker : Thread {
+    private Flow flow;
+
+    this(Flow f) {
+        this.flow = f;
+
+        super(&this.loop);
+    }
+
+    void loop() {
+        try {
+            while(this.flow.state == FlowState.Running) {
+                void delegate() t = this.flow.takeTick();
+
+                if(t != (void delegate()).init)
+                    t();
+                else Thread.sleep(WAITINGTIME);
+            }
+        } catch(Throwable t) {
+            Debug.msg(DL.Fatal, "worker died");
+            throw new WorkerError("died");
+        }
+    }
+}
+
 /// a flow process able to host the local swarm
 class Flow : StateMachine!FlowState {
-    private Entity[string] _local;
+    private Entity[string] entities;
+    private Worker[] workers;
+    private void delegate() tick;
 
     package FlowConfig config;
 
@@ -24,8 +51,18 @@ class Flow : StateMachine!FlowState {
         if(c is null) { // if no config is passed use defaults
             c = new FlowConfig;
             c.ptr = new FlowPtr;
+            c.workers = threadsPerCPU();
             c.tracing = false;
             c.preventIdTheft = true;
+        }
+
+        if(c.ptr is null) c.ptr = new FlowPtr; // a flow needs to have always a pointer
+        if(c.workers < 1) c.workers = 1; // a flow needs at least one fiber to run
+
+        for(uint i = 0; i < c.workers; i++) {
+            auto f = new Worker(this);
+            this.workers ~= f;
+            f.start();
         }
 
         this.config = c;
@@ -59,10 +96,28 @@ class Flow : StateMachine!FlowState {
         }
     }
 
+    package void execTick(void delegate() t) {
+        synchronized {
+            this.tick = t;
+
+            while(this.tick != (void delegate()).init)
+                Thread.sleep(WAITINGTIME);
+        }
+    }
+
+    package void delegate() takeTick() {
+        auto t = this.tick;
+
+        if(t != (void delegate()).init)
+            this.tick = (void delegate()).init;
+        
+        return t;
+    }
+
     private List!Entity GetTop() {
         auto top = new List!Entity;
         
-        foreach(e; this._local.values)
+        foreach(e; this.entities.values)
             if(e.parent is null)
                 top.put(e);
 
@@ -159,12 +214,12 @@ class Flow : StateMachine!FlowState {
                 Debug.msg(DL.Info, m.info, "adding entity");
                 e = Entity.create(this, m);
                 if(e !is null)
-                    this._local[addr] = e;
+                    this.entities[addr] = e;
                 else Debug.msg(DL.Warning, "could not create entity");
             } catch(Exception ex) {
                 Debug.msg(DL.Error, ex, "adding entity failed");
-                if(e !is null && addr in this._local)
-                    this._local.remove(addr);
+                if(e !is null && addr in this.entities)
+                    this.entities.remove(addr);
             }
 
         return e;
@@ -179,21 +234,21 @@ class Flow : StateMachine!FlowState {
 
     package void removeInternal(EntityInfo i) {
         auto addr = i.ptr.id~"@"~i.ptr.domain;        
-        if(addr in this._local) try {
+        if(addr in this.entities) try {
             Debug.msg(DL.Info, i, "removing entity");
-            auto e = this._local[addr];
+            auto e = this.entities[addr];
 
             if(e.state == EntityState.Running)
                 throw new ParameterException("entity cannot be in a running state");
 
             if(e.state != EntityState.Disposed)
                 e.dispose();
-            this._local.remove(addr);
+            this.entities.remove(addr);
         } catch(Exception ex) {
             Debug.msg(DL.Error, ex, "removing entity failed -> killing");
 
-            if(i !is null && addr in this._local)
-                this._local.remove(addr);
+            if(i !is null && addr in this.entities)
+                this.entities.remove(addr);
         }
     }
 
@@ -201,8 +256,8 @@ class Flow : StateMachine!FlowState {
         synchronized(this.lock.reader) {
             this.ensureState(FlowState.Running);
             auto addr = i.ptr.id~"@"~i.ptr.domain;
-            if(addr in this._local)
-                return this._local[addr];
+            if(addr in this.entities)
+                return this.entities[addr];
         }
         
         return null;
@@ -331,8 +386,8 @@ class Flow : StateMachine!FlowState {
             this.ensureState(FlowState.Running);
             Debug.msg(DL.FDebug, s, "delivering signal");
             auto addr = p.id~"@"~p.domain;
-            if(addr in this._local) {
-                auto e = this._local[addr];
+            if(addr in this.entities) {
+                auto e = this.entities[addr];
                 s = this.config.isolateMem ? s.dup().as!Signal : s;
                 return e.receive(s);
             } else {
@@ -357,8 +412,8 @@ class Flow : StateMachine!FlowState {
         Debug.msg(DL.FDebug, "waiting for searching destination of signal");
         synchronized(this.lock.reader) {
             Debug.msg(DL.FDebug, "searching destination of signal type "~s);
-            foreach(id; this._local.keys) {
-                auto e = this._local[id];
+            foreach(id; this.entities.keys) {
+                auto e = this.entities[id];
                 auto i = e.meta.info;
                 foreach(es; i.signals) {
                     if(es == s) {

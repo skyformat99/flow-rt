@@ -22,7 +22,7 @@ buildLib base &&
 buildLib data &&
 #buildLib net &&
 ##buildLib alien &&
-#buildLib example/base/lib #&&
+buildLib example/base/lib &&
 
 buildBin example/base/typingmonkeys &&
 buildBin example/base/madtypingmonkeys #&&

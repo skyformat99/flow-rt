@@ -69,6 +69,10 @@ class FlowException : Error, __IFqn {
     this(string msg) {super(msg);}
 }
 
+class WorkerError : FlowError {
+    mixin TError;
+}
+
 class NotImplementedError : FlowError {
     mixin TError;
 }
@@ -86,5 +90,9 @@ class UnsupportedObjectTypeException : FlowException {
 }
 
 class DataDamageException : FlowException {
+    mixin TException;
+}
+
+class TickException : FlowException {
     mixin TException;
 }

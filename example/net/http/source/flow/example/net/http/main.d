@@ -180,6 +180,7 @@ void main(string[] args)
     auto mc = Data.fromJson(mcStr);
     
     auto fc = new FlowConfig;
+    fc.workers = threadsPerCPU()/2;
     fc.tracing = true;
     fc.preventIdTheft = false;
     

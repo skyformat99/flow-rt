@@ -69,7 +69,7 @@ private bool waitForMonkeys(Flow f, EntityInfo i) {
 
 /// finally we run that
 void run(uint amount, string search) {
-    import core.cpuid, core.sys.linux.sched, core.time;
+    import core.cpuid, core.time;
     import std.datetime, std.conv, std.math;
     import flow.base.dev;
 
@@ -87,6 +87,7 @@ void run(uint amount, string search) {
     // build flow config
     auto fc = new FlowConfig;
     fc.ptr = new FlowPtr;
+    fc.workers = threadsPerCPU();
     fc.tracing = false;
     fc.preventIdTheft = true;
     auto p = new Flow(fc);
