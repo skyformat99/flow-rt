@@ -1,7 +1,7 @@
 module __flow.process;
 
-import core.cpuid, core.thread, core.sync.mutex, core.sync.rwmutex, std.uuid;
-import std.algorithm, std.algorithm.sorting, std.range.interfaces, std.string;
+import core.thread, core.time, core.sync.rwmutex;
+import std.algorithm, std.algorithm.sorting, std.range.interfaces, std.string, std.parallelism, std.uuid;
 
 import __flow.exception, __flow.type, __flow.data, __flow.signal, __flow.entity;
 import flow.base.dev, flow.base.interfaces, flow.base.data, flow.base.signals;
@@ -14,56 +14,22 @@ enum FlowState {
     Died
 }
 
-class Worker : Thread {
-    private Flow flow;
-
-    this(Flow f) {
-        this.flow = f;
-
-        super(&this.loop);
-    }
-
-    void loop() {
-        try {
-            while(this.flow.state == FlowState.Running) {
-                void delegate() t = this.flow.takeTick();
-
-                if(t != (void delegate()).init)
-                    t();
-                else Thread.sleep(WAITINGTIME);
-            }
-        } catch(Throwable t) {
-            Debug.msg(DL.Fatal, "worker died");
-            throw new WorkerError("died");
-        }
-    }
-}
-
 /// a flow process able to host the local swarm
 class Flow : StateMachine!FlowState {
     private Entity[string] entities;
-    private Worker[] workers;
-    private void delegate() tick;
-
+    private TaskPool tp;
     package FlowConfig config;
 
     this(FlowConfig c = null) {
+        this.tp = new TaskPool(100);
         if(c is null) { // if no config is passed use defaults
             c = new FlowConfig;
             c.ptr = new FlowPtr;
-            c.workers = threadsPerCPU();
             c.tracing = false;
             c.preventIdTheft = true;
         }
 
         if(c.ptr is null) c.ptr = new FlowPtr; // a flow needs to have always a pointer
-        if(c.workers < 1) c.workers = 1; // a flow needs at least one fiber to run
-
-        for(uint i = 0; i < c.workers; i++) {
-            auto f = new Worker(this);
-            this.workers ~= f;
-            f.start();
-        }
 
         this.config = c;
 
@@ -96,22 +62,8 @@ class Flow : StateMachine!FlowState {
         }
     }
 
-    package void execTick(void delegate() t) {
-        synchronized {
-            this.tick = t;
-
-            while(this.tick != (void delegate()).init)
-                Thread.sleep(WAITINGTIME);
-        }
-    }
-
-    package void delegate() takeTick() {
-        auto t = this.tick;
-
-        if(t != (void delegate()).init)
-            this.tick = (void delegate()).init;
-        
-        return t;
+    package void tick(void delegate() t) {
+        this.tp.put(task(t));
     }
 
     private List!Entity GetTop() {

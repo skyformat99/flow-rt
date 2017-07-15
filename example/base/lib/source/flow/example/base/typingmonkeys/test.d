@@ -78,16 +78,15 @@ void run(uint amount, string search) {
     //auto cpusetp = cast(cpu_set_t)(pow(2, vcores/2)-1);
     //sched_setaffinity(0, cpusetp.sizeof, &cpusetp);
 
-    Debug.msg(DL.Info, "#######################################");
-    Debug.msg(DL.Info, "#######################################");
-    Debug.msg(DL.Info, "### "~amount.to!string~" type writing monkeys, one translator");
-    Debug.msg(DL.Info, "### and an overseer looking out for the bible");
-    Debug.msg(DL.Info, "#######################################");
+    Debug.msg(DL.Message, "#######################################");
+    Debug.msg(DL.Message, "#######################################");
+    Debug.msg(DL.Message, "### "~amount.to!string~" type writing monkeys, one translator");
+    Debug.msg(DL.Message, "### and an overseer looking out for the bible");
+    Debug.msg(DL.Message, "#######################################");
 
     // build flow config
     auto fc = new FlowConfig;
     fc.ptr = new FlowPtr;
-    fc.workers = threadsPerCPU();
     fc.tracing = false;
     fc.preventIdTheft = true;
     auto p = new Flow(fc);
@@ -110,14 +109,14 @@ void run(uint amount, string search) {
 
     p.dispose();
 
-    Debug.msg(DL.Info, "#######################################");
-    Debug.msg(DL.Info, "time required for finding \"" ~ search ~ "\" "
+    Debug.msg(DL.Message, "#######################################");
+    Debug.msg(DL.Message, "time required for finding \"" ~ search ~ "\" "
         ~ "using " ~ amount.to!string ~ " monkeys "
         ~ "reviewed " ~ m.context.as!OverseerContext.pages.to!string ~ " pages "
         ~ "searched " ~ ((m.context.as!OverseerContext.pages*4)/1024).to!string ~ " MB of random data"
         ~ ": " ~ b[0].usecs.to!string
         ~ "usecs"~Debug.sep~m.json);
-    Debug.msg(DL.Info, "#######################################");
+    Debug.msg(DL.Message, "#######################################");
 }
 
 /** two kicker playing ball and one trainer

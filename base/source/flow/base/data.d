@@ -19,7 +19,6 @@ class FlowConfig : Data
     mixin TData;
     
     mixin TField!(FlowPtr, "ptr");
-    mixin TField!(uint, "workers");
     mixin TField!(bool, "tracing");
     mixin TField!(bool, "isolateMem");
     mixin TField!(bool, "preventIdTheft");

@@ -442,23 +442,27 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
     protected void onRunning() {
         try {
             this.msg(DL.FDebug, "waiting for running");
-            synchronized(this.lock.reader) {
-                this.msg(DL.FDebug, "running");
-                foreach(tm; this.meta.ticks.dup()) {
-                    this.tick(tm);
-                    this.meta.ticks.remove(tm);
-                }
-
-                this.msg(DL.FDebug, "resuming inboud signals");
-                Signal s = !this.meta.inbound.empty() ? this.meta.inbound.front() : null;
-                while(s !is null) {
-                    this.receive(s);
-                    this.meta.inbound.remove(s);
-                    s = !this.meta.inbound.empty() ? this.meta.inbound.front() : null;
-                }
-            }
+            this.flow.tick(&this.runningTick);
         } catch(Exception ex) {
             this.damage("resuming inboud signals", ex);
+        }
+    }
+
+    private void runningTick() {
+        synchronized(this.lock.reader) {
+            this.msg(DL.FDebug, "running");
+            foreach(tm; this.meta.ticks.dup()) {
+                this.tick(tm);
+                this.meta.ticks.remove(tm);
+            }
+
+            this.msg(DL.FDebug, "resuming inboud signals");
+            Signal s = !this.meta.inbound.empty() ? this.meta.inbound.front() : null;
+            while(s !is null) {
+                this.receive(s);
+                this.meta.inbound.remove(s);
+                s = !this.meta.inbound.empty() ? this.meta.inbound.front() : null;
+            }
         }
     }
 

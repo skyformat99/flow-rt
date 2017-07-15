@@ -7,17 +7,18 @@ import core.time, std.stdio, std.ascii, std.conv;
 immutable Duration WAITINGTIME = 5.msecs;
 
 enum DL : uint {
-    Fatal = 0,
-    Error = 1,
-    Warning = 2,
-    Info = 3,
-    Debug = 4,
-    FDebug = 5
+    Message = 0,
+    Fatal = 1,
+    Error = 2,
+    Warning = 3,
+    Info = 4,
+    Debug = 5,
+    FDebug = 6
 }
 
 class Debug {
     public static immutable sep = newline~"--------------------------------------------------"~newline;
-    public static DL debugLevel = DL.Debug;
+    public static DL debugLevel = DL.Warning;
     public static void msg(DL level, string msg) {
         if(level <= debugLevel) {
             auto t = "["~level.to!string~"] ";
