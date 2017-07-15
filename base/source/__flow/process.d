@@ -14,7 +14,7 @@ enum FlowState {
     Died
 }
 
-/// a flow process able to host the local swarm
+/// executing the local flow
 class Flow : StateMachine!FlowState {
     private Entity[string] entities;
     private TaskPool tp;
@@ -29,7 +29,7 @@ class Flow : StateMachine!FlowState {
             c.preventIdTheft = true;
         }
 
-        if(c.ptr is null) c.ptr = new FlowPtr; // a flow needs to have always a pointer
+        if(c.ptr is null) c.ptr = new FlowPtr; // a flow always needs to have a pointer
 
         this.config = c;
 
