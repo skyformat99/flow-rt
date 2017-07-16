@@ -3,8 +3,8 @@ module __flow.ticker;
 import core.thread, core.sync.rwmutex;
 import std.uuid, std.datetime;
 
-import __flow.data, __flow.type, __flow.entity, __flow.signal, __flow.exception;
-import flow.base.dev, flow.base.data, flow.base.signals, flow.base.interfaces;
+import __flow.data, __flow.type, __flow.entity, __flow.signal;
+import flow.base.dev, flow.base.error, flow.base.data, flow.base.signals, flow.base.interfaces;
 
 /// ticker executing chains of ticks
 class Ticker
@@ -35,7 +35,7 @@ class Ticker
     }
 
     public void start() {
-        this.entity.flow.tick(&this.tick);
+        this.entity.flow.exec(&this.tick);
     }
 
     private TickMeta createTick(TickInfo i, Data d = null) {
@@ -156,7 +156,7 @@ class Ticker
                 } else throw new TickException("unable to create", this.actual);
 
                 if(this.coming !is null) {
-                    this.entity.flow.tick(&this.tick);
+                    this.entity.flow.exec(&this.tick);
                 } else {
                     this.entity.stopTick(this);
                     this.entity.msg(DL.FDebug, "ticker ends");

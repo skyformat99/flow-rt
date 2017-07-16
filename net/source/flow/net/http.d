@@ -81,9 +81,9 @@ class Read : Tick {
         auto s = this.signal.as!WrappedSignal;
         auto c = this.context.as!BeaconContext;
 
-        if(c.sessions.array.any!(i=>i.session.ptr == s.source)) {
+        if(c.sessions.any!(ses=>ses.session.ptr.eq(s.source))) {
             // getting 
-            //auto i = c.sessions.array.filter!(i=>i.session.id == s.source.id).front;
+            auto session = c.sessions.filter!(ses=>ses.session.ptr.eq(s.source)).front;
             /*if(this.tracing && s.as!IStealth is null) {
                 auto td = new TraceTickData;
                 auto ts = new TraceBeginTick;
@@ -98,9 +98,7 @@ class Read : Tick {
                 this.send(ts);
             }*/
 
-            i.incoming.put(s);
-        } else { // this session should not exist, so kill it
-            this.entity.hull.remove(s.source);
+            session.incoming.put(s);
         }
     }
 }
@@ -109,7 +107,7 @@ class HttpBeacon : Beacon, IStealth {
     mixin entity;
     
     override void start() {
-        auto c = this.context;
+        auto c = this.context.as!HttpBeaconContext;
         c.service = HttpBeaconService.add(
             this, 
             c.port,
@@ -120,50 +118,56 @@ class HttpBeacon : Beacon, IStealth {
     } 
 
     override void stop() {
-        HttpBeaconService.remove(this.context.service);
+        HttpBeaconService.remove(this.context.as!HttpBeaconContext.service);
     }
 
     private bool onHttpRequestSession(WebRequest req) {
-        auto c = this.context;
+        auto c = this.context.as!HttpBeaconContext;
 
-        debugMsg("http request \""~req.url~"\" is a session request", 2);
+        Debug.msg(DL.Debug, "http request \""~req.url~"\" is a session request");
         
         try {
-            UUID existing;
-            try{existing = parseUUID(req.getCookie("flowsession"));}catch(Exception exc){}
-            if(existing != UUID.init && c.sessions.array.any!(i=>i.session.id == existing)) {
-                auto session = c.sessions.array.filter!(i=>i.session.id == existing).front;
-                this.hull.remove(existing);
-                c.sessions.remove(session);
+            EntityPtr ptr;
+            BeaconSessionInfo session;
+            try{ptr = Data.create(req.getCookie("flowsession")).as!EntityPtr;}catch(Exception exc){}
+
+            if(ptr !is null && c.sessions.any!(i=>i.session.ptr.eq(ptr)))
+                session = c.sessions.filter!(i=>i.session.ptr.eq(ptr)).front;
+            else {
+                auto sc = new BeaconSessionContext;
+                sc.beacon = this.info.ptr;
+                auto m = new EntityMeta;
+                m.info = new EntityInfo;
+                m.info.space = EntitySpace.Local;
+                m.info.ptr = new EntityPtr;
+                m.info.ptr.id = randomUUID.to!string;
+                m.info.ptr.domain = this.info.ptr.domain;
+                m.context = sc;
+
+                session = new BeaconSessionInfo;
+                session.session = this.spawn(m).info;
+                session.lastActivity = Clock.currTime.toUTC().as!DateTime;
+                c.sessions.put(session);
+                auto json = session.session.ptr.json;
+                req.setCookie("flowsession", json);
+                Debug.msg(DL.Info, "http request \""~req.url~"\" added session with ptr \""~json~"\"");
             }
-
-            auto sc = new BeaconSessionContext;
-            sc.beacon = this.info.ptr;
-            auto session = new BeaconSession(randomUUID, this.info.domain, this.info.availability, sc);
-            this.hull.add(session);
-
-            auto info = new BeaconSessionInfo;
-            info.session = session.info.ptr;
-            info.lastActivity = Clock.currTime.toUTC().as!DateTime;
-            c.sessions.put(info);
-            req.setCookie("flowsession", session.id.toString);
-            debugMsg("http request \""~req.url~"\" added session with id \""~session.id.toString()~"\"", 2);
 
             req.sendText("true");
             return true;
-        } catch(Exception exc) {
-            debugMsg("http request \""~req.url~"\" caused an exception \""~exc.msg~"\"", 2);
-        }
+        } catch(Exception ex) {
+            Debug.msg(DL.Warning, ex, "http request \""~req.url~"\" failed");
         
-        req.sendText("false");
-        return false;
+            req.sendText("false");
+            return false;
+        }
     }
 
     private bool onHttpRequestValidateSession(WebRequest req)
     {
         auto c = this.context;
 
-        debugMsg("http request \""~req.url~"\" is a validate session request", 2);
+        Debug.msg(DL.Debug, "http request \""~req.url~"\" is a validate session request");
         
         try
         {
@@ -180,9 +184,8 @@ class HttpBeacon : Beacon, IStealth {
                 req.setCookie("flowsession", null);
             }
         }
-        catch(Exception exc)
-        {
-            debugMsg("http request \""~req.url~"\" caused an exception \""~exc.msg~"\"", 2);
+        catch(Exception ex) {
+            Debug.msg(DL.Warning, ex, "http request \""~req.url~"\" failed");
         }
         
         req.sendText("false");
@@ -191,36 +194,36 @@ class HttpBeacon : Beacon, IStealth {
 
     private bool onHttpRequestEndSession(WebRequest req)
     {
-        debugMsg("http request \""~req.url~"\" is a end session request", 2);
+        Debug.msg(DL.Debug, "http request \""~req.url~"\" is a end session request");
 
         try
         {
-            UUID existing;
-            try{existing = parseUUID(req.getCookie("flowsession"));}
+            EntityPtr ptr;
+            auto cookie = req.getCookie("flowsession");
+            try{ptr = Data.create(cookie);}
             catch(Exception exc)
             {
-                debugMsg("http request \""~req.url~"\" contains has no valid session id \""~req.getCookie("flowsession")~"\"", 3);
+                Debug.msg(DL.Warning, ex, "http request \""~req.url~"\" contains has no valid session ptr \""~cookie~"\"");
                 req.sendError(400, "no valid session id<br>"~req.getCookie("flowsession"));
             }
 
             auto c = this.context;
-            if(existing != UUID.init && c.sessions.array.any!(i=>i.session.id == existing))
+            if(ptr !is null && c.sessions.any!(i=>i.session.ptr.eq(ptr)))
             {
-                auto info = c.sessions.array.filter!(i=>i.session.id == existing).front;
-                auto session = this.hull.get(existing);
+                auto info = c.sessions.array.filter!(i=>i.session.ptr.eq(ptr)).front;
+                auto session = this.get(info);
 
-                this.hull.remove(existing);
+                this.kill(info);
                 c.sessions.remove(info);
                 req.setCookie("flowsession", null);
-                debugMsg("http request \""~req.url~"\" removed session with id \""~existing.toString()~"\"", 2);
+                Debug.msg(DL.Info, ptr, "http request \""~req.url~"\" removed session");
 
                 req.sendText("true");
                 return true;
             }
         }
-        catch(Exception exc)
-        {
-            debugMsg("http request \""~req.url~"\" caused an exception \""~exc.msg~"\"", 2);
+        catch(Exception ex) {
+            Debug.msg(DL.Warning, ex, "http request \""~req.url~"\" failed");
         }
         
         req.sendText("false");
@@ -229,7 +232,7 @@ class HttpBeacon : Beacon, IStealth {
 
     private static Object httpListenHandler(Entity e, Signal s)
     {
-        debugMsg("session received \""~s.type~"\"", 2);
+        Debug.msg(DL.Debug, s, "signal received");
         auto beacon = e.hull.get(e.context.as!BeaconSessionContext.beacon.id);
         
         auto c = beacon.context.as!HttpBeaconContext;
@@ -247,38 +250,39 @@ class HttpBeacon : Beacon, IStealth {
 
     private bool onHttpRequestAddListenSource(WebRequest req)
     {
-        debugMsg("http request \""~req.url~"\" is an add listen source request", 2);
+        Debug.msg(DL.Debug, "http request \""~req.url~"\" is an add listen source request");
         try
         {
-            UUID existing;
-            try{existing = parseUUID(req.getCookie("flowsession"));}
+            EntityPtr ptr;
+            auto cookie = req.getCookie("flowsession");
+            try{ptr = parseUUID(cookie);}
             catch(Exception exc)
             {
-                debugMsg("http request \""~req.url~"\" contains has no valid session id \""~req.getCookie("flowsession")~"\"", 3);
+                Debug.msg(DL.Warning, ex, "http request \""~req.url~"\" contains has no valid session id \""~cookie~"\"");
                 req.sendError(400, "no valid session id<br>"~req.getCookie("flowsession"));
             }
             
-            auto c = this.context;
-            if(existing != UUID.init && c.sessions.array.any!(i => i.session.id == existing))
+            auto c = this.context.as!HttpBeaconContext;
+            if(ptr !is null && c.sessions.any!(i => i.session.ptr.eq(ptr)))
             {
                 auto data = req.rawData.strip();
                 auto signal = data.split(";")[0];
                 auto source = data.split(";")[1];
                 auto id = source == "*" ? UUID.init : parseUUID(source);
-                auto info = c.sessions.array.filter!(i => i.session.id == existing).front;
+                auto session = c.sessions.filter!(i => i.session.ptr.eq(ptr)).front;
                 
-                if(!info.listenings.array.any!(l => l.signal == signal))
+                if(!session.listenings.any!(l => l.signal == signal))
                 {
-                    debugMsg(existing.to!string~" listening to \""~signal~"\"", 2);
+                    Debug.msg(DL.Debug, existing.to!string~" listening to \""~signal~"\"", 2);
 
-                    auto lid = this.hull.get(existing).beginListen(signal, (e, s) => httpListenHandler(e, s));
+                    auto lid = this.get(existing).beginListen(signal, (e, s) => httpListenHandler(e, s));
                     auto listening = new BeaconSessionListening;
                     listening.id = lid;
                     listening.signal = signal;
                     info.listenings.put(listening);
                 }
 
-                debugMsg(existing.to!string~" allowing \""~id.to!string~"\" for \""~signal~"\"", 2);
+                Debug.msg(DL.Debug, existing.to!string~" allowing \""~id.to!string~"\" for \""~signal~"\"", 2);
                 auto listening = info.listenings.array.filter!(l => l.signal == signal).front;
                 if(!listening.sources.array.any!(src => src == id))
                     listening.sources.put(id);
@@ -289,7 +293,7 @@ class HttpBeacon : Beacon, IStealth {
         }
         catch(Exception exc)
         {
-            debugMsg("http request \""~req.url~"\" caused an exception \""~exc.msg~"\"", 2);
+            Debug.msg(DL.Debug, "http request \""~req.url~"\" caused an exception \""~exc.msg~"\"", 2);
         }
         
         req.sendText("false");
@@ -298,14 +302,14 @@ class HttpBeacon : Beacon, IStealth {
 
     private bool onHttpRequestRemoveListenSource(WebRequest req)
     {
-        debugMsg("http request \""~req.url~"\" is a remove listen source request", 2);
+        Debug.msg(DL.Debug, "http request \""~req.url~"\" is a remove listen source request", 2);
         try
         {
             UUID existing;
             try{existing = parseUUID(req.getCookie("flowsession"));}
             catch(Exception exc)
             {
-                debugMsg("http request \""~req.url~"\" contains has no valid session id \""~req.getCookie("flowsession")~"\"", 3);
+                Debug.msg(DL.Warning, "http request \""~req.url~"\" contains has no valid session id \""~req.getCookie("flowsession")~"\"", 3);
                 req.sendError(400, "no valid session id<br>"~req.getCookie("flowsession"));
             }
             
@@ -334,9 +338,8 @@ class HttpBeacon : Beacon, IStealth {
                 }
             }
         }
-        catch(Exception exc)
-        {
-            debugMsg("http request \""~req.url~"\" caused an exception \""~exc.msg~"\"", 2);
+        catch(Exception ex) {
+            Debug.msg(DL.Warning, "http request \""~req.url~"\" failed", ex);
         }
         
         req.sendText("false");
@@ -345,13 +348,13 @@ class HttpBeacon : Beacon, IStealth {
 
     private bool onHttpRequestReceive(WebRequest req)
     {
-        debugMsg("http request \""~req.url~"\" is a receive request", 2);
+        Debug.msg(DL.Debug, "http request \""~req.url~"\" is a receive request", 2);
 
         UUID existing;
         try{existing = parseUUID(req.getCookie("flowsession"));}
         catch(Exception exc)
         {
-            debugMsg("http request \""~req.url~"\" contains has no valid session id \""~req.getCookie("flowsession")~"\"", 3);
+            Debug.msg(DL.Debug, "http request \""~req.url~"\" contains has no valid session id \""~req.getCookie("flowsession")~"\"", 3);
             req.sendError(400, "no valid session id<br>"~req.getCookie("flowsession"));
         }
 
@@ -366,7 +369,7 @@ class HttpBeacon : Beacon, IStealth {
                 info.inQueue.clear();
             }
         
-            debugMsg("http request \""~req.url~"\" found "~signals.length.to!string~" new signals", 3);
+            Debug.msg(DL.Debug, "http request \""~req.url~"\" found "~signals.length.to!string~" new signals", 3);
             auto signalsString = "[";
             foreach(ws; signals)
                 signalsString ~= ws.data.signal~",";
@@ -384,13 +387,13 @@ class HttpBeacon : Beacon, IStealth {
     {
         import flow.base.signals;
 
-        debugMsg("http request \""~req.url~"\" is a send request", 2);
+        Debug.msg(DL.Debug, "http request \""~req.url~"\" is a send request", 2);
 
         UUID existing;
         try{existing = parseUUID(req.getCookie("flowsession"));}
         catch(Exception exc)
         {
-            debugMsg("http request \""~req.url~"\" has no valid session id \""~req.getCookie("flowsession")~"\"", 3);
+            Debug.msg(DL.Debug, "http request \""~req.url~"\" has no valid session id \""~req.getCookie("flowsession")~"\"", 3);
             req.sendError(400, "no valid session id<br>"~req.getCookie("flowsession"));
         }
 
@@ -412,7 +415,7 @@ class HttpBeacon : Beacon, IStealth {
             }
             catch(Exception exc)
             {
-                debugMsg("http request \""~req.url~"\" contains malformed data \""~data~"\" \""~exc.msg~"\"", 3);
+                Debug.msg(DL.Debug, "http request \""~req.url~"\" contains malformed data \""~data~"\" \""~exc.msg~"\"", 3);
                 req.sendError(400, "malformed send request<br>"~exc.msg);
             }
 
@@ -467,7 +470,7 @@ class HttpBeacon : Beacon, IStealth {
             }
             else
             {
-                debugMsg("http request \""~req.url~"\" contains malformed data \""~data~"\"", 3);
+                Debug.msg(DL.Debug, "http request \""~req.url~"\" contains malformed data \""~data~"\"", 3);
                 req.sendError(400, "malformed send request<br>"~data);
             }
         }
@@ -477,7 +480,7 @@ class HttpBeacon : Beacon, IStealth {
 
     private bool onWebRequestFile(WebRequest req)
     {
-        debugMsg("http request \""~req.url~"\" is a file request", 2);
+        Debug.msg(DL.Debug, "http request \""~req.url~"\" is a file request", 2);
 
         auto c = this.context;
         auto file = req.url;
@@ -499,7 +502,7 @@ class HttpBeacon : Beacon, IStealth {
         }
         else
         {
-            debugMsg("\""~file~"\" not found", 3);
+            Debug.msg(DL.Debug, "\""~file~"\" not found", 3);
             req.sendError(404, "file not found");
         }
 
@@ -508,11 +511,11 @@ class HttpBeacon : Beacon, IStealth {
 
     private bool onWebRequest(WebRequest req)
     {
-        debugMsg("got http request \""~req.url~"\"", 1);
+        Debug.msg(DL.Debug, "got http request \""~req.url~"\"", 1);
         auto ret = false;
         if(req.matchUrl("\\/::flow::.*"))
         {
-            debugMsg("http request \""~req.url~"\" is a flow request", 2);
+            Debug.msg(DL.Debug, "http request \""~req.url~"\" is a flow request", 2);
             if(req.url == "/::flow::requestSession")
                 ret = this.onHttpRequestSession(req);
             else if(req.url == "/::flow::validateSession")
@@ -529,7 +532,7 @@ class HttpBeacon : Beacon, IStealth {
                 ret = this.onHttpRequestSend(req);
             else
             {
-                debugMsg("http request \""~req.url~"\" is unknown'", 3);
+                Debug.msg(DL.Debug, "http request \""~req.url~"\" is unknown'", 3);
                 req.sendError(400, "unknown request");
             }
         }
@@ -539,7 +542,7 @@ class HttpBeacon : Beacon, IStealth {
         }
 
         req.flush;
-        debugMsg("http request \""~req.url~"\" flushed'", 3);
+        Debug.msg(DL.Debug, "http request \""~req.url~"\" flushed'", 3);
         return ret;
     }
 

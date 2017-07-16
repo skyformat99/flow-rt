@@ -20,12 +20,12 @@ function buildBin {
 
 buildLib base &&
 buildLib data &&
-#buildLib net &&
+buildLib net &&
 ##buildLib alien &&
-buildLib example/base/lib &&
+#buildLib example/base/lib &&
 
-buildBin example/base/typingmonkeys &&
-buildBin example/base/madtypingmonkeys #&&
-##buildBin example/net/http #&&
+#buildBin example/base/typingmonkeys &&
+#buildBin example/base/madtypingmonkeys #&&
+buildBin example/net/http #&&
 ##buildBin causal #&&
 ##buildBin hive/experiments/take01

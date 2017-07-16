@@ -434,7 +434,7 @@ template TFieldHelper(PropertyMeta p)
 			shared static this() {
 				import std.uuid;
 				import __flow.data, __flow.type, __flow.type;
-				import __flow.exception, __flow.lib.vibe.data.json, __flow.data;
+				import __flow.lib.vibe.data.json, __flow.data;
 
 				DataProperties[\""~p.name~"\"] = cast(shared(PropertyInfo))PropertyInfo(typeid("~p.type~"), false, "~(p.isData ? "true" : "false")~");
 				
@@ -459,7 +459,7 @@ template TListHelper(PropertyMeta p)
 			{
 				import std.uuid;
 				import __flow.data, __flow.type, __flow.type;
-				import __flow.exception, __flow.lib.vibe.data.json, __flow.data;
+				import flow.base.error, __flow.lib.vibe.data.json, __flow.data;
 
 				DataProperties[\""~p.name~"\"] = cast(shared(PropertyInfo))PropertyInfo(typeid("~p.type~"), true, false);
 

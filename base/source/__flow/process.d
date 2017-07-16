@@ -3,8 +3,8 @@ module __flow.process;
 import core.thread, core.time, core.sync.rwmutex;
 import std.algorithm, std.algorithm.sorting, std.range.interfaces, std.string, std.parallelism, std.uuid;
 
-import __flow.exception, __flow.type, __flow.data, __flow.signal, __flow.entity;
-import flow.base.dev, flow.base.interfaces, flow.base.data, flow.base.signals;
+import __flow.type, __flow.data, __flow.signal, __flow.entity;
+import flow.base.dev, flow.base.error, flow.base.interfaces, flow.base.data, flow.base.signals;
 
 enum FlowState {
     None = 0,
@@ -21,7 +21,6 @@ class Flow : StateMachine!FlowState {
     package FlowConfig config;
 
     this(FlowConfig c = null) {
-        this.tp = new TaskPool(100);
         if(c is null) { // if no config is passed use defaults
             c = new FlowConfig;
             c.ptr = new FlowPtr;
@@ -30,6 +29,9 @@ class Flow : StateMachine!FlowState {
         }
 
         if(c.ptr is null) c.ptr = new FlowPtr; // a flow always needs to have a pointer
+        if(c.worker < 1) c.worker = 1;
+
+        this.tp = new TaskPool(c.worker);
 
         this.config = c;
 
@@ -62,7 +64,7 @@ class Flow : StateMachine!FlowState {
         }
     }
 
-    package void tick(void delegate() t) {
+    package void exec(void delegate() t) {
         this.tp.put(task(t));
     }
 

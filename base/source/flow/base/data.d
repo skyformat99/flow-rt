@@ -20,6 +20,7 @@ class FlowConfig : Data
     
     mixin TField!(FlowPtr, "ptr");
     mixin TField!(bool, "tracing");
+    mixin TField!(size_t, "worker");
     mixin TField!(bool, "isolateMem");
     mixin TField!(bool, "preventIdTheft");
 }
@@ -33,7 +34,7 @@ class FlowPtr : Data
 }
 
 /// scopes an entity can have
-enum EntityScope
+enum EntitySpace
 {
     Local,
     Global
@@ -67,7 +68,7 @@ class EntityInfo : Data {
     mixin TData;
 
     mixin TField!(EntityPtr, "ptr");
-    mixin TField!(EntityScope, "availability");
+    mixin TField!(EntitySpace, "space");
     mixin TField!(EntityConfig, "config");
 
     mixin TList!(string, "signals");

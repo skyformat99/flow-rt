@@ -8,8 +8,8 @@ import flow.base.data, flow.base.signals;
 class StartBeacon : Unicast{mixin signal;}
 class StopBeacon : Unicast{mixin signal;}
 
-class PublishSuccessMsg : Unicast{mixin signal;}
-class PublishFailMsg : Unicast{mixin signal;}
+class PublishSuccessMsg : Unicast{mixin signal!(Signal);}
+class PublishFailMsg : Unicast{mixin signal!(Signal);}
 
 class BeaconContext : Data {
 	mixin data;
@@ -35,10 +35,8 @@ class BeaconSessionContext : Data {
 class BeaconSessionInfo : Data {
 	mixin data;
 
-    mixin field!(EntityPtr, "session");
+    mixin field!(EntityInfo, "session");
     mixin field!(DateTime, "lastActivity");
-    //mixin list!(BeaconSessionListening, "listenings");
-    mixin list!(string, "signals");
     mixin list!(WrappedSignal, "incoming");
 }
 
@@ -46,6 +44,7 @@ class Read : Tick {
     mixin tick;
 
     override void run() {
+        import flow.base.error;
         throw new ImplementationError("beacon needs to listen to WrappedSignal cominf from a session");
     }
 }
@@ -56,7 +55,7 @@ class Incoming : Tick, IStealth {
 	override void run() {
         auto c = this.context.as!BeaconSessionContext;
         auto ws = new WrappedSignal;
-        ws.data = this.signal.json;
+        ws.data = this.signal;
         this.send(ws, c.beacon);
     }
 }
@@ -66,24 +65,24 @@ class Publish : Tick, IStealth {
 
     override void run() {
         auto ws = this.signal.as!WrappedSignal;
-        auto s = Data.create(ws.data);
+        auto s = ws.data;
 
         auto success = false;
         if(s.as!Unicast !is null)
             success = this.send(s.as!Unicast);
         else if(s.as!Multicast !is null)
-            success = this.hull.send(s.as!Multicast);
+            success = this.send(s.as!Multicast);
         else if(s.as!Anycast !is null)
-            success = this.hull.send(s.as!Anycast);
+            success = this.send(s.as!Anycast);
 
         if(success) {
-            auto pss = new PublishSuccessMsg;
-            pss.data = ws.id;
-            this.answer(pfs);
+            auto psm = new PublishSuccessMsg;
+            psm.data = ws;
+            this.answer(psm);
         } else {
-            auto pfs = new PublishFailMsg;
-            pfs.data = ws.id;
-            this.answer(pfs);
+            auto pfm = new PublishFailMsg;
+            pfm.data = ws;
+            this.answer(pfm);
         }
     }
 }

@@ -1,6 +1,7 @@
 module flow.base.dev;
 
-import __flow.exception, __flow.data;
+import __flow.data;
+import flow.base.error;
 
 import core.time, std.stdio, std.ascii, std.conv;
 

@@ -4,7 +4,8 @@ import core.exception, core.sync.rwmutex;
 import std.traits, std.range.interfaces, std.range.primitives;
 import std.algorithm, std.uuid, std.datetime;
 
-import __flow.event, __flow.data, __flow.exception;
+import __flow.event, __flow.data;
+import flow.base.error;
 
 version(TODO) {
     // TODO implement
@@ -428,7 +429,7 @@ class InvalidStateException : FlowException {
 class StateMachine(T) if (isScalarType!T) {
     import core.sync.rwmutex;
 
-    import __flow.exception;
+    import flow.base.error;
 
     private ReadWriteMutex _lock;
     private T _state;

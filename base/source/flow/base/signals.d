@@ -65,4 +65,6 @@ class TraceEndTick : Multicast, IStealth
     mixin TSignal!(TraceTickData);
 }
 
-class WrappedSignal : Unicast, IStealth {mixin TSignal;}
+class WrappedSignal : Unicast, IStealth {
+    mixin TSignal!(Signal);
+}

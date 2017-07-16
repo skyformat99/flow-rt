@@ -5,8 +5,8 @@ import std.array, std.datetime, std.uuid, std.conv;
 import std.algorithm.iteration, std.algorithm.searching;
 
 import __flow.process, __flow.ticker, __flow.type;
-import __flow.data, __flow.signal, __flow.exception;
-import flow.base.dev, flow.base.interfaces;
+import __flow.data, __flow.signal;
+import flow.base.dev, flow.base.error, flow.base.interfaces;
 import flow.base.signals, flow.base.data, flow.base.ticks;
 
 enum EntityState {
@@ -186,6 +186,10 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
             return this.addChild(m);
         }
     }
+
+    /*public Entity get(EntityInfo e) {
+        return this.flow.get(e);
+    }*/
 
     public EntityMeta kill(EntityInfo i) {
         this.msg(DL.FDebug, "waiting for kill");
@@ -442,7 +446,7 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
     protected void onRunning() {
         try {
             this.msg(DL.FDebug, "waiting for running");
-            this.flow.tick(&this.runningTick);
+            this.flow.exec(&this.runningTick);
         } catch(Exception ex) {
             this.damage("resuming inboud signals", ex);
         }

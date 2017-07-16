@@ -1,4 +1,4 @@
-module __flow.exception;
+module flow.base.error;
 import __flow.data, __flow.type;
 
 import std.traits;
