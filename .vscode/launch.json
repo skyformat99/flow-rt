@@ -110,7 +110,7 @@
                 "break onInvalidMemoryOperationError"
             ],
             "target": "flow-example-base-madtypingmonkeys",
-            "arguments": "50 fooo",
+            "arguments": "8 fo",
             "cwd": "${workspaceRoot}/example/base/madtypingmonkeys/bin"
         }
     ]

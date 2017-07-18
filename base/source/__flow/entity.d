@@ -446,7 +446,7 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
     protected void onRunning() {
         try {
             this.msg(DL.FDebug, "waiting for running");
-            this.flow.exec(&this.runningTick);
+            this.runningTick();
         } catch(Exception ex) {
             this.damage("resuming inboud signals", ex);
         }

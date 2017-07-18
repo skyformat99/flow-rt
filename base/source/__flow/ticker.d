@@ -38,6 +38,10 @@ class Ticker
         this.entity.flow.exec(&this.tick);
     }
 
+    public void stop() {
+        this.entity.stopTick(this);        
+    }
+
     private TickMeta createTick(TickInfo i, Data d = null) {
         auto m = new TickMeta;
         m.info = i;     
@@ -157,13 +161,17 @@ class Ticker
 
                 if(this.coming !is null) {
                     this.entity.flow.exec(&this.tick);
+                    return;
                 } else {
-                    this.entity.stopTick(this);
-                    this.entity.msg(DL.FDebug, "ticker ends");
+                    this.stop();
+                    this.entity.msg(DL.FDebug, "nothing to do, ticker ends");
                 }
             }
+            
+            this.stop();
+            this.entity.damage("entity not running, ticker ends", ex);
         } catch(Exception ex) {
-            this.entity.stopTick(this);
+            this.stop();
             this.entity.damage("ticker died", ex);
         }
     }
