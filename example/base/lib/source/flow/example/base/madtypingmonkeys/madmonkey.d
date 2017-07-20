@@ -2,18 +2,18 @@ module flow.example.base.madtypingmonkeys.madmonkey;
 import flow.example.base.typingmonkeys.signals;
 import flow.example.base.typingmonkeys.monkey;
 
-import flow.base.blocks, flow.base.data, flow.base.signals, flow.base.interfaces;
+import flow.base.blocks, flow.base.data, flow.base.signals;
 
-class Punch : Unicast{mixin signal!();}
+class Punch : Unicast{mixin signal;}
 class KoInfo : Data {
 	mixin data;
 
     mixin field!(EntityPtr, "raider");
 }
 class NotifyKo : Multicast{mixin signal!(KoInfo);}
-class NotifyNoKo : Unicast{mixin signal!();}
+class NotifyNoKo : Unicast{mixin signal;}
 
-class DropCandy : Anycast{mixin signal!();}
+class DropCandy : Anycast{mixin signal;}
 
 class MadMonkeyConfig : EntityConfig {
 	mixin data;

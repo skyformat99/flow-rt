@@ -169,7 +169,7 @@ class Ticker
             }
             
             this.stop();
-            this.entity.damage("entity not running, ticker ends", ex);
+            this.entity.damage("entity not running, ticker ends");
         } catch(Exception ex) {
             this.stop();
             this.entity.damage("ticker died", ex);

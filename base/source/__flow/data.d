@@ -412,13 +412,13 @@ template TFieldHelper(PropertyMeta p)
 		else if(p.isArray)
 			toJsonString ~= "if(t."~p.name~" !is null) j[\""~p.name~"\"] = t."~p.name~".serializeToJson();};";
 		else if(p.type == "UUID")
-			toJsonString ~= "j[\""~p.name~"\"] = t."~p.name~".toString();};";
+			toJsonString ~= "if(t."~p.name~" !is "~p.type~".init) j[\""~p.name~"\"] = t."~p.name~".toString();};";
 		else if(p.type == "SysTime" || p.type == "DateTime")
-			toJsonString ~= "j[\""~p.name~"\"] = t."~p.name~".toISOExtString();};";
+			toJsonString ~= "if(t."~p.name~" !is "~p.type~".init) j[\""~p.name~"\"] = t."~p.name~".toISOExtString();};";
 		else
-			toJsonString ~= "j[\""~p.name~"\"] = t."~p.name~";};";
+			toJsonString ~= "if(t."~p.name~" !is "~p.type~".init) j[\""~p.name~"\"] = t."~p.name~";};";
 		
-		string fromJsonString = "_fromJsons ~= (t, j){if(\""~p.name~"\" in j)";
+		string fromJsonString = "_fromJsons ~= (t, j){if(\""~p.name~"\" in j && j[\""~p.name~"\"] !is Json.undefined)";
 		if(p.isData) 
 			fromJsonString ~= "t._"~p.name~" = cast("~p.type~")Data.fromJson(j[\""~p.name~"\"]);};";
 		else if(p.isArray)

@@ -80,8 +80,8 @@ class Flow : StateMachine!FlowState {
 
     private List!Entity GetRunningTop() {
         auto rtop = new List!Entity;
-        
-        foreach(e; this.GetTop())
+        auto top = this.GetTop();
+        foreach(e; top)
             if(e.state == EntityState.Running)
                 rtop.put(e);
 
@@ -152,6 +152,23 @@ class Flow : StateMachine!FlowState {
             e.resume();
 
             return e;
+        }
+    }
+
+    public Entity[] add(EntityMeta[] m) {
+        synchronized(this.lock.writer) {
+            this.ensureState(FlowState.Running);
+            auto entities = new List!Entity;
+            foreach(em; m) {
+                Entity e = null;
+                e = this.addInternal(em);
+                entities.put(e);
+            }
+
+            foreach(e; entities)
+                e.resume();
+
+            return entities.array;
         }
     }
 
