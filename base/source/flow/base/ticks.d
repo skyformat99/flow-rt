@@ -8,7 +8,7 @@ class SendPong : Tick, IStealth
     mixin TTick;
 
     override void run() {
-        this.msg(DL.Debug, this.signal.source, "received ping from entity");
+        this.msg(LL.Debug, this.signal.source, "received ping from entity");
         auto p = new Pong;
         p.ptr = this.entity.ptr;
         p.signals.put(this.entity.signals);

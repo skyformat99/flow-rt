@@ -87,7 +87,6 @@ class Read : Tick {
             /*if(this.tracing && s.as!IStealth is null) {
                 auto td = new TraceTickData;
                 auto ts = new TraceBeginTick;
-                ts.type = ts.dataType;
                 ts.source = session.info.ptr;
                 ts.data = td;
                 ts.data.id = session.id;
@@ -124,7 +123,7 @@ class HttpBeacon : Beacon, IStealth {
     private bool onHttpRequestSession(WebRequest req) {
         auto c = this.context.as!HttpBeaconContext;
 
-        Debug.msg(DL.Debug, "http request \""~req.url~"\" is a session request");
+        Log.msg(LL.Debug, "http request \""~req.url~"\" is a session request");
         
         try {
             EntityPtr ptr;
@@ -150,13 +149,13 @@ class HttpBeacon : Beacon, IStealth {
                 c.sessions.put(session);
                 auto json = session.session.ptr.json;
                 req.setCookie("flowsession", json);
-                Debug.msg(DL.Info, "http request \""~req.url~"\" added session with ptr \""~json~"\"");
+                Log.msg(LL.Info, "http request \""~req.url~"\" added session with ptr \""~json~"\"");
             }
 
             req.sendText("true");
             return true;
         } catch(Exception ex) {
-            Debug.msg(DL.Warning, ex, "http request \""~req.url~"\" failed");
+            Log.msg(LL.Warning, ex, "http request \""~req.url~"\" failed");
         
             req.sendText("false");
             return false;
@@ -167,7 +166,7 @@ class HttpBeacon : Beacon, IStealth {
     {
         auto c = this.context;
 
-        Debug.msg(DL.Debug, "http request \""~req.url~"\" is a validate session request");
+        Log.msg(LL.Debug, "http request \""~req.url~"\" is a validate session request");
         
         try
         {
@@ -185,7 +184,7 @@ class HttpBeacon : Beacon, IStealth {
             }
         }
         catch(Exception ex) {
-            Debug.msg(DL.Warning, ex, "http request \""~req.url~"\" failed");
+            Log.msg(LL.Warning, ex, "http request \""~req.url~"\" failed");
         }
         
         req.sendText("false");
@@ -194,7 +193,7 @@ class HttpBeacon : Beacon, IStealth {
 
     private bool onHttpRequestEndSession(WebRequest req)
     {
-        Debug.msg(DL.Debug, "http request \""~req.url~"\" is a end session request");
+        Log.msg(LL.Debug, "http request \""~req.url~"\" is a end session request");
 
         try
         {
@@ -203,7 +202,7 @@ class HttpBeacon : Beacon, IStealth {
             try{ptr = Data.create(cookie);}
             catch(Exception exc)
             {
-                Debug.msg(DL.Warning, ex, "http request \""~req.url~"\" contains has no valid session ptr \""~cookie~"\"");
+                Log.msg(LL.Warning, ex, "http request \""~req.url~"\" contains has no valid session ptr \""~cookie~"\"");
                 req.sendError(400, "no valid session id<br>"~req.getCookie("flowsession"));
             }
 
@@ -216,14 +215,14 @@ class HttpBeacon : Beacon, IStealth {
                 this.kill(info);
                 c.sessions.remove(info);
                 req.setCookie("flowsession", null);
-                Debug.msg(DL.Info, ptr, "http request \""~req.url~"\" removed session");
+                Log.msg(LL.Info, ptr, "http request \""~req.url~"\" removed session");
 
                 req.sendText("true");
                 return true;
             }
         }
         catch(Exception ex) {
-            Debug.msg(DL.Warning, ex, "http request \""~req.url~"\" failed");
+            Log.msg(LL.Warning, ex, "http request \""~req.url~"\" failed");
         }
         
         req.sendText("false");
@@ -232,12 +231,12 @@ class HttpBeacon : Beacon, IStealth {
 
     private static Object httpListenHandler(Entity e, Signal s)
     {
-        Debug.msg(DL.Debug, s, "signal received");
+        Log.msg(LL.Debug, s, "signal received");
         auto beacon = e.hull.get(e.context.as!BeaconSessionContext.beacon.id);
         
         auto c = beacon.context.as!HttpBeaconContext;
         auto info = c.sessions.array.filter!(i => i.session.id == e.id).front;
-        foreach(l; info.listenings.array.filter!(l => l.signal == s.type))
+        foreach(l; info.listenings.array.filter!(l => l.signal == s.dataType))
         {
             foreach(src; l.sources.array.filter!(src => src == UUID.init || src == s.source.id))
                 return new PushWrappedSignal;
@@ -250,7 +249,7 @@ class HttpBeacon : Beacon, IStealth {
 
     private bool onHttpRequestAddListenSource(WebRequest req)
     {
-        Debug.msg(DL.Debug, "http request \""~req.url~"\" is an add listen source request");
+        Log.msg(LL.Debug, "http request \""~req.url~"\" is an add listen source request");
         try
         {
             EntityPtr ptr;
@@ -258,7 +257,7 @@ class HttpBeacon : Beacon, IStealth {
             try{ptr = parseUUID(cookie);}
             catch(Exception exc)
             {
-                Debug.msg(DL.Warning, ex, "http request \""~req.url~"\" contains has no valid session id \""~cookie~"\"");
+                Log.msg(LL.Warning, ex, "http request \""~req.url~"\" contains has no valid session id \""~cookie~"\"");
                 req.sendError(400, "no valid session id<br>"~req.getCookie("flowsession"));
             }
             
@@ -273,7 +272,7 @@ class HttpBeacon : Beacon, IStealth {
                 
                 if(!session.listenings.any!(l => l.signal == signal))
                 {
-                    Debug.msg(DL.Debug, existing.to!string~" listening to \""~signal~"\"", 2);
+                    Log.msg(LL.Debug, existing.to!string~" listening to \""~signal~"\"", 2);
 
                     auto lid = this.get(existing).beginListen(signal, (e, s) => httpListenHandler(e, s));
                     auto listening = new BeaconSessionListening;
@@ -282,7 +281,7 @@ class HttpBeacon : Beacon, IStealth {
                     info.listenings.put(listening);
                 }
 
-                Debug.msg(DL.Debug, existing.to!string~" allowing \""~id.to!string~"\" for \""~signal~"\"", 2);
+                Log.msg(LL.Debug, existing.to!string~" allowing \""~id.to!string~"\" for \""~signal~"\"", 2);
                 auto listening = info.listenings.array.filter!(l => l.signal == signal).front;
                 if(!listening.sources.array.any!(src => src == id))
                     listening.sources.put(id);
@@ -293,7 +292,7 @@ class HttpBeacon : Beacon, IStealth {
         }
         catch(Exception exc)
         {
-            Debug.msg(DL.Debug, "http request \""~req.url~"\" caused an exception \""~exc.msg~"\"", 2);
+            Log.msg(LL.Debug, "http request \""~req.url~"\" caused an exception \""~exc.msg~"\"", 2);
         }
         
         req.sendText("false");
@@ -302,14 +301,14 @@ class HttpBeacon : Beacon, IStealth {
 
     private bool onHttpRequestRemoveListenSource(WebRequest req)
     {
-        Debug.msg(DL.Debug, "http request \""~req.url~"\" is a remove listen source request", 2);
+        Log.msg(LL.Debug, "http request \""~req.url~"\" is a remove listen source request", 2);
         try
         {
             UUID existing;
             try{existing = parseUUID(req.getCookie("flowsession"));}
             catch(Exception exc)
             {
-                Debug.msg(DL.Warning, "http request \""~req.url~"\" contains has no valid session id \""~req.getCookie("flowsession")~"\"", 3);
+                Log.msg(LL.Warning, "http request \""~req.url~"\" contains has no valid session id \""~req.getCookie("flowsession")~"\"", 3);
                 req.sendError(400, "no valid session id<br>"~req.getCookie("flowsession"));
             }
             
@@ -339,7 +338,7 @@ class HttpBeacon : Beacon, IStealth {
             }
         }
         catch(Exception ex) {
-            Debug.msg(DL.Warning, "http request \""~req.url~"\" failed", ex);
+            Log.msg(LL.Warning, "http request \""~req.url~"\" failed", ex);
         }
         
         req.sendText("false");
@@ -348,13 +347,13 @@ class HttpBeacon : Beacon, IStealth {
 
     private bool onHttpRequestReceive(WebRequest req)
     {
-        Debug.msg(DL.Debug, "http request \""~req.url~"\" is a receive request", 2);
+        Log.msg(LL.Debug, "http request \""~req.url~"\" is a receive request", 2);
 
         UUID existing;
         try{existing = parseUUID(req.getCookie("flowsession"));}
         catch(Exception exc)
         {
-            Debug.msg(DL.Debug, "http request \""~req.url~"\" contains has no valid session id \""~req.getCookie("flowsession")~"\"", 3);
+            Log.msg(LL.Debug, "http request \""~req.url~"\" contains has no valid session id \""~req.getCookie("flowsession")~"\"", 3);
             req.sendError(400, "no valid session id<br>"~req.getCookie("flowsession"));
         }
 
@@ -369,7 +368,7 @@ class HttpBeacon : Beacon, IStealth {
                 info.inQueue.clear();
             }
         
-            Debug.msg(DL.Debug, "http request \""~req.url~"\" found "~signals.length.to!string~" new signals", 3);
+            Log.msg(LL.Debug, "http request \""~req.url~"\" found "~signals.length.to!string~" new signals", 3);
             auto signalsString = "[";
             foreach(ws; signals)
                 signalsString ~= ws.data.signal~",";
@@ -387,13 +386,13 @@ class HttpBeacon : Beacon, IStealth {
     {
         import flow.base.signals;
 
-        Debug.msg(DL.Debug, "http request \""~req.url~"\" is a send request", 2);
+        Log.msg(LL.Debug, "http request \""~req.url~"\" is a send request", 2);
 
         UUID existing;
         try{existing = parseUUID(req.getCookie("flowsession"));}
         catch(Exception exc)
         {
-            Debug.msg(DL.Debug, "http request \""~req.url~"\" has no valid session id \""~req.getCookie("flowsession")~"\"", 3);
+            Log.msg(LL.Debug, "http request \""~req.url~"\" has no valid session id \""~req.getCookie("flowsession")~"\"", 3);
             req.sendError(400, "no valid session id<br>"~req.getCookie("flowsession"));
         }
 
@@ -409,13 +408,12 @@ class HttpBeacon : Beacon, IStealth {
                 if(s !is null)
                 {
                     s.source = this.hull.get(se.session.id).info.ptr;
-                    s.type = s.dataType;
                     if(s.group == UUID.init) s.group = randomUUID;
                 }
             }
             catch(Exception exc)
             {
-                Debug.msg(DL.Debug, "http request \""~req.url~"\" contains malformed data \""~data~"\" \""~exc.msg~"\"", 3);
+                Log.msg(LL.Debug, "http request \""~req.url~"\" contains malformed data \""~data~"\" \""~exc.msg~"\"", 3);
                 req.sendError(400, "malformed send request<br>"~exc.msg);
             }
 
@@ -435,7 +433,6 @@ class HttpBeacon : Beacon, IStealth {
                 {
                     auto tsd = new TraceSignalData;
                     auto tss = new TraceSend;
-                    tss.type = tss.dataType;
                     tss.source = s.source;
                     tss.data = tsd;
                     tss.data.success = success;
@@ -450,7 +447,7 @@ class HttpBeacon : Beacon, IStealth {
                         tss.data.destination = s.as!Unicast.destination;
                     tss.data.time = Clock.currTime.toUTC();
                     tss.data.id = s.id;
-                    tss.data.type = s.type;
+                    tss.data.type = s.dataType;
                     this.hull.send(tss);
 
                     auto ttd = new TraceTickData;
@@ -470,7 +467,7 @@ class HttpBeacon : Beacon, IStealth {
             }
             else
             {
-                Debug.msg(DL.Debug, "http request \""~req.url~"\" contains malformed data \""~data~"\"", 3);
+                Log.msg(LL.Debug, "http request \""~req.url~"\" contains malformed data \""~data~"\"", 3);
                 req.sendError(400, "malformed send request<br>"~data);
             }
         }
@@ -480,7 +477,7 @@ class HttpBeacon : Beacon, IStealth {
 
     private bool onWebRequestFile(WebRequest req)
     {
-        Debug.msg(DL.Debug, "http request \""~req.url~"\" is a file request", 2);
+        Log.msg(LL.Debug, "http request \""~req.url~"\" is a file request", 2);
 
         auto c = this.context;
         auto file = req.url;
@@ -502,7 +499,7 @@ class HttpBeacon : Beacon, IStealth {
         }
         else
         {
-            Debug.msg(DL.Debug, "\""~file~"\" not found", 3);
+            Log.msg(LL.Debug, "\""~file~"\" not found", 3);
             req.sendError(404, "file not found");
         }
 
@@ -511,11 +508,11 @@ class HttpBeacon : Beacon, IStealth {
 
     private bool onWebRequest(WebRequest req)
     {
-        Debug.msg(DL.Debug, "got http request \""~req.url~"\"", 1);
+        Log.msg(LL.Debug, "got http request \""~req.url~"\"", 1);
         auto ret = false;
         if(req.matchUrl("\\/::flow::.*"))
         {
-            Debug.msg(DL.Debug, "http request \""~req.url~"\" is a flow request", 2);
+            Log.msg(LL.Debug, "http request \""~req.url~"\" is a flow request", 2);
             if(req.url == "/::flow::requestSession")
                 ret = this.onHttpRequestSession(req);
             else if(req.url == "/::flow::validateSession")
@@ -532,7 +529,7 @@ class HttpBeacon : Beacon, IStealth {
                 ret = this.onHttpRequestSend(req);
             else
             {
-                Debug.msg(DL.Debug, "http request \""~req.url~"\" is unknown'", 3);
+                Log.msg(LL.Debug, "http request \""~req.url~"\" is unknown'", 3);
                 req.sendError(400, "unknown request");
             }
         }
@@ -542,7 +539,7 @@ class HttpBeacon : Beacon, IStealth {
         }
 
         req.flush;
-        Debug.msg(DL.Debug, "http request \""~req.url~"\" flushed'", 3);
+        Log.msg(LL.Debug, "http request \""~req.url~"\" flushed'", 3);
         return ret;
     }
 

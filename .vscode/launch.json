@@ -123,7 +123,10 @@
             "autorun": [
                 "handle SIGUSR1 nostop noprint",
                 "handle SIGUSR2 nostop noprint",
-                "break onInvalidMemoryOperationError"
+                "break onInvalidMemoryOperationError",
+                "catch exception",
+                "catch throw",
+                "catch catch"
             ],
             "target": "flow-example-base-complex",
             "arguments": "run -n test -t 1",

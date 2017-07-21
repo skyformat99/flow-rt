@@ -64,7 +64,7 @@ class Write : Tick {
             c.counter = c.counter + 1;
 
             // just something for us to see
-            this.msg(DL.Debug, "amount of typed pages: "~c.counter.to!string);
+            this.msg(LL.Debug, "amount of typed pages: "~c.counter.to!string);
             
             // tell the ticker to repeat this tick (natural while loop)
             this.repeat();
@@ -84,7 +84,7 @@ class GetCandy : Tick {
         this.send(new ShowCandy);
 
         // just something for us to see
-        this.msg(DL.Debug, "got happy");
+        this.msg(LL.Debug, "got happy");
     }
 }
 
@@ -99,7 +99,7 @@ class SeeCandy : Tick {
             c.state = MonkeyEmotionalState.Dissapointed;
 
             // just something for us to see
-            this.msg(DL.Debug, "got dissapointed");
+            this.msg(LL.Debug, "got dissapointed");
         }
     }
 }

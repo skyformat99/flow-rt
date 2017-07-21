@@ -2,7 +2,7 @@ module __flow.data;
 
 import std.traits, std.uuid, std.meta, std.datetime, std.range.primitives;
 
-import __flow.lib.vibe.data.json;
+import vibe.data.json;
 import __flow.type, __flow.event;
 
 /// an error occured in data reflection layer (error stops execution of app)
@@ -157,7 +157,7 @@ abstract class Data : __IFqn, __IEq {
 mixin template TData()
 {
 	static import std.traits, std.array, std.conv, std.uuid;
-	static import __flow.lib.vibe.data.serialization, __flow.lib.vibe.data.json;
+	static import vibe.data.serialization, vibe.data.json;
 	static import __flow.event, __flow.type, __flow.data;
 
 	shared static __flow.data.PropertyInfo[string] DataProperties;
@@ -167,8 +167,8 @@ mixin template TData()
 	private shared static bool function(typeof(this), string, Object)[] _setter;
 	private shared static void function(typeof(this), typeof(this))[] _dups;
 	private shared static bool function(typeof(this), typeof(this))[] _eqs;
-	private shared static void function(typeof(this), __flow.lib.vibe.data.json.Json)[] _toJsons;
-	private shared static void function(typeof(this), __flow.lib.vibe.data.json.Json)[] _fromJsons;
+	private shared static void function(typeof(this), vibe.data.json.Json)[] _toJsons;
+	private shared static void function(typeof(this), vibe.data.json.Json)[] _fromJsons;
 
 	static __flow.data.Data create() {return new typeof(this);}
 
@@ -257,15 +257,15 @@ mixin template TData()
 			d(this, clone);
 	}
 		
-	override __flow.lib.vibe.data.json.Json toJsonStruct()
+	override vibe.data.json.Json toJsonStruct()
 	{
-		auto j = __flow.lib.vibe.data.json.Json(["dataType" : __flow.lib.vibe.data.json.Json(this.dataType)]);
+		auto j = vibe.data.json.Json(["dataType" : vibe.data.json.Json(this.dataType)]);
 		this.toJson(j);
 		return j;
 	}
 
 	alias toJson = Data.toJson;
-	override protected void toJson(__flow.lib.vibe.data.json.Json j)
+	override protected void toJson(vibe.data.json.Json j)
 	{
 		static if(__flow.type.fqn!(typeof(super)) != "__flow.data.Data")
 			super.toJson(j);
@@ -277,17 +277,17 @@ mixin template TData()
 
 	static typeof(this) fromJson(string s)
 	{
-		return fromJson(__flow.lib.vibe.data.json.parseJsonString(s));
+		return fromJson(vibe.data.json.parseJsonString(s));
 	}
 
-	static typeof(this) fromJson(__flow.lib.vibe.data.json.Json j)
+	static typeof(this) fromJson(vibe.data.json.Json j)
 	{
 		auto obj = new typeof(this);
 		obj.fillFromJson(j);
 		return obj;	
 	}
 
-	override void fillFromJson(__flow.lib.vibe.data.json.Json j)
+	override void fillFromJson(vibe.data.json.Json j)
 	{
 		static if(__flow.type.fqn!(typeof(super)) != "__flow.data.Data")
 			super.fillFromJson(j);
@@ -434,7 +434,7 @@ template TFieldHelper(PropertyMeta p)
 			shared static this() {
 				import std.uuid;
 				import __flow.data, __flow.type, __flow.type;
-				import __flow.lib.vibe.data.json, __flow.data;
+				import vibe.data.json, __flow.data;
 
 				DataProperties[\""~p.name~"\"] = cast(shared(PropertyInfo))PropertyInfo(typeid("~p.type~"), false, "~(p.isData ? "true" : "false")~");
 				
@@ -459,7 +459,7 @@ template TListHelper(PropertyMeta p)
 			{
 				import std.uuid;
 				import __flow.data, __flow.type, __flow.type;
-				import flow.base.error, __flow.lib.vibe.data.json, __flow.data;
+				import flow.base.error, vibe.data.json, __flow.data;
 
 				DataProperties[\""~p.name~"\"] = cast(shared(PropertyInfo))PropertyInfo(typeid("~p.type~"), true, false);
 
@@ -549,7 +549,7 @@ mixin template TField(T, string name)
 {
 	static import core.sync.rwmutex;
 	static import std.traits, std.array, std.conv;
-	static import __flow.lib.vibe.data.json, __flow.lib.vibe.data.serialization;
+	static import vibe.data.json, vibe.data.serialization;
 	static import __flow.event, __flow.type, __flow.data;	
 
 	enum isData = is(T : Data);
@@ -585,7 +585,7 @@ mixin template TList(T, string name)
 {
 	static import core.sync.rwmutex;
 	static import std.traits, std.array, std.conv;
-	static import __flow.lib.vibe.data.json, __flow.lib.vibe.data.serialization;
+	static import vibe.data.json, vibe.data.serialization;
 	static import __flow.event, __flow.type, __flow.data;
 
 	enum isData = is(T : Data);

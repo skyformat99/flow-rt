@@ -18,8 +18,8 @@ function buildBin {
     dub build --compiler=ldc --build $buildType $defBuildParams $buildParams
 }
 
-buildLib base &&
-buildLib data &&
+#buildLib base &&
+#buildLib data &&
 #buildLib net &&
 ##buildLib alien &&
 #buildLib example/base/lib &&

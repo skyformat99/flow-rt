@@ -52,7 +52,7 @@ class Found : Tick {
 
         c.found = true;
 
-        this.msg(DL.Debug, "found \""~cfg.search
+        this.msg(LL.Debug, "found \""~cfg.search
             ~"\" after searching "
             ~c.pages.to!string~" pages and "
             ~(c.pages*4).to!string

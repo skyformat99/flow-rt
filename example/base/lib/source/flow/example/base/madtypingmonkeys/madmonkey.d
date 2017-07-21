@@ -42,7 +42,7 @@ class GoMad : Tick {
             
         auto sent = this.answer(new Punch);
         // just something for us to see
-        this.msg(DL.Debug, "got dissapointed and "~(sent ? "successfully" : "unsuccessfully")~" punches "
+        this.msg(LL.Debug, "got dissapointed and "~(sent ? "successfully" : "unsuccessfully")~" punches "
             ~s.source.type~"("~s.source.id~")");
     }
 }
@@ -67,7 +67,7 @@ class TakePunch : Tick {
                 c.isKo = c.health <= cfg.koAt;
                             
                 // just something for us to see
-                this.msg(DL.Debug, "got punched(left health "
+                this.msg(LL.Debug, "got punched(left health "
                     ~(c.health-cfg.koAt).to!string ~ ") and is "~(!c.isKo ? "not " : "")~"KO by "
                     ~s.source.type~" ("~s.source.id~")");
             }
@@ -90,7 +90,7 @@ class Punched : Tick {
         if(c.isKo) {
             auto sent = this.send(new DropCandy);
             // just something for us to see
-            this.msg(DL.Debug, s.source, "was koed and "
+            this.msg(LL.Debug, s.source, "was koed and "
                 ~(sent ? "successfully" : "unsuccessfully")~" drops candy");
 
             this.send(new NotifyKo);
@@ -99,13 +99,13 @@ class Punched : Tick {
             auto punch = uniform(0, 1) == 0; // 50% chance to punch back
 
             auto sent = this.send(new NotifyNoKo, s.source);
-            this.msg(DL.Debug, s, (sent ? "successfully" : "unsuccessfully")
+            this.msg(LL.Debug, s, (sent ? "successfully" : "unsuccessfully")
                 ~" notifies that it isn't KO'");
 
             if(punch) { 
                 auto sent2 = this.answer(new Punch);
                 // just something for us to see
-                this.msg(DL.Debug, s.source, (sent2 ? "successfully" : "unsuccessfully")~" punches back"
+                this.msg(LL.Debug, s.source, (sent2 ? "successfully" : "unsuccessfully")~" punches back"
                     ~ s.source.type);
             }
         }
@@ -128,11 +128,11 @@ class CatchCandy : Tick {
         // is it hiding or showing it?
         if(c.candyHidden) {
             // just something for us to see
-            this.msg(DL.Debug, "catched dropped candy and hides it");
+            this.msg(LL.Debug, "catched dropped candy and hides it");
         }
         else {
             // just something for us to see
-            this.msg(DL.Debug, "catched dropped candy and shows it");
+            this.msg(LL.Debug, "catched dropped candy and shows it");
 
             this.send(new ShowCandy);
         }

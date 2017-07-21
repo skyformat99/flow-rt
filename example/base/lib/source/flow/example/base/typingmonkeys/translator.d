@@ -45,7 +45,7 @@ class Translate : Tick {
 
         c.counter = c.counter + 1;
 
-        this.msg(DL.Debug, "amount of translated pages: " ~ c.counter.to!string);
+        this.msg(LL.Debug, "amount of translated pages: " ~ c.counter.to!string);
     }
 }
 

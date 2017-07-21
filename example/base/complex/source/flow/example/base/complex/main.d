@@ -32,7 +32,7 @@ class Act : Unicast {
 }
 
 class React : Tick {
-    mixin tick;
+    mixin sync;
 
     override void run() {
         import std.random;
@@ -40,12 +40,12 @@ class React : Tick {
         auto s = this.signal.as!Act;
         auto c = this.context.as!CoreComplexContext;
 
-        double amount;
-        double overall;
+        size_t amount;
+        double overall = 0;
         ComplexRelation[double] map;
         foreach(r; c.relations) {
             // increasing sources power in own wirklichkeit
-            if(s.source !is null && r.target.eq(s.source) && s.power !is double.init)
+            if(s.source !is null && r.target.eq(s.source))
                 r.power = r.power + s.power;
 
             // filling parameters for roulette game if its in own wirklichkeit
@@ -60,11 +60,12 @@ class React : Tick {
         }
 
         auto hit = uniform(0, overall);
+        auto l = map.length;
         // increasing own power in determined complex's wirklichkeit and decrease its power in own wirklichkeit
         foreach(p; map.keys) {
             if(hit >= p) {
                 auto ns = new Act;
-                auto power = overall/amount;
+                double power = map[p].power/overall;
                 ns.power = power;
                 map[p].power = map[p].power - power;
                 this.send(ns, map[p].target);
@@ -100,14 +101,14 @@ void main(string[] args) {
     {
         //import std.flow;
         //dataDir = environment.get("APPDATA");
-        Debug.msg(DL.Fatal, "this software doesn't support windows based systems!");
+        Log.msg(LL.Fatal, "this software doesn't support windows based systems!");
         exit(-1);
     }
 
     confDir = thisExePath.dirName.buildPath("etc");    
     if(!confDir.exists)
     {
-        Debug.msg(DL.Fatal, "could not find configuration directory -> exiting");
+        Log.msg(LL.Fatal, "could not find configuration directory -> exiting");
         exit(-1);
     }
 
@@ -148,7 +149,7 @@ void help(GetoptResult rslt) {
 
 void create() {
     if(name == string.init) {
-        Debug.msg(DL.Fatal, "you have to set a valid name using --name -> exiting");
+        Log.msg(LL.Fatal, "you have to set a valid name using --name -> exiting");
         exit(-1);
     }
 
@@ -157,13 +158,13 @@ void create() {
         if(force) {
             descFile.remove();
         } else {
-            Debug.msg(DL.Fatal, "complex snapshot \""~name~".json\" is already existing (use --force for overwrite) -> exiting");
+            Log.msg(LL.Fatal, "complex snapshot \""~name~".json\" is already existing (use --force for overwrite) -> exiting");
             exit(-1);
         }
     }
 
     if(amount < 2) {
-        Debug.msg(DL.Fatal, "you have to set an amount of complexes greater 1 using --amount -> exiting");
+        Log.msg(LL.Fatal, "you have to set an amount of complexes greater 1 using --amount -> exiting");
         exit(-1);
     }
 
@@ -196,27 +197,27 @@ void create() {
 
     descFile.write(desc.json);
 
-    Debug.msg(DL.Message, "successfully created system "~name);
+    Log.msg(LL.Message, "successfully created system "~name);
 }
 
 void run() {
     if(name == string.init) {
-        Debug.msg(DL.Fatal, "you have to set a valid name using --name -> exiting");
+        Log.msg(LL.Fatal, "you have to set a valid name using --name -> exiting");
         exit(-1);
     }
 
     auto descFile = confDir.buildPath(name~".json");
     if(!descFile.exists) {
-        Debug.msg(DL.Fatal, "could not find complex description \""~name~".json\" -> exiting");
+        Log.msg(LL.Fatal, "could not find complex description \""~name~".json\" -> exiting");
         exit(-1);
     }
 
     if(threads < 1) {
-        Debug.msg(DL.Fatal, "cannot run using less than 1 thread");
+        Log.msg(LL.Fatal, "cannot run using less than 1 thread");
         exit(-1);
     }
 
-    Debug.msg(DL.Message, "loading...");
+    Log.msg(LL.Message, "loading...");
     auto oldestDt = SysTime.min;
     string oldestSnap;
     foreach(de; confDir.dirEntries(SpanMode.shallow)) {
@@ -239,7 +240,7 @@ void run() {
     fc.worker = threads;
     fc.tracing = true;
 
-    Debug.msg(DL.Message, "running...");
+    Log.msg(LL.Message, "running...");
     auto flow = new Flow(fc);
     flow.add(desc.entities.array);
 
@@ -253,7 +254,7 @@ void run() {
 
     flow.suspend();
     snap(flow, desc.dup);
-    Debug.msg(DL.Message, "shutting down...");
+    Log.msg(LL.Message, "shutting down...");
     flow.dispose();
 }
 

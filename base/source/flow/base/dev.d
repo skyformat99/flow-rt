@@ -7,7 +7,7 @@ import core.time, std.stdio, std.ascii, std.conv;
 
 immutable Duration WAITINGTIME = 5.msecs;
 
-enum DL : uint {
+enum LL : uint {
     Message = 0,
     Fatal = 1,
     Error = 2,
@@ -17,11 +17,11 @@ enum DL : uint {
     FDebug = 6
 }
 
-class Debug {
+class Log {
     public static immutable sep = newline~"--------------------------------------------------"~newline;
-    public static DL debugLevel = DL.Warning;
-    public static void msg(DL level, string msg) {
-        if(level <= debugLevel) {
+    public static LL logLevel = LL.Warning;
+    public static void msg(LL level, string msg) {
+        if(level <= logLevel) {
             auto t = "["~level.to!string~"] ";
             t ~= msg;
 
@@ -32,13 +32,13 @@ class Debug {
         }
     }
 
-    public static void msg(DL level, Exception ex, string msg=string.init) {
+    public static void msg(LL level, Exception ex, string msg=string.init) {
         string t;
         
         if(msg != string.init)
             t ~= msg~newline~"    ";
         
-        if(ex.msg != string.init)
+        if(ex !is null && ex.msg != string.init)
             t ~= ex.msg~newline;
 
         if(cast(FlowException)ex !is null && (cast(FlowException)ex).data !is null) {
@@ -47,12 +47,14 @@ class Debug {
             t ~= sep;
             t ~= sep;
         }
+
+        Log.msg(level, t);
     }
 
-    public static void msg(DL level, Data d, string msg = string.init) {
+    public static void msg(LL level, Data d, string msg = string.init) {
         auto t = msg;
-        t ~= Debug.sep;
-        t ~= d.json;
-        Debug.msg(level, t);
+        t ~= Log.sep;
+        t ~= d !is null ? d.json : "NULL";
+        Log.msg(level, t);
     }
 }

@@ -54,7 +54,6 @@ class EntityPtr : Data {
     mixin TField!(string, "id");
     mixin TField!(string, "type");
     mixin TField!(string, "domain");
-    mixin TField!(FlowPtr, "flowptr");
 }
 
 class EntityConfig : Data {

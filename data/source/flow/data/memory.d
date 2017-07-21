@@ -136,7 +136,7 @@ class Loaded : Tick {
 	{
         import flow.base.dev;
         
-        this.msg(DL.Debug, "memory successfully loaded");
+        this.msg(LL.Debug, "memory successfully loaded");
         this.answer(new LoadedMsg);
     }
 }
