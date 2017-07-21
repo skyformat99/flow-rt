@@ -5,9 +5,6 @@
 	"importPaths": [
 		"source/"
 	],
-	"dependencies": {
-		"vibe-d:data": "~>0.8.0"
-	},
 	"name": "flow-base",
 	"version": "0.2.0",
 	"license": "GPL-3.0",
