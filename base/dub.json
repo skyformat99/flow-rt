@@ -5,6 +5,9 @@
 	"importPaths": [
 		"source/"
 	],
+	"dependencies": {
+		"std_data_json": "~>0.18.2"
+	},
 	"name": "flow-base",
 	"version": "0.2.0",
 	"license": "GPL-3.0",

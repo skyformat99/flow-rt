@@ -113,7 +113,6 @@
             "cwd": "${workspaceRoot}/example/base/madtypingmonkeys/bin"
         }
     ]
-    */
 
     "configurations": [
         {
@@ -131,6 +130,21 @@
             "target": "flow-example-base-complex",
             "arguments": "run -n test -t 1",
             "cwd": "${workspaceRoot}/example/base/complex/bin"
+        }
+    ]
+    */
+    "configurations": [
+        {
+            "name": "flow-base",
+            "type": "gdb",
+            "request": "launch",
+            "autorun": [
+                "handle SIGUSR1 nostop noprint",
+                "handle SIGUSR2 nostop noprint",
+                "break onInvalidMemoryOperationError"
+            ],
+            "target": "flow-base-test-library",
+            "cwd": "${workspaceRoot}/base/lib"
         }
     ]
 }

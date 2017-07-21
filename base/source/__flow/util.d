@@ -1,6 +1,9 @@
 module __flow.util;
 
 import std.traits;
+import std.range;
+import std.uuid;
+import std.datetime;
 
 /// Returns: full qualified name of type
 template fqn(T) {
@@ -23,7 +26,7 @@ abstract class StateMachine(T) if (isScalarType!T) {
     private ReadWriteMutex _lock;
     private T _state;
 
-    public @property T state() {
+    @property T state() {
         // no lock required since primitives are synced by D
         return this._state;
     }
@@ -130,11 +133,11 @@ version(unittest) {
             this.state3Set = true;
         }
 
-        private bool canSwitchToState3() {
+        bool canSwitchToState3() {
             return x > 4;
         }
 
-        public bool CheckState(TestState s) {
+        bool CheckState(TestState s) {
             try {
                 this.ensureState(s);
                 return true;
@@ -143,7 +146,7 @@ version(unittest) {
             }
         }
 
-        public bool CheckIllegalState(TestState s) {
+        bool CheckIllegalState(TestState s) {
             try {
                 this.ensureState(s);
                 return false;
@@ -152,7 +155,7 @@ version(unittest) {
             }
         }
 
-        public bool CheckSwitch(TestState s) {
+        bool CheckSwitch(TestState s) {
             try {
                 this.state = s;
                 return true;
@@ -161,7 +164,7 @@ version(unittest) {
             }
         }
 
-        public bool CheckIllegalSwitch(TestState s) {
+        bool CheckIllegalSwitch(TestState s) {
             try {
                 this.state = s;
                 return false;
