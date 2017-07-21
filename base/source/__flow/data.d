@@ -140,7 +140,7 @@ version (unittest) class TestData : Data {
     mixin field!(string, "text");
 
     // testing array fields
-    mixin field!(TestData, "innerA");
+    mixin array!(TestData, "innerA");
     mixin array!(bool, "booleanA");
     mixin array!(long, "integerA");
     mixin array!(ulong, "uintegerA");
@@ -157,15 +157,20 @@ unittest {
 
     auto d = new TestData;
     assert(d !is null, "could not statically create instance of data");
-    assert(d.integer is long.init && d.integerA.empty, "data is not initialized correctly at static creation");
-    d.uinteger = 5; assert(d.uinteger == 5, "could not set basic");
-    
-    assert(d.inner is null, "inner data should be null at init");
-    d.inner = new TestData; assert(d.inner !is null, "could not set new data on data.inner");
-    d.inner.integer = 3; assert(d.inner.integer == 3, "could not set property of data.inner");
+    assert(d.integer is long.init && d.integerA.empty && d.text is string.init && d.inner is null, "data is not initialized correctly at static creation");
+    d.uinteger = 5; assert(d.uinteger == 5, "could not set basic scalar value");
+    d.text = "foo"; assert(d.text == "foo", "could not set basic string value");    
+    d.inner = new TestData; assert(d.inner !is null, "could not set basic data value");
+    d.inner.integer = 3; assert(d.inner.integer == 3, "could not set property of basic data value");
+    d.uintegerA ~= 3; d.uintegerA ~= 4; assert(d.uintegerA.length == 2 && d.uintegerA[0] == 3 && d.uintegerA[1] == 4, "could not set array scalar value");
+    d.uintegerA = [1]; assert(d.uintegerA.length == 1 && d.uintegerA[0] == 1, "could not set array scalar value");
+    d.textA ~= "foo"; d.textA ~= "bar"; assert(d.textA.length == 2 && d.textA[0] == "foo" && d.textA[1] == "bar", "could not set array string value");
+    d.textA = ["bla"]; assert(d.textA.length == 1 && d.textA[0] == "bla", "could not set array string value");
+    d.innerA ~= new TestData; d.innerA ~= new TestData; assert(d.innerA.length == 2 && d.innerA[0] !is null && d.innerA[1] !is null && d.innerA[0] !is d.innerA[1], "could not set array data value");
+    d.innerA = [new TestData]; assert(d.innerA.length == 1 && d.innerA[0] !is null, "could not set array data value");
 }
 
-/// testing dynamic data usage
+/// testing dynamic data creation
 unittest {
     auto d = DataFactory.create("__flow.data.TestData").as!TestData;
     assert(d !is null, "could not dynamically create instance of data");
