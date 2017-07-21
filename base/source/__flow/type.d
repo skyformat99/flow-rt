@@ -336,10 +336,12 @@ mixin template TMainOfList(LT, T) {
     }
 
     LT dup() {
-        auto clone = new LT;
-        clone._arr = this._arr.dup();
+        synchronized(this._lock.reader) {
+            auto clone = new LT;
+            clone._arr = this._arr.dup();
 
-        return clone;
+            return clone;
+        }
     }
 
     bool eq(__IEq c) {

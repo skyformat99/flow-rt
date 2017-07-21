@@ -15,8 +15,8 @@ class SystemDescription : Data {
 class ComplexRelation : Data {
     mixin data;
 
-    mixin field!(EntityPtr, "target");
-    mixin field!(double, "power");
+    mixin field!(EntityPtr, "entity");
+    mixin field!(size_t, "power");
 }
 
 class CoreComplexContext : Data {
@@ -25,29 +25,53 @@ class CoreComplexContext : Data {
     mixin list!(ComplexRelation, "relations");
 }
 
+class ReactData : Data {
+    mixin data;
+
+    mixin field!(ComplexRelation, "source");
+    mixin field!(size_t, "sourcePower");
+    mixin field!(ComplexRelation, "target");
+    mixin field!(size_t, "targetPower");
+    mixin field!(size_t, "overall");
+}
+
 class Act : Unicast {
     mixin signal;
 
-    mixin field!(double, "power");
+    mixin field!(size_t, "power");
 }
 
-class React : Tick {
-    mixin sync;
+/*class Apply : Tick {
+    mixin tick;
+
+    override void run() {
+        auto s = this.signal.as!Act;
+        auto c = this.context.as!CoreComplexContext;
+
+        foreach(r; c.relations) {
+            // increasing sources power in own wirklichkeit
+            if(s.source !is null && r.target.eq(s.source)) {
+                r.power = r.power + s.power;
+                break;
+            }
+        }
+
+        this.next(fqn!Search);
+    }
+}
+
+class Search : Tick {
+    mixin tick;
 
     override void run() {
         import std.random;
 
-        auto s = this.signal.as!Act;
         auto c = this.context.as!CoreComplexContext;
 
         size_t amount;
-        double overall = 0;
-        ComplexRelation[double] map;
+        size_t overall = 0;
+        ComplexRelation[size_t] map;
         foreach(r; c.relations) {
-            // increasing sources power in own wirklichkeit
-            if(s.source !is null && r.target.eq(s.source))
-                r.power = r.power + s.power;
-
             // filling parameters for roulette game if its in own wirklichkeit
             auto p = r.power;
             auto t = r.target;
@@ -60,18 +84,88 @@ class React : Tick {
         }
 
         auto hit = uniform(0, overall);
-        auto l = map.length;
+        ComplexRelation target;
         // increasing own power in determined complex's wirklichkeit and decrease its power in own wirklichkeit
         foreach(p; map.keys) {
             if(hit >= p) {
-                auto ns = new Act;
-                double power = map[p].power/overall;
-                ns.power = power;
-                map[p].power = map[p].power - power;
-                this.send(ns, map[p].target);
+                target = map[p];
                 break;
             }
         }
+
+        if(target !is null)
+            this.next(fqn!DoAct, target);
+    }
+}
+
+class DoAct : Tick {
+    mixin tick;
+
+    override void run() {
+        auto d = this.data.as!ComplexRelation;
+
+        auto ns = new Act;
+        ns.power = 1;
+        d.power = d.power - ns.power;
+        this.send(ns, d.target);
+    }
+}*/
+
+class React : Tick {
+    mixin tick;
+
+    override void run() {
+        import std.random;
+
+        auto s = this.signal.as!Act;
+        auto c = this.context.as!CoreComplexContext;
+
+        size_t amount;
+        size_t overall = 0;
+        ComplexRelation[size_t] map;
+        auto d = new ReactData;
+        foreach(r; c.relations.dup) {
+            if(s.source !is null && r.entity.eq(s.source)) {
+                d.source = r;
+                d.sourcePower = s.power;
+            }
+
+            auto p = r.power;
+            if(p > 0) {
+                map[overall] = r;
+                overall += p;
+                amount++;
+            }
+        }
+
+        auto hit = uniform(0, overall);
+        // increasing own power in determined complex's wirklichkeit and decrease its power in own wirklichkeit
+        foreach(p; map.keys) {
+            if(hit >= p) {
+                d.target = map[p];
+                break;
+            }
+        }
+
+        d.targetPower = 1;
+
+        this.next(fqn!Do, d);
+    }
+}
+
+class Do : Tick {
+    mixin sync;
+
+    override void run() {
+        auto d = this.data.as!ReactData;
+
+        if(d.source !is null)
+            d.source.power = d.source.power + d.sourcePower;
+
+        auto ns = new Act;
+        ns.power = d.targetPower;
+        d.target.power = d.target.power - ns.power;
+        this.send(ns, d.target.entity);
     }
 }
 
@@ -86,25 +180,16 @@ string confDir;
 string name;
 string domain;
 size_t amount;
-double init = double.max/2;
+size_t init = 1;
 bool force;
 int threads;
 
-void stop() {
+extern (C) void stop(int signal) {
     stopped = true;
+    Log.msg(LL.Message, "stopping...");
 }
 
 void main(string[] args) {
-    version(posix) sigset(SIGINT, &stop);
-
-    version(windows)
-    {
-        //import std.flow;
-        //dataDir = environment.get("APPDATA");
-        Log.msg(LL.Fatal, "this software doesn't support windows based systems!");
-        exit(-1);
-    }
-
     confDir = thisExePath.dirName.buildPath("etc");    
     if(!confDir.exists)
     {
@@ -188,7 +273,7 @@ void create() {
         foreach(m2; desc.entities) {
             if(m1 != m2) {
                 auto r = new ComplexRelation;
-                r.target = m2.info.ptr;
+                r.entity = m2.info.ptr;
                 r.power = init;
                 m1.context.as!CoreComplexContext.relations.put(r);
             }
@@ -201,6 +286,9 @@ void create() {
 }
 
 void run() {
+    static import core.sys.posix.signal;
+    core.sys.posix.signal.sigset(core.sys.posix.signal.SIGINT, &stop);
+
     if(name == string.init) {
         Log.msg(LL.Fatal, "you have to set a valid name using --name -> exiting");
         exit(-1);
@@ -245,14 +333,14 @@ void run() {
     flow.add(desc.entities.array);
 
     size_t loopCnt = 0;
-    while(!stopped) {
+    while(!stopped && loopCnt < 100) {
         Thread.sleep(100.msecs);
-
-        if(loopCnt % 100 == 0)
-            snap(flow, desc.dup);
+        //loopCnt++;
     }
 
+    Log.msg(LL.Message, "suspending...");
     flow.suspend();
+    Log.msg(LL.Message, "snapping...");
     snap(flow, desc.dup);
     Log.msg(LL.Message, "shutting down...");
     flow.dispose();

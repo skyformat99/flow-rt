@@ -220,7 +220,7 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
         synchronized(this.lock.reader) {
             auto ti = new TickInfo;
             ti.id = randomUUID;
-            ti.entity = this.meta.info.ptr.dup();
+            ti.entity = this.flow.config.isolateMem ? this.meta.info.ptr.dup() : this.meta.info.ptr;
             ti.type = tt;
             ti.group = s.group;
             auto ticker = new Ticker(this, s, ti);
@@ -673,7 +673,7 @@ public abstract class Entity : StateMachine!EntityState, __IFqn {
 
     private void _preventIdTheft(Signal s) {
         if(this.flow.config.preventIdTheft) {
-            s.source = this.meta.info.ptr.dup();
+            s.source = this.flow.config.isolateMem ? this.meta.info.ptr.dup() : this.meta.info.ptr;
         }
     }
 }
