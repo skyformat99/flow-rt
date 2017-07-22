@@ -23,32 +23,55 @@ enum TypeFlags {
     String
 }
 
-/// mask scalar, uuid and string types into nullable ptr types
-class Ref(T) if (isArray!T && !is(T == string) && canHandle!(ElementType!T)) {
-	T value;
+abstract class RefBase {
+    abstract R get(R)() if(canHandle!T || (isArray!T && !is(T == string) && canHandle!(ElementType!T)));
+    abstract RefBase dup();
+}
 
-	alias value this;
+class TypeMismatchException : Exception {this(){super(string.init);}}
+
+/// mask scalar, uuid and string types into nullable ptr types
+class Ref(T) : RefBase if (isArray!T && !is(T == string) && canHandle!(ElementType!T)) {
+	private T value;
 
 	this(T value) {
 		this.value = value;
 	}
 
-    Ref!T dup() {
-        return new Ref!T(this.value.dup);
+    override R get(R)() if(canHandle!T || (isArray!T && !is(T == string) && canHandle!(ElementType!T))) {
+        static if(is(T == R)) {
+            return this.value;
+        } else throw new TypeMismatchException;
+    }
+
+    override Ref!T dup() {
+        T arr;
+        foreach(e; this.value) {
+            static if(isScalarType!(ElementType!T) || is(ElementType!T == UUID) || is(ElementType!T == SysTime) || is(ElementType!T == DateTime) || is(ElementType!T == string)) {
+                arr ~= e;
+            } else {
+                arr ~= e.dup.as!(ElementType!T);
+            }
+        }
+        return new Ref!T(arr);
     }
 }
 
 /// mask scalar, uuid and string types into nullable ptr types
-class Ref(T) if (canHandle!T) {
-	T value;
-
-	alias value this;
+class Ref(T) : RefBase if (canHandle!T) {
+	private T value;
 
 	this(T value) {
 		this.value = value;
 	}
 
-    Ref!T dup() {
+    override R get(R)() if(canHandle!T || (isArray!T && !is(T == string) && canHandle!(ElementType!T))) {
+        static if(is(T == R)) {
+            return this.value;
+        } else throw new TypeMismatchException;
+    }
+
+    override Ref!T dup() {
         static if(isScalarType!T || is(T == UUID) || is(T == SysTime) || is(T == DateTime) || is(T == string)) {
             return new Ref!T(this.value);
         } else {
@@ -84,23 +107,28 @@ struct PropertyInfo {
     private bool _array;
     private TypeFlags _flags;
 
+    private Object function(Data) _getter;
+	private bool function(Data, Object) _setter;
+
     @property TypeInfo info() {return this._info;}
     @property string type() {return this._type;}
     @property string name() {return this._name;}
     @property bool array() {return this._array;}
     @property TypeFlags flags() {return this._flags;}
+
+    Object get(Data d) {
+        return _getter(d);
+    }
+
+    void set(Data d, Object v) {
+        _setter(d, v);
+    }
 }
 
 abstract class Data {
     @property shared(PropertyInfo[string]) properties(){return null;}
 
     abstract @property string dataType();
-
-	abstract Object get(string name);
-	abstract bool set(string name, Object value);
-
-    abstract Data dup();
-    abstract protected void dupInternal(Data c);
 }
 
 mixin template data() {
@@ -112,11 +140,6 @@ mixin template data() {
         return Properties;
     }
 
-    private shared static Object function(typeof(this))[string] _getter;
-	private shared static bool function(typeof(this), Object)[string] _setter;
-	private shared static void function(typeof(this), typeof(this))[] _dups;
-	private shared static bool function(typeof(this), typeof(this))[] _eqs;
-
     override @property string dataType() {return __flow.util.fqn!(typeof(this));}
     
     private static __flow.data.Data create() {return new typeof(this);}
@@ -127,44 +150,6 @@ mixin template data() {
 
         DataFactory.register(__flow.util.fqn!(typeof(this)), &create);
     }
-
-    override Object get(string name)
-	{
-		Object value = null;
-		static if(__flow.util.fqn!(typeof(super)) != "__flow.data.Data")
-			value = super.get(name);
-
-		if(value is null && name in _getter)
-            value = _getter[name](this);
-
-		return value;
-	}
-
-	override bool set(string name, Object value) {
-		auto set = false;
-		static if(__flow.util.fqn!(typeof(super)) != "__flow.data.Data")
-			set = super.set(name, value);
-
-		if(!set && name in _setter)
-            set = _setter[name](this, value);
-        
-		return set;
-	}
-
-	override typeof(this) dup() {
-		auto c = new typeof(this);
-		this.dupInternal(c);
-		return c;
-	}
-
-	override protected void dupInternal(Data c) {
-		static if(__flow.util.fqn!(typeof(super)) != "__flow.data.Data")
-			super.dupInternal(c);
-
-		auto clone = cast(typeof(this))c;
-		foreach(d; _dups)
-			d(this, clone);
-	}
 }
 
 mixin template field(T, string name) if (canHandle!T) {
@@ -172,20 +157,17 @@ mixin template field(T, string name) if (canHandle!T) {
     shared static this() {
         import __flow.data;
 
-        shared(PropertyInfo) p = TPropertyHelper!(T, name).getFieldInfo().as!(shared(PropertyInfo));
-        Properties[name] = p; 
+        Properties[name] = TPropertyHelper!(T, name).getFieldInfo().as!(shared(PropertyInfo)); 
 
-        mixin("_getter[name] = (t) {
+        mixin("Properties[name]._getter = (d) {
+            auto t = d.as!(typeof(this));
             return "~(is(T : Data) ? "t."~name : "new Ref!("~T.stringof~")(t."~name~")")~";
         };");
 
-        mixin("_setter[name] = (t, v) {
+        mixin("Properties[name]._setter = (d, v) {
+            auto t = d.as!(typeof(this));
             t."~name~" = "~(is(T : Data) ? "v.as!("~T.stringof~")" : "v.as!(Ref!("~T.stringof~")).value")~";
             return true;
-        };");
-
-        mixin("_dups ~= (t, c) {
-            "~(is(T : Data) ? "if(t."~name~" !is null) c."~name~" = t."~name~".dup" : "c."~name~" = t."~name)~";
         };");
     }
 
@@ -202,19 +184,15 @@ mixin template array(T, string name) if (canHandle!T) {
         PropertyInfo p = TPropertyHelper!(T, name).getArrayInfo();
         Properties[name] = p.as!(shared(PropertyInfo));
 
-        mixin("_getter[name] = (t) {
+        mixin("Properties[name]._getter = (d) {
+            auto t = d.as!(typeof(this));
             return new Ref!("~T.stringof~"[])(t."~name~");
         };");
 
-        mixin("_setter[name] = (t, v) {
+        mixin("Properties[name]._setter = (d, v) {
+            auto t = d.as!(typeof(this));
             t."~name~" = v.as!(Ref!("~T.stringof~"[])).value;
             return true;
-        };");
-
-        mixin("_dups ~= (t, c) {
-            foreach(e; t."~name~") {
-                "~(is(T : Data) ? "c."~name~" ~= e.dup" : "c."~name~" ~= e")~";
-            }
         };");
     }
 
@@ -311,6 +289,22 @@ unittest {
     d.innerA = [new TestData]; assert(d.innerA.length == 1 && d.innerA[0] !is null, "could not set array data value");
     d.additional = "ble"; assert(d.additional == "ble", "could not set second level basic scalar");
 }
+class PropertyNotExistingException : Exception {this(){super(string.init);}}
+
+Object get(Data d, string name)
+{
+    if(name in d.properties)
+        return d.properties[name].as!PropertyInfo.get(d);
+    else
+        throw new PropertyNotExistingException;
+}
+
+void set(Data d, string name, Object value) {
+    if(name in d.properties)
+        d.properties[name].as!PropertyInfo.set(d, value);
+    else
+        throw new PropertyNotExistingException;
+}
 
 unittest {
     import std.stdio;
@@ -337,10 +331,27 @@ unittest {
     assert(d.get("additional").as!(Ref!string).value == "ble", "could not get second level basic scalar value");
 }
 
+Data dup(Data t) {
+    Data c;
+    if(t !is null) {
+        c = DataFactory.create(t.dataType);
+
+        foreach(p; t.properties) {
+            auto val = p.as!PropertyInfo.get(t);
+            if(val !is null) {
+                auto name = p.as!PropertyInfo.name;
+                auto isData = p.as!PropertyInfo.flags & TypeFlags.Data;
+                p.as!PropertyInfo.set(c, isData ? val.as!Data.dup : val.as!RefBase.dup);
+            }
+        }
+    }
+
+    return c;
+}
+
 unittest {
     import std.stdio;
     import std.range;
-    import std.conv;
     writeln("testing dup of data and member");
 
     auto d = new InheritedTestData;
