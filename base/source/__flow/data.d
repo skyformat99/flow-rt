@@ -7,6 +7,7 @@ import std.variant;
 import std.range;
 import std.uuid;
 import std.datetime;
+import std.json;
 
 private template canHandle(T) {
     enum canHandle =
@@ -21,16 +22,17 @@ private template canHandle(T) {
         is(T == ulong) ||
         is(T == float) ||
         is(T == double) ||
-        is(T == ifloat) ||
+        /*is(T == ifloat) ||
         is(T == idouble) ||
         is(T == cfloat) ||
-        is(T == cdouble) ||
+        is(T == cdouble) ||*/
         is(T == char) ||
         is(T == wchar) ||
         is(T == dchar) ||
         is(T == UUID) ||
         is(T == SysTime) ||
         is(T == DateTime) ||
+        is(T == Date) ||
         is(T == string) ||        
         is(T : Data);
 }
@@ -42,6 +44,7 @@ enum TypeDesc {
     UUID,
     SysTime,
     DateTime,
+    Date,
     String,
     Data
 }
@@ -121,7 +124,6 @@ mixin template field(T, string name) if (canHandle!T) {
 
     // field
     mixin(T.stringof~" "~name~";");
-
 }
 
 mixin template array(T, string name) if (canHandle!T) {
@@ -162,6 +164,7 @@ template TPropertyHelper(T, string name) {
         else if(is(T == UUID)) p._desc = TypeDesc.UUID;
         else if(is(T == SysTime)) p._desc = TypeDesc.SysTime;
         else if(is(T == DateTime)) p._desc = TypeDesc.DateTime;
+        else if(is(T == Date)) p._desc = TypeDesc.Date;
         else if(is(T == string)) p._desc = TypeDesc.String;
 
         return p;
@@ -179,6 +182,7 @@ template TPropertyHelper(T, string name) {
         else if(is(T == UUID)) p._desc = TypeDesc.UUID;
         else if(is(T == SysTime)) p._desc = TypeDesc.SysTime;
         else if(is(T == DateTime)) p._desc = TypeDesc.DateTime;
+        else if(is(T == Date)) p._desc = TypeDesc.Date;
         else if(is(T == string)) p._desc = TypeDesc.String;
 
         return p;
@@ -239,6 +243,11 @@ unittest {
     d.innerA = [new TestData]; assert(d.innerA.length == 1 && d.innerA[0] !is null, "could not set array data value");
     d.additional = "ble"; assert(d.additional == "ble", "could not set second level basic scalar");
 }
+
+Data createData(string name) {
+    return Object.factory(name).as!Data;
+}
+
 class PropertyNotExistingException : Exception {this(){super(string.init);}}
 
 private Variant get(Data d, string name){
@@ -284,7 +293,7 @@ unittest {
     import std.range;
     writeln("testing dynamic data usage");
 
-    auto d = Object.factory("__flow.data.InheritedTestData").as!InheritedTestData;
+    auto d = createData("__flow.data.InheritedTestData").as!InheritedTestData;
     assert(d !is null, "could not dynamically create instance of data");
     assert(d.integer is long.init && d.integerA.empty, "data is not initialized correctly at dynamic creation");
 
@@ -351,14 +360,14 @@ private Variant dup(Variant t, PropertyInfo p) {
             return Variant(t.get!(float[]).dup);
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(double))
             return Variant(t.get!(double[]).dup);
-        else if(p.desc == TypeDesc.Scalar && p.info == typeid(ifloat))
+        /*else if(p.desc == TypeDesc.Scalar && p.info == typeid(ifloat))
             return Variant(t.get!(ifloat[]).dup);
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(idouble))
             return Variant(t.get!(idouble[]).dup);
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(cfloat))
             return Variant(t.get!(cfloat[]).dup);
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(cdouble))
-            return Variant(t.get!(cdouble[]).dup);
+            return Variant(t.get!(cdouble[]).dup);*/
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(char))
             return Variant(t.get!(char[]).dup);
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(wchar))
@@ -371,6 +380,8 @@ private Variant dup(Variant t, PropertyInfo p) {
             return Variant(t.get!(SysTime[]).dup);
         else if(p.desc == TypeDesc.DateTime)
             return Variant(t.get!(DateTime[]).dup);
+        else if(p.desc == TypeDesc.Date)
+            return Variant(t.get!(Date[]).dup);
         else if(p.desc == TypeDesc.String)
             return Variant(t.get!(string[]).dup);
         else if(p.desc == TypeDesc.Data)
@@ -389,9 +400,10 @@ Data dup(Data t) {
     if(t !is null) {
         c = Object.factory(t.dataType).as!Data;
 
-        foreach(p; t.properties) {
-            auto val = p.as!PropertyInfo.get(t);
-            p.as!PropertyInfo.set(c, val.dup(p.as!PropertyInfo));
+        foreach(prop; t.properties) {
+            auto p = prop.as!PropertyInfo;
+            auto val = p.get(t);
+            p.set(c, val.dup(p));
         }
     }
 
@@ -415,6 +427,212 @@ unittest {
 
     auto d2 = d.dup().as!InheritedTestData;
  
+    assert(d2.uinteger == 5, "could not dup basic scalar value");
+    assert(d2.text == "foo", "could not dup basic string value");   
+    assert(d2.inner !is null && d2.inner !is d.inner, "could not dup basic data value");
+    assert(d2.inner.integer == 3, "could not dup property of basic data value");
+    assert(d2.uintegerA.length == 2 && d2.uintegerA[0] == 3 && d2.uintegerA[1] == 4 && d2.uintegerA !is d.uintegerA, "could not dup array scalar value");
+    assert(d2.textA.length == 2 && d2.textA[0] == "foo" && d2.textA[1] == "bar", "could not dup array string value");
+    assert(d2.innerA.length == 2 && d2.innerA[0] !is null && d2.innerA[1] !is null && d2.innerA[0] !is d2.innerA[1] && d2.innerA[0] !is d.innerA[0], "could not set array data value");
+
+    assert(d2.additional == "ble", "could not dup basic scalar value");
+}
+
+private JSONValue json(T)(T[] arr) if(is(T : Data) || is(T == UUID) || is(T == SysTime) || is(T == DateTime) || is(T == Date)) {
+    if(!arr.empty) {
+        JSONValue[] cArr;
+        foreach(e; arr) cArr ~= e.json;
+
+        return JSONValue(cArr);
+    } else return JSONValue(null);
+}
+
+private JSONValue json(T)(T[] arr) if(canHandle!T && !is(T : Data) && !is(T == UUID) && !is(T == SysTime) && !is(T == DateTime) && !is(T == Date)) {
+    if(!arr.empty) {
+        JSONValue[] cArr;
+        foreach(e; arr) cArr ~= JSONValue(e);
+
+        return JSONValue(cArr);
+    } else return JSONValue(null);
+}
+
+private JSONValue json(Variant t, PropertyInfo p) {
+    import std.stdio;
+    if(p.array) {
+        if(p.desc == TypeDesc.Scalar && p.info == typeid(bool))
+            return t.get!(bool[]).json;
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(byte))
+            return t.get!(byte[]).json;
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(ubyte))
+            return t.get!(ubyte[]).json;
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(short))
+            return t.get!(short[]).json;
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(ushort))
+            return t.get!(ushort[]).json;
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(int))
+            return t.get!(int[]).json;
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(uint))
+            return t.get!(uint[]).json;
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(long))
+            return t.get!(long[]).json;
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(ulong))
+            return t.get!(ulong[]).json;
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(float))
+            return t.get!(float[]).json;
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(double))
+            return t.get!(double[]).json;
+        /*else if(p.desc == TypeDesc.Scalar && p.info == typeid(ifloat))
+            return t.get!(ifloat[]).json;
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(idouble))
+            return t.get!(idouble[]).json;
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(cfloat))
+            return t.get!(cfloat[]).json;
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(cdouble))
+            return t.get!(cdouble[]).json;*/
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(char))
+            return t.get!(char[]).json;
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(wchar))
+            return t.get!(wchar[]).json;
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(dchar))
+            return t.get!(dchar[]).json;
+        else if(p.desc == TypeDesc.UUID)
+            return t.get!(UUID[]).json;
+        else if(p.desc == TypeDesc.SysTime)
+            return t.get!(SysTime[]).json;
+        else if(p.desc == TypeDesc.DateTime)
+            return t.get!(DateTime[]).json;
+        else if(p.desc == TypeDesc.Date)
+            return t.get!(Date[]).json;
+        else if(p.desc == TypeDesc.String)
+            return t.get!(string[]).json;
+        else if(p.desc == TypeDesc.Data)
+            return t.get!(Data[]).json;
+        else assert(false, "this is an impossible situation");
+    } else {
+        if(p.desc == TypeDesc.Scalar && p.info == typeid(bool))
+            return t.get!(bool).json;
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(byte))
+            return t.get!(byte).json;
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(ubyte))
+            return t.get!(ubyte).json;
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(short))
+            return t.get!(short).json;
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(ushort))
+            return t.get!(ushort).json;
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(int))
+            return t.get!(int).json;
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(uint))
+            return t.get!(uint).json;
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(long))
+            return t.get!(long).json;
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(ulong))
+            return t.get!(ulong).json;
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(float))
+            return t.get!(float).json;
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(double))
+            return t.get!(double).json;
+        /*else if(p.desc == TypeDesc.Scalar && p.info == typeid(ifloat))
+            return t.get!(ifloat).json;
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(idouble))
+            return t.get!(idouble).json;
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(cfloat))
+            return t.get!(cfloat).json;
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(cdouble))
+            return t.get!(cdouble).json;*/
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(char))
+            return t.get!(char).json;
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(wchar))
+            return t.get!(wchar).json;
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(dchar))
+            return t.get!(dchar).json;
+        else if(p.desc == TypeDesc.UUID)
+            return t.get!(UUID).json;
+        else if(p.desc == TypeDesc.SysTime)
+            return t.get!(SysTime).json;
+        else if(p.desc == TypeDesc.DateTime)
+            return t.get!(DateTime).json;
+        else if(p.desc == TypeDesc.Date)
+            return t.get!(Date).json;
+        else if(p.desc == TypeDesc.String)
+            return t.get!(string).json;
+        else if(p.desc == TypeDesc.Data)
+            return t.get!(Data).json;
+        else assert(false, "this is an impossible situation");
+    }
+}
+
+JSONValue json(T)(T val) if(canHandle!T && !is(T : Data) && !is(T == float) && !is(T == double) && !is(T == UUID) && !is(T == SysTime) && !is(T == DateTime) && !is(T == Date)) {
+    return val is T.init ? JSONValue(null) : JSONValue(val);
+}
+
+JSONValue json(T)(T val) if(is(T == float) || is(T == double)) {
+    import std.math;
+    return val is T.init || isNaN(val) ? JSONValue(null) : JSONValue(val);
+}
+
+JSONValue json(T)(T val) if(is(T == UUID)) {
+    return val is T.init ? JSONValue(null) : JSONValue(val.toString());
+}
+
+JSONValue json(T)(T val) if(is(T == SysTime) || is(T == DateTime) || is(T == Date)) {
+    return val is T.init ? JSONValue(null) : JSONValue(val.toISOExtString());
+}
+
+JSONValue json(T)(T t) if(is(T : Data)) {
+    import std.stdio;
+    JSONValue c;
+    if(t !is null) {
+        c = JSONValue(["dataType" : JSONValue(t.dataType)]);
+
+        foreach(prop; t.properties) {
+            auto p = prop.as!PropertyInfo;
+            auto val = p.get(t);
+            auto j = val.json(p);
+            if(!j.isNull) c.object[p.name] = j;
+        }
+    }
+
+    return c;
+}
+
+Data createData(JSONValue json) {
+    return null;
+}
+
+unittest {
+    import std.stdio;
+    import std.range;
+    writeln("testing json serialization of data and member");
+
+    auto d = new InheritedTestData;
+    d.uinteger = 5;
+    d.text = "foo";
+    d.inner = new TestData;
+    d.inner.integer = 3;
+    d.uintegerA = [3, 4];
+    d.textA = ["foo", "bar"];
+    d.innerA = [new TestData, new TestData];
+    d.additional = "ble";
+
+    auto dStr = d.json.toString();
+    assert(dStr == "{"~
+        "\"additional\":\"ble\","~
+        "\"dataType\":\"__flow.data.InheritedTestData\""~
+        ",\"inner\":{"~
+            "\"dataType\":\"__flow.data.TestData\","~
+            "\"integer\":3"~
+        "},"~
+        "\"innerA\":["~
+            "{\"dataType\":\"__flow.data.TestData\"},"~
+            "{\"dataType\":\"__flow.data.TestData\"}"~
+        "],"~
+        "\"text\":\"foo\","~
+        "\"textA\":[\"foo\",\"bar\"],"~
+        "\"uinteger\":5,"~
+        "\"uintegerA\":[3,4]}", "could not serialize data");
+
+    auto d2 = createData(parseJSON(dStr)).as!InheritedTestData;
+    assert(d2 !is null, "could not deserialize data");
     assert(d2.uinteger == 5, "could not dup basic scalar value");
     assert(d2.text == "foo", "could not dup basic string value");   
     assert(d2.inner !is null && d2.inner !is d.inner, "could not dup basic data value");
