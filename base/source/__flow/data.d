@@ -3,101 +3,50 @@ module __flow.data;
 import __flow.util;
 
 import std.traits;
+import std.variant;
 import std.range;
 import std.uuid;
 import std.datetime;
 
 private template canHandle(T) {
-    enum canHandle = isScalarType!T || is(T : Data) || is(T == UUID) || is(T == SysTime) || is(T == DateTime) || is(T == string);
+    enum canHandle =
+        is(T == bool) ||
+        is(T == byte) ||
+        is(T == ubyte) ||
+        is(T == short) ||
+        is(T == ushort) ||
+        is(T == int) ||
+        is(T == uint) ||
+        is(T == long) ||
+        is(T == ulong) ||
+        is(T == float) ||
+        is(T == double) ||
+        is(T == ifloat) ||
+        is(T == idouble) ||
+        is(T == cfloat) ||
+        is(T == cdouble) ||
+        is(T == char) ||
+        is(T == wchar) ||
+        is(T == dchar) ||
+        is(T == UUID) ||
+        is(T == SysTime) ||
+        is(T == DateTime) ||
+        is(T == string) ||        
+        is(T : Data);
 }
 
 string fqn(Data d) {return d.dataType;}
 
-enum TypeFlags {
-    Nan,
+enum TypeDesc {
     Scalar,
-    Data,
     UUID,
     SysTime,
     DateTime,
-    String
-}
-
-abstract class RefBase {
-    abstract R get(R)() if(canHandle!T || (isArray!T && !is(T == string) && canHandle!(ElementType!T)));
-    abstract RefBase dup();
+    String,
+    Data
 }
 
 class TypeMismatchException : Exception {this(){super(string.init);}}
-
-/// mask scalar, uuid and string types into nullable ptr types
-class Ref(T) : RefBase if (isArray!T && !is(T == string) && canHandle!(ElementType!T)) {
-	private T value;
-
-	this(T value) {
-		this.value = value;
-	}
-
-    override R get(R)() if(canHandle!T || (isArray!T && !is(T == string) && canHandle!(ElementType!T))) {
-        static if(is(T == R)) {
-            return this.value;
-        } else throw new TypeMismatchException;
-    }
-
-    override Ref!T dup() {
-        T arr;
-        foreach(e; this.value) {
-            static if(isScalarType!(ElementType!T) || is(ElementType!T == UUID) || is(ElementType!T == SysTime) || is(ElementType!T == DateTime) || is(ElementType!T == string)) {
-                arr ~= e;
-            } else {
-                arr ~= e.dup.as!(ElementType!T);
-            }
-        }
-        return new Ref!T(arr);
-    }
-}
-
-/// mask scalar, uuid and string types into nullable ptr types
-class Ref(T) : RefBase if (canHandle!T) {
-	private T value;
-
-	this(T value) {
-		this.value = value;
-	}
-
-    override R get(R)() if(canHandle!T || (isArray!T && !is(T == string) && canHandle!(ElementType!T))) {
-        static if(is(T == R)) {
-            return this.value;
-        } else throw new TypeMismatchException;
-    }
-
-    override Ref!T dup() {
-        static if(isScalarType!T || is(T == UUID) || is(T == SysTime) || is(T == DateTime) || is(T == string)) {
-            return new Ref!T(this.value);
-        } else {
-            return new Ref!T(this.value.dup);
-        }
-    }
-}
-
-class DataFactory {
-    private shared static Data function()[string] _reg;
-
-    static void register(string dataType, Data function() creator) {
-		_reg[dataType] = creator;
-	}
-
-	static bool knows(string dataType) {
-		return dataType in _reg ? true : false;
-	}
-
-	static Data create(string dataType) {
-		if(dataType in _reg)
-			return _reg[dataType]();
-		else
-			return null;
-	}
-}
 
 /// runtime inforamtions of a data property
 struct PropertyInfo {
@@ -105,23 +54,23 @@ struct PropertyInfo {
     private string _type;
     private string _name;
     private bool _array;
-    private TypeFlags _flags;
+    private TypeDesc _desc;
 
-    private Object function(Data) _getter;
-	private bool function(Data, Object) _setter;
+    private Variant function(Data) _getter;
+	private bool function(Data, Variant) _setter;
 
     @property TypeInfo info() {return this._info;}
     @property string type() {return this._type;}
     @property string name() {return this._name;}
     @property bool array() {return this._array;}
-    @property TypeFlags flags() {return this._flags;}
+    @property TypeDesc desc() {return this._desc;}
 
-    Object get(Data d) {
+    Variant get(Data d) {
         return _getter(d);
     }
 
-    void set(Data d, Object v) {
-        _setter(d, v);
+    bool set(Data d, Variant v) {
+        return _setter(d, v);
     }
 }
 
@@ -142,13 +91,10 @@ mixin template data() {
 
     override @property string dataType() {return __flow.util.fqn!(typeof(this));}
     
-    private static __flow.data.Data create() {return new typeof(this);}
     shared static this() {
 		static if(__flow.util.fqn!(typeof(super)) != "__flow.data.Data")
 		foreach(n, i; super.Properties)
 			Properties[n] = i;
-
-        DataFactory.register(__flow.util.fqn!(typeof(this)), &create);
     }
 }
 
@@ -157,17 +103,19 @@ mixin template field(T, string name) if (canHandle!T) {
     shared static this() {
         import __flow.data;
 
-        Properties[name] = TPropertyHelper!(T, name).getFieldInfo().as!(shared(PropertyInfo)); 
+        Properties[name] = TPropertyHelper!(T, name).getFieldInfo().as!(shared(PropertyInfo));
 
         mixin("Properties[name]._getter = (d) {
             auto t = d.as!(typeof(this));
-            return "~(is(T : Data) ? "t."~name : "new Ref!("~T.stringof~")(t."~name~")")~";
+            return Variant("~(is(T : Data) ? "t."~name~".as!Data" : "t."~name)~");
         };");
 
         mixin("Properties[name]._setter = (d, v) {
             auto t = d.as!(typeof(this));
-            t."~name~" = "~(is(T : Data) ? "v.as!("~T.stringof~")" : "v.as!(Ref!("~T.stringof~")).value")~";
-            return true;
+            if(v.convertsTo!("~(is(T : Data) ? "Data" : T.stringof)~")) {
+                t."~name~" = "~(is(T : Data) ? "v.get!Data().as!"~T.stringof : "v.get!("~T.stringof~")")~";
+                return true;
+            } else return false;
         };");
     }
 
@@ -181,18 +129,19 @@ mixin template array(T, string name) if (canHandle!T) {
     shared static this() {
         import __flow.data;
 
-        PropertyInfo p = TPropertyHelper!(T, name).getArrayInfo();
-        Properties[name] = p.as!(shared(PropertyInfo));
+        Properties[name] = TPropertyHelper!(T, name).getArrayInfo().as!(shared(PropertyInfo));
 
         mixin("Properties[name]._getter = (d) {
             auto t = d.as!(typeof(this));
-            return new Ref!("~T.stringof~"[])(t."~name~");
+            return Variant("~(is(T : Data) ? "t."~name~".as!(Data[])" : "t."~name)~");
         };");
 
         mixin("Properties[name]._setter = (d, v) {
             auto t = d.as!(typeof(this));
-            t."~name~" = v.as!(Ref!("~T.stringof~"[])).value;
-            return true;
+            if(v.convertsTo!("~(is(T : Data) ? "Data" : T.stringof)~"[])) {
+                t."~name~" = "~(is(T : Data) ? "v.get!(Data[])().as!("~T.stringof~"[])" : "v.get!("~T.stringof~"[])")~";
+                return true;
+            } else return false;
         };");
     }
 
@@ -208,12 +157,12 @@ template TPropertyHelper(T, string name) {
         p._name = name;
         p._array = false;
 
-        if(isScalarType!T) p._flags = TypeFlags.Scalar;
-        else if(is(T : Data)) p._flags = TypeFlags.Data;
-        else if(is(T == UUID)) p._flags = TypeFlags.UUID;
-        else if(is(T == SysTime)) p._flags = TypeFlags.SysTime;
-        else if(is(T == DateTime)) p._flags = TypeFlags.DateTime;
-        else if(is(T == string)) p._flags = TypeFlags.String;
+        if(isScalarType!T) p._desc = TypeDesc.Scalar;
+        else if(is(T : Data)) p._desc = TypeDesc.Data;
+        else if(is(T == UUID)) p._desc = TypeDesc.UUID;
+        else if(is(T == SysTime)) p._desc = TypeDesc.SysTime;
+        else if(is(T == DateTime)) p._desc = TypeDesc.DateTime;
+        else if(is(T == string)) p._desc = TypeDesc.String;
 
         return p;
     }
@@ -225,12 +174,12 @@ template TPropertyHelper(T, string name) {
         p._name = name;
         p._array = true;
 
-        if(isScalarType!T) p._flags = TypeFlags.Scalar;
-        else if(is(T : Data)) p._flags = TypeFlags.Data;
-        else if(is(T == UUID)) p._flags = TypeFlags.UUID;
-        else if(is(T == SysTime)) p._flags = TypeFlags.SysTime;
-        else if(is(T == DateTime)) p._flags = TypeFlags.DateTime;
-        else if(is(T == string)) p._flags = TypeFlags.String;
+        if(isScalarType!T) p._desc = TypeDesc.Scalar;
+        else if(is(T : Data)) p._desc = TypeDesc.Data;
+        else if(is(T == UUID)) p._desc = TypeDesc.UUID;
+        else if(is(T == SysTime)) p._desc = TypeDesc.SysTime;
+        else if(is(T == DateTime)) p._desc = TypeDesc.DateTime;
+        else if(is(T == string)) p._desc = TypeDesc.String;
 
         return p;
     }
@@ -272,6 +221,7 @@ unittest {
     import std.stdio;
     import std.range;
     writeln("testing static data usage");
+    
 
     auto d = new InheritedTestData;
     assert(d !is null, "could not statically create instance of data");
@@ -291,19 +241,42 @@ unittest {
 }
 class PropertyNotExistingException : Exception {this(){super(string.init);}}
 
-Object get(Data d, string name)
-{
+private Variant get(Data d, string name){
     if(name in d.properties)
         return d.properties[name].as!PropertyInfo.get(d);
     else
         throw new PropertyNotExistingException;
 }
 
-void set(Data d, string name, Object value) {
+T get(T)(Data d, string name) if(is(T : Data)) {
+    return d.get(name).get!Data().as!T;
+}
+
+T get(T)(Data d, string name) if(isArray!T && is(ElementType!T : Data)) {
+    return d.get(name).get!(Data[])().as!T;
+}
+
+T get(T)(Data d, string name) if((canHandle!T && !is(T : Data)) || (isArray!T && canHandle!(ElementType!T) && !is(ElementType!T : Data))) {
+    return d.get(name).get!T();
+}
+
+private bool set(Data d, string name, Variant val) {
     if(name in d.properties)
-        d.properties[name].as!PropertyInfo.set(d, value);
+        return d.properties[name].as!PropertyInfo.set(d, val);
     else
         throw new PropertyNotExistingException;
+}
+
+bool set(T)(Data d, string name, T val) if(is(T : Data)) {
+    return d.set(name, Variant(val.as!Data));
+}
+
+bool set(T)(Data d, string name, T val) if(isArray!T && is(ElementType!T : Data)) {
+    return d.set(name, Variant(val.as!(Data[])));
+}
+
+bool set(T)(Data d, string name, T val) if((canHandle!T && !is(T : Data)) || (isArray!T && canHandle!(ElementType!T) && !is(ElementType!T : Data))) {
+    return d.set(name, Variant(val));
 }
 
 unittest {
@@ -311,38 +284,114 @@ unittest {
     import std.range;
     writeln("testing dynamic data usage");
 
-    auto d = DataFactory.create("__flow.data.InheritedTestData").as!InheritedTestData;
+    auto d = Object.factory("__flow.data.InheritedTestData").as!InheritedTestData;
     assert(d !is null, "could not dynamically create instance of data");
     assert(d.integer is long.init && d.integerA.empty, "data is not initialized correctly at dynamic creation");
 
-    d.set("uinteger", new Ref!ulong(4)); assert(d.uinteger == 4, "could not set basic scalar value");
-    assert(d.get("uinteger").as!(Ref!ulong).value == 4, "could not get basic scalar value");
-    d.set("text", new Ref!string("foo")); assert(d.text == "foo", "could not set basic string value");
-    assert(d.get("text").as!(Ref!string).value == "foo", "could not get basic string value");
-    d.set("inner", new TestData); assert(d.inner !is null, "could not set basic data value");
-    assert(d.get("inner").as!TestData !is null, "could not get basic data value");
-    d.set("integerA", new Ref!(long[])([2L, 3L, 4L])); assert(d.integerA.length == 3 && d.integerA[0] == 2 && d.integerA[1] == 3 && d.integerA[2] == 4, "could not set array scalar value");
-    assert(d.get("integerA").as!(Ref!(long[])).value.length == 3, "could not get array scalar value");
-    d.set("textA", new Ref!(string[])(["foo", "bar"])); assert(d.textA.length == 2 && d.textA[0] == "foo" && d.textA[1] == "bar", "could not set array string value");
-    assert(d.get("textA").as!(Ref!(string[])).value.length == 2, "could not get array string value");
-    d.set("innerA", new Ref!(TestData[])([new TestData])); assert(d.innerA.length == 1 && d.innerA[0] !is null, "could not set array data value");
-    assert(d.get("innerA").as!(Ref!(TestData[])).value.length == 1, "could not get array data value");
-    d.set("additional", new Ref!string("ble")); assert(d.additional == "ble", "could not set second level basic scalar value");
-    assert(d.get("additional").as!(Ref!string).value == "ble", "could not get second level basic scalar value");
+    assert(d.set("uinteger", 4) && d.uinteger == 4, "could not set basic scalar value");
+    assert(d.get!ulong("uinteger") == 4, "could not get basic scalar value");
+    
+    assert(d.set("text", "foo") && d.text == "foo", "could not set basic string value");
+    assert(d.get!string("text") == "foo", "could not get basic string value");
+    
+    assert(d.set("inner", new TestData) && d.inner !is null, "could not set basic data value");
+    assert(d.get!TestData("inner") !is null, "could not get basic data value");
+    assert(d.set("inner", null.as!TestData) && d.inner is null, "could not set basic data value");
+    assert(d.get!TestData("inner") is null, "could not get basic data value");
+    
+    assert(d.set("integerA", [2L, 3L, 4L]) && d.integerA.length == 3 && d.integerA[0] == 2 && d.integerA[1] == 3 && d.integerA[2] == 4, "could not set array scalar value");
+    assert(d.get!(long[])("integerA").length == 3, "could not get array scalar value");
+    
+    assert(d.set("textA", ["foo", "bar"]) && d.textA.length == 2 && d.textA[0] == "foo" && d.textA[1] == "bar", "could not set array string value");
+    assert(d.get!(string[])("textA").length == 2, "could not get array string value");
+    
+    assert(d.set("innerA", [new TestData]) && d.innerA.length == 1 && d.innerA[0] !is null, "could not set array data value");
+    assert(d.get!(TestData[])("innerA").length == 1, "could not get array data value");
+    
+    assert(d.set("additional", "ble") && d.additional == "ble", "could not set second level basic scalar value");
+    assert(d.get!string("additional") == "ble", "could not get second level basic scalar value");
+}
+
+private T[] dup(T)(T[] arr) if(is(T : Data)) {
+    T[] cArr;
+    foreach(e; arr) cArr ~= e.dup;
+
+    return cArr;
+}
+
+private T[] dup(T)(T[] arr) if(canHandle!T && !is(T : Data)) {
+    T[] cArr;
+    foreach(e; arr) cArr ~= e;
+
+    return cArr;
+}
+
+private Variant dup(Variant t, PropertyInfo p) {
+    import std.stdio;
+    if(p.array) {
+        if(p.desc == TypeDesc.Scalar && p.info == typeid(bool))
+            return Variant(t.get!(bool[]).dup);
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(byte))
+            return Variant(t.get!(byte[]).dup);
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(ubyte))
+            return Variant(t.get!(ubyte[]).dup);
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(short))
+            return Variant(t.get!(short[]).dup);
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(ushort))
+            return Variant(t.get!(ushort[]).dup);
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(int))
+            return Variant(t.get!(int[]).dup);
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(uint))
+            return Variant(t.get!(uint[]).dup);
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(long))
+            return Variant(t.get!(long[]).dup);
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(ulong))
+            return Variant(t.get!(ulong[]).dup);
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(float))
+            return Variant(t.get!(float[]).dup);
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(double))
+            return Variant(t.get!(double[]).dup);
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(ifloat))
+            return Variant(t.get!(ifloat[]).dup);
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(idouble))
+            return Variant(t.get!(idouble[]).dup);
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(cfloat))
+            return Variant(t.get!(cfloat[]).dup);
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(cdouble))
+            return Variant(t.get!(cdouble[]).dup);
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(char))
+            return Variant(t.get!(char[]).dup);
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(wchar))
+            return Variant(t.get!(wchar[]).dup);
+        else if(p.desc == TypeDesc.Scalar && p.info == typeid(dchar))
+            return Variant(t.get!(dchar[]).dup);
+        else if(p.desc == TypeDesc.UUID)
+            return Variant(t.get!(UUID[]).dup);
+        else if(p.desc == TypeDesc.SysTime)
+            return Variant(t.get!(SysTime[]).dup);
+        else if(p.desc == TypeDesc.DateTime)
+            return Variant(t.get!(DateTime[]).dup);
+        else if(p.desc == TypeDesc.String)
+            return Variant(t.get!(string[]).dup);
+        else if(p.desc == TypeDesc.Data)
+            return Variant(t.get!(Data[]).dup);
+        else assert(false, "this is an impossible situation");
+    } else {
+        if(p.desc == TypeDesc.Data)
+            return Variant(t.get!(Data).dup);
+        else return t;
+    }
 }
 
 Data dup(Data t) {
+    import std.stdio;
     Data c;
     if(t !is null) {
-        c = DataFactory.create(t.dataType);
+        c = Object.factory(t.dataType).as!Data;
 
         foreach(p; t.properties) {
             auto val = p.as!PropertyInfo.get(t);
-            if(val !is null) {
-                auto name = p.as!PropertyInfo.name;
-                auto isData = p.as!PropertyInfo.flags & TypeFlags.Data;
-                p.as!PropertyInfo.set(c, isData ? val.as!Data.dup : val.as!RefBase.dup);
-            }
+            p.as!PropertyInfo.set(c, val.dup(p.as!PropertyInfo));
         }
     }
 
@@ -365,7 +414,7 @@ unittest {
     d.additional = "ble";
 
     auto d2 = d.dup().as!InheritedTestData;
-// 
+ 
     assert(d2.uinteger == 5, "could not dup basic scalar value");
     assert(d2.text == "foo", "could not dup basic string value");   
     assert(d2.inner !is null && d2.inner !is d.inner, "could not dup basic data value");
