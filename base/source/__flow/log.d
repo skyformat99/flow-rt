@@ -3,7 +3,7 @@ module __flow.log;
 import __flow.data;
 import __flow.error;
 
-import core.time, std.stdio, std.ascii, std.conv;
+import core.time, std.stdio, std.ascii, std.conv, std.json;
 
 enum LL : uint {
     Message = 1 << 0,
@@ -15,7 +15,7 @@ enum LL : uint {
     FDebug = 1 << 6
 }
 
-/*class Log {
+class Log {
     public static immutable sep = newline~"--------------------------------------------------"~newline;
     public static LL logLevel = LL.Message | LL.Fatal | LL.Error | LL.Warning;
     public static void msg(LL level, string msg) {
@@ -41,7 +41,7 @@ enum LL : uint {
 
         if(cast(FlowException)ex !is null && (cast(FlowException)ex).data !is null) {
             t ~= sep;
-            t ~= (cast(FlowException)ex).data.json~newline;
+            t ~= (cast(FlowException)ex).data.json.toString~newline;
             t ~= sep;
             t ~= sep;
         }
@@ -52,7 +52,7 @@ enum LL : uint {
     public static void msg(LL level, Data d, string msg = string.init) {
         auto t = msg;
         t ~= Log.sep;
-        t ~= d !is null ? d.json : "NULL";
+        t ~= d !is null ? d.json.toString : "NULL";
         Log.msg(level, t);
     }
-}*/
+}
