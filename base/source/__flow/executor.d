@@ -2,7 +2,6 @@ module __flow.executor;
 
 import __flow.util;
 
-import core.time, core.thread, core.sync.mutex;
 import std.parallelism;
 
 package enum ExecutorState {
