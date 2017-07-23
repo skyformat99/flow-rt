@@ -2,6 +2,7 @@ module __flow.executor;
 
 import __flow.util;
 
+import core.time;
 import std.parallelism;
 
 package enum ExecutorState {

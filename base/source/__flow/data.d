@@ -79,8 +79,8 @@ mixin template data() {
     
     shared static this() {
 		static if(__flow.util.fqn!(typeof(super)) != "__flow.data.Data")
-		foreach(n, i; super.Properties)
-			Properties[n] = i;
+            foreach(n, i; super.Properties)
+                Properties[n] = i;
     }
 }
 
@@ -129,7 +129,7 @@ mixin template array(T, string name) if (canHandle!T) {
             } else return false;
         };");
     }
-
+    
     // field
     mixin(T.stringof~"[] "~name~";");
 }
@@ -209,7 +209,6 @@ unittest {
     import std.range;
     writeln("testing static data usage");
     
-
     auto d = new InheritedTestData;
     assert(d !is null, "could not statically create instance of data");
     assert(d.integer is long.init && d.integerA.empty && d.text is string.init && d.inner is null, "data is not initialized correctly at static creation");
