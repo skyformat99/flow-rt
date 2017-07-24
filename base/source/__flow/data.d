@@ -9,7 +9,7 @@ import std.uuid;
 import std.datetime;
 import std.json;
 
-private template canHandle(T) {
+template canHandle(T) {
     enum canHandle =
         isScalarType!T ||
         is(T == UUID) ||
@@ -87,22 +87,24 @@ mixin template data() {
 mixin template field(T, string name) if (canHandle!T) {
     pragma(msg, "\t\t"~T.stringof~" "~name);
     shared static this() {
-        import __flow.data;
+        import __flow.util, __flow.data;
 
-        Properties[name] = TPropertyHelper!(T, name).getFieldInfo().as!(shared(PropertyInfo));
+        import std.variant;
 
-        mixin("Properties[name]._getter = (d) {
+        mixin("Variant function(Data) getter = (d) {
             auto t = d.as!(typeof(this));
             return Variant("~(is(T : Data) ? "t."~name~".as!Data" : "t."~name)~");
         };");
 
-        mixin("Properties[name]._setter = (d, v) {
+        mixin("bool function(Data, Variant) setter = (d, v) {
             auto t = d.as!(typeof(this));
             if(v.convertsTo!("~(is(T : Data) ? "Data" : T.stringof)~")) {
                 t."~name~" = "~(is(T : Data) ? "v.get!Data().as!"~T.stringof : "v.get!("~T.stringof~")")~";
                 return true;
             } else return false;
         };");
+
+        Properties[name] = TPropertyHelper!(T, name).getFieldInfo(getter, setter).as!(shared(PropertyInfo));
     }
 
     // field
@@ -112,22 +114,24 @@ mixin template field(T, string name) if (canHandle!T) {
 mixin template array(T, string name) if (canHandle!T) {
     pragma(msg, "\t\t"~T.stringof~"[] "~name);
     shared static this() {
-        import __flow.data;
+        import __flow.util, __flow.data;
 
-        Properties[name] = TPropertyHelper!(T, name).getArrayInfo().as!(shared(PropertyInfo));
+        import std.variant;
 
-        mixin("Properties[name]._getter = (d) {
+        mixin("Variant function(Data) getter = (d) {
             auto t = d.as!(typeof(this));
             return Variant("~(is(T : Data) ? "t."~name~".as!(Data[])" : "t."~name)~");
         };");
 
-        mixin("Properties[name]._setter = (d, v) {
+        mixin("bool function(Data, Variant) setter = (d, v) {
             auto t = d.as!(typeof(this));
             if(v.convertsTo!("~(is(T : Data) ? "Data" : T.stringof)~"[])) {
                 t."~name~" = "~(is(T : Data) ? "v.get!(Data[])().as!("~T.stringof~"[])" : "v.get!("~T.stringof~"[])")~";
                 return true;
             } else return false;
         };");
+
+        Properties[name] = TPropertyHelper!(T, name).getArrayInfo(getter, setter).as!(shared(PropertyInfo));
     }
     
     // field
@@ -135,12 +139,14 @@ mixin template array(T, string name) if (canHandle!T) {
 }
 
 template TPropertyHelper(T, string name) {
-    PropertyInfo getFieldInfo() {
+    PropertyInfo getFieldInfo(Variant function(Data) getter, bool function(Data, Variant) setter) {
         PropertyInfo p;
         p._type = T.stringof;
         p._info = typeid(T);
         p._name = name;
         p._array = false;
+        p._getter = getter;
+        p._setter = setter;
 
         if(isScalarType!T) p._desc = TypeDesc.Scalar;
         else if(is(T : Data)) p._desc = TypeDesc.Data;
@@ -153,12 +159,14 @@ template TPropertyHelper(T, string name) {
         return p;
     }
 
-    PropertyInfo getArrayInfo() {
+    PropertyInfo getArrayInfo(Variant function(Data) getter, bool function(Data, Variant) setter) {
         PropertyInfo p;
         p._type = T.stringof;
         p._info = typeid(T);
         p._name = name;
         p._array = true;
+        p._getter = getter;
+        p._setter = setter;
 
         if(isScalarType!T) p._desc = TypeDesc.Scalar;
         else if(is(T : Data)) p._desc = TypeDesc.Data;
