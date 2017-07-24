@@ -1,6 +1,6 @@
 module __flow.signal;
 
-import __flow.data, __flow.hull;
+import __flow.data;
 import flow.base.data;
 
 import std.uuid, std.datetime;

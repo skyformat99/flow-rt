@@ -1,6 +1,6 @@
 module __flow.tick;
 
-import __flow.util, __flow.channel, __flow.data, __flow.executor, __flow.log, __flow.error;
+import __flow.util, __flow.bound, __flow.data, __flow.log, __flow.error;
 import flow.base.data;
 
 import core.sync.rwmutex, core.thread;
@@ -17,32 +17,24 @@ package enum TickerState {
 }
 
 package class Ticker : StateMachine!TickerState {
-
     bool ticking;
-    Executor exe;
-    EntityInfo entity;
-    ReadWriteMutex sync;
-    Data context;
-    OutChannel channel;
+    
+    Bound bound;
     TickMeta actual;
     TickMeta coming;
     Exception error;
 
-    private this(Executor exe, EntityInfo e, ReadWriteMutex sync, Data c, OutChannel chan) {
-        this.exe = exe;
-        this.entity = e;
-        this.sync = sync;
-        this.context = c;
-        this.channel = chan;
+    private this(Bound b, Data c) {
+        this.bound = b;
     }
 
-    this(Executor exe, EntityInfo e, ReadWriteMutex sync, Data c, OutChannel chan, Signal s, TickInfo initial) {
-        this(exe, e, sync, c, chan);
+    this(Bound b, Data c, Signal s, TickInfo initial) {
+        this(b, c);
         this.coming = create(initial, s);
     }
 
-    this(Executor exe, EntityInfo e, ReadWriteMutex sync, Data c, OutChannel chan, TickMeta initial) {
-        this(exe, e, sync, c, chan);
+    this(Bound b, Data c, TickMeta initial) {
+        this(b, c);
         this.coming = initial;
     }
 
@@ -61,7 +53,7 @@ package class Ticker : StateMachine!TickerState {
     override protected void onStateChanged(TickerState o, TickerState n) {
         switch(n) {
             case TickerState.Started:
-                this.exe.exec(&this.tick);
+                this.bound.tasker.run(&this.tick);
                 break;
             case TickerState.Stopped:
                 while(this.ticking)
@@ -93,8 +85,8 @@ package class Ticker : StateMachine!TickerState {
                     if(t.info.id == UUID.init)
                         t.info.id = randomUUID;
             
-                    if(this.execTick(t) && this.coming !is null) {
-                        this.exe.exec(&this.tick);
+                    if(this.runTick(t) && this.coming !is null) {
+                        this.bound.tasker.run(&this.tick);
                         return;
                     } else {
                         if(this.state == TickerState.Started) this.stop();
@@ -112,7 +104,7 @@ package class Ticker : StateMachine!TickerState {
         }
     }
 
-    private bool execTick(Tick t) {
+    private bool runTick(Tick t) {
         this.ticking = true;
         scope(exit) this.ticking = false;
 
@@ -153,25 +145,24 @@ package class Ticker : StateMachine!TickerState {
 }
 
 private void msg(Ticker t, LL level, string msg) {
-    Log.msg(level, "ticker@entity("~t.entity.ptr.type~"|"~t.entity.ptr.id~"@"~t.entity.ptr.flow.id~"): "~msg);
+    Log.msg(level, "ticker@entity("~t.bound.entity.info.ptr.type~"|"~t.bound.entity.info.ptr.id~"@"~t.bound.entity.info.ptr.flow.id~"): "~msg);
 }
 
 private void msg(Ticker t, LL level, Exception ex, string msg = string.init) {
-    Log.msg(level, ex, "ticker@entity("~t.entity.ptr.type~"|"~t.entity.ptr.id~"@"~t.entity.ptr.flow.id~"): "~msg);
+    Log.msg(level, ex, "ticker@entity("~t.bound.entity.info.ptr.type~"|"~t.bound.entity.info.ptr.id~"@"~t.bound.entity.info.ptr.flow.id~"): "~msg);
 }
 
 private void msg(Ticker t, LL level, Data d, string msg = string.init) {
-    Log.msg(level, d, "ticker@entity("~t.entity.ptr.type~"|"~t.entity.ptr.id~"@"~t.entity.ptr.flow.id~"): "~msg);
+    Log.msg(level, d, "ticker@entity("~t.bound.entity.info.ptr.type~"|"~t.bound.entity.info.ptr.id~"@"~t.bound.entity.info.ptr.flow.id~"): "~msg);
 }
 
 class Tick {
     package Ticker ticker;
     package TickMeta meta;
 
-    protected @property OutChannel channel() {return this.ticker.channel;}
-    protected @property ReadWriteMutex sync() {return this.ticker.sync;}
-    protected @property EntityInfo entity() {return this.ticker.entity;}
-    protected @property Data context() {return this.ticker.context;}
+    protected @property ReadWriteMutex sync() {return this.ticker.bound.sync;}
+    protected @property EntityInfo entity() {return this.ticker.bound.entity.info;}
+    protected @property Data context() {return this.ticker.bound.entity.context;}
     protected @property TickInfo info() {return this.meta.info;}
     protected @property Signal trigger() {return this.meta.trigger;}
     protected @property TickInfo previous() {return this.meta.previous;}
@@ -187,18 +178,30 @@ class Tick {
     protected void fork(string t, Data d = null) {
         this.ticker.fork(this.create(t), d);
     }
+
+    protected bool answer(Unicast s) {
+        throw new NotImplementedError;
+    }
+
+    protected bool send(Unicast s, EntityPtr dst) {
+        throw new NotImplementedError;
+    }
+
+    protected bool send(Signal s) {
+        throw new NotImplementedError;
+    }
 }
 
 void msg(Tick t, LL level, string msg) {
-    Log.msg(level, "tick@entity("~t.entity.ptr.type~"|"~t.entity.ptr.id~"@"~t.entity.ptr.flow.id~"): "~msg);
+    Log.msg(level, "tick@entity("~t.ticker.bound.entity.info.ptr.type~"|"~t.ticker.bound.entity.info.ptr.id~"@"~t.ticker.bound.entity.info.ptr.flow.id~"): "~msg);
 }
 
 void msg(Tick t, LL level, Exception ex, string msg = string.init) {
-    Log.msg(level, ex, "tick@entity("~t.entity.ptr.type~"|"~t.entity.ptr.id~"@"~t.entity.ptr.flow.id~"): "~msg);
+    Log.msg(level, ex, "tick@entity("~t.ticker.bound.entity.info.ptr.type~"|"~t.ticker.bound.entity.info.ptr.id~"@"~t.ticker.bound.entity.info.ptr.flow.id~"): "~msg);
 }
 
 void msg(Tick t, LL level, Data d, string msg = string.init) {
-    Log.msg(level, d, "tick@entity("~t.entity.ptr.type~"|"~t.entity.ptr.id~"@"~t.entity.ptr.flow.id~"): "~msg);
+    Log.msg(level, d, "tick@entity("~t.ticker.bound.entity.info.ptr.type~"|"~t.ticker.bound.entity.info.ptr.id~"@"~t.ticker.bound.entity.info.ptr.flow.id~"): "~msg);
 }
 
 private Tick create(TickMeta m, Ticker ticker) {
@@ -293,9 +296,9 @@ unittest {
     import std.stdio;
     writeln("testing ticking");
 
-    auto exe = new Executor(1);
-    exe.start();
-    scope(exit) exe.stop();
+    auto tasker = new Tasker(1);
+    tasker.start();
+    scope(exit) tasker.stop();
     auto entity = new EntityInfo;
     entity.ptr = new EntityPtr;
     entity.ptr.id = "testentity";
@@ -310,7 +313,7 @@ unittest {
     t1.id = randomUUID;
     t1.type = "__flow.tick.TestTick";
     t1.group = randomUUID;
-    auto ticker1 = new Ticker(exe, entity, sync, c, chan, s, t1);
+    auto ticker1 = new Ticker(bound, entity, sync, c, chan, s, t1);
     ticker1.start();
 
     while(ticker1.state == TickerState.Started)

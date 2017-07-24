@@ -1,16 +1,16 @@
-module __flow.executor;
+module __flow.tasker;
 
 import __flow.util, __flow.error;
 
 import core.time;
 import std.parallelism;
 
-package enum ExecutorState {
+package enum TaskerState {
     Stopped = 0,
     Started
 }
 
-package class Executor : StateMachine!ExecutorState {
+package class Tasker : StateMachine!TaskerState {
     private size_t worker;
     private TaskPool tp;
 
@@ -18,39 +18,39 @@ package class Executor : StateMachine!ExecutorState {
         this.worker = worker;
     }
 
-    override protected bool onStateChanging(ExecutorState o, ExecutorState n) {
+    override protected bool onStateChanging(TaskerState o, TaskerState n) {
         switch(n) {
-            case ExecutorState.Started:
-                return o == ExecutorState.Stopped;
-            case ExecutorState.Stopped:
-                return o == ExecutorState.Started;
+            case TaskerState.Started:
+                return o == TaskerState.Stopped;
+            case TaskerState.Stopped:
+                return o == TaskerState.Started;
             default: return false;
         }
     }
 
-    override protected void onStateChanged(ExecutorState o, ExecutorState n) {
+    override protected void onStateChanged(TaskerState o, TaskerState n) {
         switch(n) {
-            case ExecutorState.Started:
+            case TaskerState.Started:
                 this.tp = new TaskPool(this.worker);
                 break;
-            case ExecutorState.Stopped:
+            case TaskerState.Stopped:
                 if(this.tp !is null)
-                    this.tp.finish(true); // we need to block until there are no tasks executed anymore
+                    this.tp.finish(true); // we need to block until there are no tasks running anymore
                 break;
             default: break;
         }
     }
 
     void start() {
-        this.state = ExecutorState.Started;
+        this.state = TaskerState.Started;
     }
 
     void stop() {
-        this.state = ExecutorState.Stopped;
+        this.state = TaskerState.Stopped;
     }
 
-    void exec(void delegate() t, Duration d = Duration.init) {
-        this.ensureState(ExecutorState.Started);
+    void run(void delegate() t, Duration d = Duration.init) {
+        this.ensureState(TaskerState.Started);
 
         if(d == Duration.init)
             this.tp.put(task(t));
@@ -64,7 +64,7 @@ package class Executor : StateMachine!ExecutorState {
     }
 }
 
-version(unittest) class ExecutorTest {
+version(unittest) class TaskerTest {
     MonoTime t1;
     MonoTime t2;
     MonoTime t3; 
@@ -83,14 +83,14 @@ version(unittest) class ExecutorTest {
 }
 
 unittest {
-    auto t = new ExecutorTest;
-    auto e = new Executor(1);
+    auto t = new TaskerTest;
+    auto e = new Tasker(1);
     e.start();
 
     try {
-        e.exec(&t.set1);
-        e.exec(&t.set2);
-        e.exec(&t.set3);
+        e.run(&t.set1);
+        e.run(&t.set2);
+        e.run(&t.set3);
     } finally {
         e.stop();
     }
