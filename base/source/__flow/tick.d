@@ -24,17 +24,17 @@ package class Ticker : StateMachine!TickerState {
     TickMeta coming;
     Exception error;
 
-    private this(Bound b, Data c) {
+    private this(Bound b) {
         this.bound = b;
     }
 
-    this(Bound b, Data c, Signal s, TickInfo initial) {
-        this(b, c);
+    this(Bound b, Signal s, TickInfo initial) {
+        this(b);
         this.coming = create(initial, s);
     }
 
-    this(Bound b, Data c, TickMeta initial) {
-        this(b, c);
+    this(Bound b, TickMeta initial) {
+        this(b);
         this.coming = initial;
     }
 
@@ -293,33 +293,37 @@ version(unittest) {
 }
 
 unittest {
+    import __flow.tasker, __flow.bound;
     import std.stdio;
     writeln("testing ticking");
 
     auto tasker = new Tasker(1);
     tasker.start();
     scope(exit) tasker.stop();
-    auto entity = new EntityInfo;
-    entity.ptr = new EntityPtr;
-    entity.ptr.id = "testentity";
-    entity.ptr.type = "testentitytype";
-    entity.ptr.flow = new FlowPtr;
-    entity.ptr.flow.id = "testflow";
-    auto sync = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
-    auto c = new TestTickContext;
-    auto chan = new OutChannel;
+
+    auto entity = new EntityMeta;
+    entity.info = new EntityInfo;
+    entity.info.ptr = new EntityPtr;
+    entity.info.ptr.id = "testentity";
+    entity.info.ptr.type = "testentitytype";
+    entity.info.ptr.flow = new FlowPtr;
+    entity.info.ptr.flow.id = "testflow";
+    entity.context = new TestTickContext;
+
+    auto bound = new Bound(tasker, entity);
+
     auto s = new TestSignal;
     auto t1 = new TickInfo;
     t1.id = randomUUID;
     t1.type = "__flow.tick.TestTick";
     t1.group = randomUUID;
-    auto ticker1 = new Ticker(bound, entity, sync, c, chan, s, t1);
+    auto ticker1 = new Ticker(bound, s, t1);
     ticker1.start();
 
     while(ticker1.state == TickerState.Started)
         Thread.sleep(5.msecs);
 
-    assert(c.cnt == 6, "logic wasn't executed correct");
+    assert(entity.context.as!TestTickContext.cnt == 6, "logic wasn't executed correct");
     assert(ticker1.actual.trigger.as!TestSignal !is null, "trigger was not passed correctly");
     assert(ticker1.actual.info.group == t1.group, "group was not passed correctly");
     assert(ticker1.actual.data.as!TestTickData !is null, "data was not set correctly");
@@ -329,7 +333,7 @@ unittest {
     t2.id = randomUUID;
     t2.type = "__flow.tick.TestTickNotExisting";
     t2.group = randomUUID;
-    auto ticker2 = new Ticker(exe, entity, sync, c, chan, s, t2);
+    auto ticker2 = new Ticker(bound, s, t2);
     ticker2.start();
 
     while(ticker2.state == TickerState.Started)
