@@ -66,7 +66,7 @@ abstract class Data {
     abstract @property string dataType();
 }
 
-mixin template data() {
+mixin template database() {
     static import __flow.util, __flow.data;
     pragma(msg, "\tdata "~__flow.util.fqn!(typeof(this)));
 
@@ -181,7 +181,7 @@ template TPropertyHelper(T, string name) {
 }
 
 version (unittest) class TestData : Data {
-    mixin data;
+    mixin database;
 
     // testing basic fields
     mixin field!(TestData, "inner");
@@ -207,7 +207,7 @@ version (unittest) class TestData : Data {
 }
 
 version(unittest) class InheritedTestData : TestData {
-    mixin data;
+    mixin database;
 
     mixin field!(string, "additional");
 }
@@ -234,7 +234,7 @@ unittest {
     d.additional = "ble"; assert(d.additional == "ble", "could not set second level basic scalar");
 }
 
-Data createData(string name) {
+Data data(string name) {
     return Object.factory(name).as!Data;
 }
 
@@ -283,7 +283,7 @@ unittest {
     import std.range;
     writeln("testing dynamic data usage");
 
-    auto d = createData("__flow.data.InheritedTestData").as!InheritedTestData;
+    auto d = "__flow.data.InheritedTestData".data.as!InheritedTestData;
     assert(d !is null, "could not dynamically create instance of data");
     assert(d.integer is long.init && d.integerA.empty, "data is not initialized correctly at dynamic creation");
 
@@ -562,12 +562,12 @@ JSONValue json(T)(T t) if(is(T : Data)) {
 }
 
 class InvalidJsonException : Exception {this(string msg){super(msg);}}
-Data createData(JSONValue j) {
+Data data(JSONValue j) {
     auto dt = j["dataType"].str;
     if(dt == string.init)
         throw new InvalidJsonException("json object has no dataType");
 
-    auto d = createData(dt);
+    auto d = dt.data;
     foreach(string name, e; j) {
         if(name != "dataType") {
             if(name !in d.properties)
@@ -655,7 +655,7 @@ private Variant get(T)(JSONValue j, Data d, PropertyInfo p) if(is(T : Data)) {
                 return Variant(val);
             case JSON_TYPE.OBJECT:
                 static if(is(T : Data))
-                    return Variant(createData(j));
+                    return Variant(j.data);
                 else return Variant();
             default:
                 throw new InvalidJsonException("\""~d.dataType~"\" property \""~p.name~"\" type mismatching");
@@ -697,7 +697,7 @@ unittest {
         "\"uinteger\":5,"~
         "\"uintegerA\":[3,4]}", "could not serialize data");
 
-    auto d2 = createData(parseJSON(dStr)).as!InheritedTestData;
+    auto d2 = parseJSON(dStr).data.as!InheritedTestData;
     assert(d2 !is null, "could not deserialize data");
     assert(d2.boolean, "could not deserialize basic scalar value");
     assert(d2.uinteger == 5, "could not deserialize basic scalar value");

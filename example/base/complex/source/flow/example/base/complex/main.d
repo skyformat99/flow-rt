@@ -7,26 +7,26 @@ import std.conv, std.file, std.path, std.string, std.datetime, std.getopt;
 import core.stdc.stdlib;
 
 class SystemDescription : Data {
-    mixin data;
+    mixin database;
 
     mixin list!(EntityMeta, "entities");
 }
 
 class ComplexRelation : Data {
-    mixin data;
+    mixin database;
 
     mixin field!(EntityPtr, "entity");
     mixin field!(size_t, "power");
 }
 
 class CoreComplexContext : Data {
-    mixin data;
+    mixin database;
 
     mixin list!(ComplexRelation, "relations");
 }
 
 class ReactData : Data {
-    mixin data;
+    mixin database;
 
     mixin field!(ComplexRelation, "source");
     mixin field!(size_t, "sourcePower");
@@ -36,7 +36,7 @@ class ReactData : Data {
 }
 
 class Act : Unicast {
-    mixin signal;
+    mixin signalbase;
 
     mixin field!(size_t, "power");
 }

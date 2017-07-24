@@ -6,31 +6,27 @@ import std.uuid;
 
 /// identifyable data
 class IdData : Data {
-    mixin data;
+    mixin database;
 
     mixin field!(UUID, "id");
 }
 
-/// configuration object of flow process
-class FlowConfig : Data {
-    mixin data;
-    
-    mixin field!(FlowPtr, "ptr");
-    mixin field!(bool, "tracing");
+/// configuration object of a process
+class ProcessConfig : Data {
+    mixin database;
+
     mixin field!(size_t, "worker");
-    mixin field!(bool, "isolateMem");
-    mixin field!(bool, "preventIdTheft");
 }
 
-/// referencing a specific process having an unique ptress like udp://hostname:port
+/// referencing a specific flow having an unique ptress like udp://hostname:port/flow
 class FlowPtr : Data {
-    mixin data;
+    mixin database;
 
-    mixin field!(string, "address");
+    mixin field!(string, "id");
 }
 
 class TickInfo : IdData {
-    mixin data;
+    mixin database;
 
     mixin field!(EntityPtr, "entity");
     mixin field!(string, "type");
@@ -38,12 +34,11 @@ class TickInfo : IdData {
 }
 
 class TickMeta : Data {
-    mixin data;
+    mixin database;
 
     mixin field!(TickInfo, "info");
-    mixin field!(UUID, "trigger");
-    mixin field!(Signal, "signal");
-    mixin field!(TickMeta, "previous");
+    mixin field!(Signal, "trigger");
+    mixin field!(TickInfo, "previous");
     mixin field!(Data, "data");
 }
 
@@ -54,7 +49,7 @@ enum EntitySpace {
 }
 
 class ListeningMeta : Data {
-    mixin data;
+    mixin database;
 
     mixin field!(string, "signal");
     mixin field!(string, "tick");
@@ -62,22 +57,22 @@ class ListeningMeta : Data {
 
 /// referencing a specific entity 
 class EntityPtr : Data {
-    mixin data;
+    mixin database;
 
     mixin field!(string, "id");
     mixin field!(string, "type");
-    mixin field!(string, "domain");
+    mixin field!(FlowPtr, "flow");
 }
 
 class EntityConfig : Data {
-    mixin data;
+    mixin database;
 
     mixin field!(bool, "quiet");
 }
 
 /// referencing a specific entity 
 class EntityInfo : Data {
-    mixin data;
+    mixin database;
 
     mixin field!(EntityPtr, "ptr");
     mixin field!(EntitySpace, "space");
@@ -87,14 +82,14 @@ class EntityInfo : Data {
 }
 
 class EntityMetaDamage : Data {
-    mixin data;
+    mixin database;
 
     mixin field!(string, "msg");
     mixin field!(Data, "recovery");
 }
 
 class EntityMeta : Data {
-    mixin data;
+    mixin database;
 
     mixin array!(EntityMetaDamage, "damages");
 
@@ -107,7 +102,7 @@ class EntityMeta : Data {
 }
 
 class Signal : IdData {
-    mixin signal;
+    mixin signalbase;
 
     mixin field!(UUID, "group");
     mixin field!(bool, "traceable");
@@ -116,38 +111,38 @@ class Signal : IdData {
 }
 
 class Unicast : Signal {
-    mixin signal;
+    mixin signalbase;
 
     mixin field!(EntityPtr, "destination");
 }
 
 class Multicast : Signal {
-    mixin signal;
+    mixin signalbase;
 
-    mixin field!(string, "domain");
+    mixin field!(string, "flow");
 }
 
 class Anycast : Signal {    
-    mixin signal;
+    mixin signalbase;
 
-    mixin field!(string, "domain");
+    mixin field!(string, "flow");
 }
 
 class Ping : Multicast {
-    mixin signal;
+    mixin signalbase;
 }
 
 class UPing : Unicast {
-    mixin signal;
+    mixin signalbase;
 }
 
 class Pong : Unicast {
-    mixin signal;
+    mixin signalbase;
 
     mixin field!(EntityPtr, "ptr");
     mixin array!(string, "signals");
 }
 
 class WrappedSignal : Unicast {
-    mixin signal!(Signal);
+    mixin signalbase!(Signal);
 }

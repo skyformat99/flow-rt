@@ -1,6 +1,6 @@
 module __flow.executor;
 
-import __flow.util;
+import __flow.util, __flow.error;
 
 import core.time;
 import std.parallelism;
@@ -49,17 +49,18 @@ package class Executor : StateMachine!ExecutorState {
         this.state = ExecutorState.Stopped;
     }
 
-    void exec(void delegate() t/*, Duration d = Duration.init*/) {
+    void exec(void delegate() t, Duration d = Duration.init) {
         this.ensureState(ExecutorState.Started);
 
-        //if(d == Duration.init)
+        if(d == Duration.init)
             this.tp.put(task(t));
-        /*else {
-            synchronized(this.delayedLock) {
+        else {
+            throw new NotImplementedError;
+            /*synchronized(this.delayedLock) {
                 auto target = MonoTime.currTime + d;
                 this.delayed[target] ~= t;
-            }
-        }*/
+            }*/
+        }
     }
 }
 

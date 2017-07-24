@@ -2,7 +2,7 @@ module __flow.error;
 
 import __flow.data, __flow.util;
 
-mixin template TError() {
+mixin template error() {
     override @property string type() {return fqn!(typeof(this));}
 
     this(string msg = string.init) {
@@ -10,7 +10,7 @@ mixin template TError() {
     }
 }
 
-mixin template TException() {
+mixin template exception() {
     override @property string type() {return fqn!(typeof(this));}
 
     Exception[] inner;
@@ -28,7 +28,7 @@ class FlowError : Error {
     this(string msg) {super(msg);}
 }
 
-class FlowException : Error {
+class FlowException : Exception {
 	abstract @property string type();
     Data data;
 
@@ -36,29 +36,25 @@ class FlowException : Error {
 }
 
 class WorkerError : FlowError {
-    mixin TError;
+    mixin error;
 }
 
 class NotImplementedError : FlowError {
-    mixin TError;
+    mixin error;
 }
 
 class ImplementationError : FlowError {
-    mixin TError;
+    mixin error;
 }
 
 class ParameterException : FlowException {
-    mixin TException;
+    mixin exception;
 }
 
 class UnsupportedObjectTypeException : FlowException {
-    mixin TException;
+    mixin exception;
 }
 
 class DataDamageException : FlowException {
-    mixin TException;
-}
-
-class TickException : FlowException {
-    mixin TException;
+    mixin exception;
 }

@@ -1,11 +1,7 @@
 module __flow.process;
 
-import __flow.data;
-import __flow.executor;
-
-class ProcessConfig : Data {
-    mixin data;
-}
+import __flow.data, __flow.executor;
+import flow.base.data;
 
 class Process {
     this(ProcessConfig c = null, Executor e = null) {
