@@ -247,18 +247,18 @@ version(unittest) {
     class TestTickException : Exception {this(){super(string.init);}}
 
     class TestSignal : Signal {
-        mixin signalbase;
+        mixin signal;
     }
 
     class TestTickContext : Data {
-        mixin database;
+        mixin data;
 
         mixin field!(size_t, "cnt");
         mixin field!(bool, "error");
     }
 
     class TestTickData : Data {
-        mixin database;
+        mixin data;
 
         mixin field!(size_t, "cnt");
     }
@@ -270,7 +270,7 @@ version(unittest) {
             auto c = this.context.as!TestTickContext;
             auto d = this.data.as!TestTickData !is null ?
                 this.data.as!TestTickData :
-                "__flow.tick.TestTickData".data.as!TestTickData;
+                "__flow.tick.TestTickData".createData().as!TestTickData;
 
             d.cnt++;
 

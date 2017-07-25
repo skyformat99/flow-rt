@@ -7,26 +7,26 @@ import std.conv, std.file, std.path, std.string, std.datetime, std.getopt;
 import core.stdc.stdlib;
 
 class SystemDescription : Data {
-    mixin database;
+    mixin data;
 
-    mixin list!(EntityMeta, "entities");
+    mixin list!(Entity, "entities");
 }
 
 class ComplexRelation : Data {
-    mixin database;
+    mixin data;
 
     mixin field!(EntityPtr, "entity");
     mixin field!(size_t, "power");
 }
 
 class CoreComplexContext : Data {
-    mixin database;
+    mixin data;
 
     mixin list!(ComplexRelation, "relations");
 }
 
 class ReactData : Data {
-    mixin database;
+    mixin data;
 
     mixin field!(ComplexRelation, "source");
     mixin field!(size_t, "sourcePower");
@@ -36,7 +36,7 @@ class ReactData : Data {
 }
 
 class Act : Unicast {
-    mixin signalbase;
+    mixin signal;
 
     mixin field!(size_t, "power");
 }
@@ -256,13 +256,13 @@ void create() {
     auto desc = new SystemDescription();
     
     for(size_t i = 0; i < amount; i++) {
-        auto m = new EntityMeta;
+        auto m = new Entity;
         m.info = new EntityInfo;
         m.info.ptr = new EntityPtr;
         m.info.ptr.id = i.to!string;
         m.info.ptr.type = "flow.example.base.complex.CoreComplex";
         m.info.ptr.domain = domain;
-        m.info.space = EntitySpace.Local;
+        m.info.space = Access.Local;
         m.info.config = new EntityConfig;
         m.context = new CoreComplexContext;
         m.inbound.put(new Act);

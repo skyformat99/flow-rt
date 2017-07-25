@@ -15,7 +15,7 @@ package class Bound : StateMachine!EntityState {
     ReadWriteMutex sync;
     Tasker tasker;
     EntityMeta entity;
-    Exception[] errors;
+    Exception error;
     Ticker[] ticker;
 
     this(Tasker t, EntityMeta e) {
