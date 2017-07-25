@@ -4,7 +4,7 @@ import flow.base.util, flow.base.data, flow.base.tasker;
 import flow.data.base;
 
 import core.thread, core.sync.rwmutex;
-import std.uuid;
+import std.uuid, std.string;
 
 package enum TickerState {
     Stopped = 0,
@@ -192,15 +192,18 @@ class Tick {
             this.ticker.entity.space.remove(e);
     }
 
-    protected void send(Unicast s) {
-        if(s !is null && s.destination is null)
-            throw new TickException("unicast signal needs a destination");
+    protected bool send(Unicast s) {
+        if(s is null)
+            throw new TickException("cannot sand an empty unicast");
 
-        this.ticker.entity.send(s);
+        if(s.dst is null || s.dst.id == string.init || s.dst.space == string.init)
+            throw new TickException("unicast signal needs a valid dst");
+
+        return this.ticker.entity.send(s);
     }
 
-    protected void send(Multicast s) {
-        this.ticker.entity.send(s);
+    protected bool send(Multicast s) {
+        return this.ticker.entity.send(s);
     }
 }
 
@@ -377,18 +380,6 @@ package class Entity : StateMachine!SystemState {
             this.state = SystemState.Destroyed;
     }
 
-    void receipt(Signal s) {
-        synchronized(this.sync.writer) {
-            foreach(r; this.meta.receptors) {
-                if(s.dataType == r.signal) {
-                    auto ticker = new Ticker(this, r.tick.createTick(this, s));
-                    this.ticker ~= ticker;
-                    ticker.start();
-                }
-            }
-        }
-    }
-
     void start(TickMeta t) {
         synchronized(this.sync.writer) {
             auto ticker = new Ticker(this, t);
@@ -413,21 +404,37 @@ package class Entity : StateMachine!SystemState {
         this.state = SystemState.Ticking;
     }
 
-    void send(Unicast s) {
-        if(s.destination == this.meta.ptr)
+    bool receipt(Signal s) {
+        auto ret = false;
+        synchronized(this.sync.writer) {
+            foreach(r; this.meta.receptors) {
+                if(s.dataType == r.signal) {
+                    auto ticker = new Ticker(this, r.tick.createTick(this, s));
+                    this.ticker ~= ticker;
+                    ticker.start();
+                    ret = true;
+                }
+            }
+        }
+        
+        return ret;
+    }
+
+    bool send(Unicast s) {
+        if(s.dst == this.meta.ptr)
             new EntityException("entity cannot send signals to itself, use fork");
 
         // also here we deep clone before passing its pointer
-        s.source = this.meta.ptr.dup.as!EntityPtr;
+        s.src = this.meta.ptr.dup.as!EntityPtr;
 
-        this.space.send(s);
+        return this.space.send(s);
     }
 
-    void send(Multicast s) {
+    bool send(Multicast s) {
         // also here we deep clone before passing its pointer
-        s.source = this.meta.ptr.dup.as!EntityPtr;
+        s.src = this.meta.ptr.dup.as!EntityPtr;
 
-        this.space.send(s);
+        return this.space.send(s);
     }
 
     EntityMeta snap() {
@@ -514,6 +521,24 @@ class EntityController {
     }
 }
 
+package bool matches(Space space, string pattern) {
+    import std.regex, std.array;
+
+    auto hit = false;
+    auto s = matchAll(space.meta.ptr.id, regex("[A-Za-z]*")).array;
+    auto p = matchAll(pattern, regex("[A-Za-z\\*]*")).array;
+    foreach(i, m; s) {
+        if(p.length > i) {
+            if(space.process.config.hark && m.hit == "*")
+                hit = true;
+            else if(m.hit != p[i].hit)
+                break;
+        } else break;
+    }
+
+    return hit;
+}
+
 package class Space : StateMachine!SystemState {
     ReadWriteMutex sync;
     SpaceMeta meta;
@@ -583,9 +608,37 @@ package class Space : StateMachine!SystemState {
                 throw new SpaceException("entity with address \""~e~"\" is not existing");
         }
     }
+    
+    bool route(Unicast s, bool intern = false) {
+        // if its a perfect match assuming process only accepted a signal for itself
+        if(s.dst.space == this.meta.ptr.id) {
+            synchronized(this.sync.reader) {
+                foreach(e; this.entities.values)
+                    if((intern || e.meta.ptr.access == Access.Global) && e.meta.ptr == s.dst) {
+                        return e.receipt(s);
+                    }
+            }
+        }
+        
+        return false;
+    }
+    
+    bool route(Multicast s, bool intern = false) {
+        auto r = false;
+        // if its adressed to own space or parent using * wildcard or even none
+        // in each case we do not want to regex search when ==
+        if(s.space == this.meta.ptr.id || this.matches(s.space)) {
+            synchronized(this.sync.reader) {
+                foreach(e; this.entities.values)
+                    r = e.receipt(s) || r;
+            }
+        }
 
-    void send(Signal s) {
-        // TODO
+        return r;
+    }
+
+    bool send(T)(T s) if(is(T : Unicast) || is(T : Multicast)) {
+        return this.route(s) || this.process.shift(s, true);
     }
 
     override protected bool onStateChanging(SystemState o, SystemState n) {
@@ -636,6 +689,29 @@ class Process {
     ~this() {
         foreach(s; this.spaces.keys)
             this.spaces[s].destroy;
+    }
+
+    /// shifting signal from junction to junction also across processes
+    package bool shift(Unicast s, bool intern = false) {
+        /* each time a pointer leaves a space
+        it has to get dereferenced */
+        if(intern) s.dst = s.dst.dup.as!EntityPtr;
+
+        if((intern && s.dst.process == string.init) || s.dst.process == this.config.address)
+            foreach(spc; this.spaces.values)
+                if(spc.route(s, intern)) return true;
+                
+        return false;
+        /* TODO return intern && net.port(s);*/
+    }
+
+    package bool shift(Multicast s, bool intern = false) {
+        auto r = false;
+        foreach(spc; this.spaces.values)
+            r = spc.route(s, intern) || r;
+        
+        return r;
+        /* TODO return (intern && net.port(s)) || r ); */
     }
 
     private void ensureThread() {

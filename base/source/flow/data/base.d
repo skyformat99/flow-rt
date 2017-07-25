@@ -24,6 +24,7 @@ class ProcessConfig : Data {
 
     mixin field!(size_t, "worker");
     mixin field!(string, "address");
+    mixin field!(bool, "hark");
 }
 
 class SpacePtr : Data {
@@ -77,6 +78,7 @@ class EntityPtr : Data {
     mixin field!(string, "id");
     mixin field!(string, "space");
     mixin field!(string, "process");
+    mixin field!(Access, "access");
 }
 
 class EntityMeta : Data {
@@ -85,7 +87,6 @@ class EntityMeta : Data {
     mixin array!(Damage, "damages");
 
     mixin field!(EntityPtr, "ptr");
-    mixin field!(Access, "space");
     mixin field!(Data, "context");
     mixin array!(Receptor, "receptors");
     mixin array!(Signal, "inbound");
@@ -96,13 +97,13 @@ class Signal : IdData {
     mixin signal;
 
     mixin field!(UUID, "group");
-    mixin field!(EntityPtr, "source");
+    mixin field!(EntityPtr, "src");
 }
 
 class Unicast : Signal {
     mixin signal;
 
-    mixin field!(EntityPtr, "destination");
+    mixin field!(EntityPtr, "dst");
 }
 
 class Multicast : Signal {
