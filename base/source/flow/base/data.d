@@ -67,18 +67,18 @@ abstract class Data {
 }
 
 mixin template data() {
-    static import flow.base.util, flow.base.data;
-    pragma(msg, "\tdata "~flow.base.util.fqn!(typeof(this)));
+    static import __flowutil = flow.base.util, __flowdata = flow.base.data;
+    pragma(msg, "\tdata "~__flowutil.fqn!(typeof(this)));
 
-    shared static flow.base.data.PropertyInfo[string] Properties;
-    override @property shared(flow.base.data.PropertyInfo[string]) properties() {
+    shared static __flowdata.PropertyInfo[string] Properties;
+    override @property shared(__flowdata.PropertyInfo[string]) properties() {
         return Properties;
     }
 
-    override @property string dataType() {return flow.base.util.fqn!(typeof(this));}
+    override @property string dataType() {return __flowutil.fqn!(typeof(this));}
     
     shared static this() {
-		static if(flow.base.util.fqn!(typeof(super)) != "flow.base.data.Data")
+		static if(__flowutil.fqn!(typeof(super)) != "flow.base.data.Data")
             foreach(n, i; super.Properties)
                 Properties[n] = i;
     }
@@ -86,12 +86,12 @@ mixin template data() {
 
 mixin template signal(T = void)
     if (is(T == void) || canHandle!T) {   
-    static import flow.base.data;
-    mixin flow.base.data.data;
+    static import __flowdata = flow.base.data;
+    mixin __flowdata.data;
 
     static if(!is(T == void)) {
-        mixin flow.base.data.field!(ulong, "seq");
-        mixin flow.base.data.field!(T, "data");
+        mixin __flowdata.field!(ulong, "seq");
+        mixin __flowdata.field!(T, "data");
     }
 }
 
@@ -216,8 +216,8 @@ version (unittest) class TestData : Data {
     mixin array!(DateTime, "dateTimeA");
     mixin array!(string, "textA");
 
-    // testing for no module name conflict
-    //mixin field!(string, "flow");
+    // testing for module name conflicts
+    mixin field!(string, "flow");
 }
 
 version(unittest) class InheritedTestData : TestData {
