@@ -1,9 +1,8 @@
-module __flow.util;
+module flow.base.util;
 
-import std.traits;
-import std.range;
-import std.uuid;
-import std.datetime;
+import flow.base.data;
+
+import std.traits, std.range, std.uuid, std.datetime, std.stdio, std.ascii, std.conv, std.json;
 
 /// Returns: full qualified name of type
 template fqn(T) {
@@ -16,11 +15,53 @@ template fqn(T) {
  */
 T as(T, S)(S sym){return cast(T)sym;}
 
-class InvalidStateException : Exception {this(){super(string.init);}}
-class StateRefusedException : Exception {this(){super(string.init);}}
+mixin template error() {
+    override @property string type() {return fqn!(typeof(this));}
+
+    this(string msg = string.init) {
+        super(msg != string.init ? msg : this.type);
+    }
+}
+
+mixin template exception() {
+    override @property string type() {return fqn!(typeof(this));}
+
+    Exception[] inner;
+
+    this(string msg = string.init, Data d = null, Exception[] i = null) {
+        super(msg != string.init ? msg : this.type);
+        this.data = d;
+        this.inner = i;
+    }
+}
+
+class FlowError : Error {
+	abstract @property string type();
+
+    package this(string msg) {super(msg);}
+}
+
+class FlowException : Exception {
+	abstract @property string type();
+    Data data;
+
+    this(string msg) {super(msg);}
+}
+
+class ProcessError : FlowError {mixin error;}
+
+class TickException : FlowException {mixin exception;}
+class EntityException : FlowException {mixin exception;}
+class SpaceException : FlowException {mixin exception;}
+class ProcessException : FlowException {mixin exception;}
+
+class NotImplementedError : FlowError {mixin error;}
+
+package class InvalidStateException : FlowException {mixin exception;}
+package class StateRefusedException : FlowException {mixin exception;}
 
 /// state machine mixin template
-abstract class StateMachine(T) if (isScalarType!T) {
+package abstract class StateMachine(T) if (isScalarType!T) {
     import core.sync.rwmutex;
 
     private ReadWriteMutex _lock;
@@ -206,4 +247,56 @@ unittest {
     assert(t.CheckIllegalState(TestState.State1), "illegal state check didn't cause expected exception");
     assert(t.CheckIllegalState(TestState.State2), "illegal state check didn't cause expected exception");
     assert(t.CheckState(TestState.State3), "couldn't check for valid state");
+}
+
+enum LL : uint {
+    Message = 1 << 0,
+    Fatal = 1 << 1,
+    Error = 1 << 2,
+    Warning = 1 << 3,
+    Info = 1 << 4,
+    Debug = 1 << 5,
+    FDebug = 1 << 6
+}
+
+class Log {
+    public static immutable sep = newline~"--------------------------------------------------"~newline;
+    public static LL logLevel = LL.Message | LL.Fatal | LL.Error | LL.Warning;
+    public static void msg(LL level, string msg) {
+        if(level & logLevel) {
+            auto t = "["~level.to!string~"] ";
+            t ~= msg;
+
+            synchronized {
+                writeln(t);
+                //flush();
+            }
+        }
+    }
+
+    public static void msg(LL level, Exception ex, string msg=string.init) {
+        string t;
+        
+        if(msg != string.init)
+            t ~= msg~newline~"    ";
+        
+        if(ex !is null && ex.msg != string.init)
+            t ~= ex.msg~newline;
+
+        if(cast(FlowException)ex !is null && (cast(FlowException)ex).data !is null) {
+            t ~= sep;
+            t ~= (cast(FlowException)ex).data.json.toString~newline;
+            t ~= sep;
+            t ~= sep;
+        }
+
+        Log.msg(level, t);
+    }
+
+    public static void msg(LL level, Data d, string msg = string.init) {
+        auto t = msg;
+        t ~= Log.sep;
+        t ~= d !is null ? d.json.toString : "NULL";
+        Log.msg(level, t);
+    }
 }

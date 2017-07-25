@@ -1,0 +1,33 @@
+module flow.base;
+
+static import __flow.data;
+alias canHandle = __flow.data.canHandle;
+alias fqn = __flow.data.fqn;
+alias Data = __flow.data.Data;
+alias data = __flow.data.data;
+alias signal = __flow.data.signal;
+alias field = __flow.data.field;
+alias array = __flow.data.array;
+alias createData = __flow.data.createData;
+alias get = __flow.data.get;
+alias set = __flow.data.set;
+alias dup = __flow.data.dup;
+alias json = __flow.data.json;
+
+static import __flow.util;
+alias fqn = __flow.data.fqn;
+alias as = __flow.data.as;
+alias error = __flow.data.error;
+alias exception = __flow.data.exception;
+alias FlowError = __flow.data.FlowError;
+alias FlowException = __flow.data.FlowException;
+alias NotImplementedError = __flow.data.NotImplementedError;
+alias TickException = __flow.data.TickException;
+alias LL = __flow.data.LL;
+alias Log = __flow.data.Log;
+
+static import __flow.engine;
+alias msg = __flow.engine.msg;
+alias address = __flow.engine.address;
+alias EntityController = __flow.engine.EntityController;
+alias Process = __flow.engine.Process;
