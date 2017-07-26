@@ -44,6 +44,7 @@ struct PropertyInfo {
 
     private Variant function(Data) _getter;
 	private bool function(Data, Variant) _setter;
+	private bool function(Data, Data) _equals;
 
     @property TypeInfo info() {return this._info;}
     @property string type() {return this._type;}
@@ -58,12 +59,30 @@ struct PropertyInfo {
     bool set(Data d, Variant v) {
         return _setter(d, v);
     }
+
+    bool equal(Data a, Data b) {
+        return _equals(a, b);
+    }
 }
 
 abstract class Data {
     @property shared(PropertyInfo[string]) properties(){return null;}
 
     abstract @property string dataType();
+
+    override bool opEquals(Object o) {
+        auto c = o.as!Data;
+        if(c !is null && this.dataType == c.dataType) {
+            foreach(p; this.properties)
+                if(!p.as!PropertyInfo.equal(this, c)) {
+                    import std.stdio;
+                    writeln(p.as!PropertyInfo.name~" fails");
+                    return false;
+                }
+            
+            return true;
+        } else return false;
+    }
 }
 
 mixin template data() {
@@ -115,7 +134,15 @@ mixin template field(T, string name) if (canHandle!T) {
             } else return false;
         };");
 
-        Properties[name] = TPropertyHelper!(T, name).getFieldInfo(getter, setter).as!(shared(PropertyInfo));
+        mixin("bool function(Data, Data) equals = (a, b) {
+            static if(is(T == float) || is(T == double)) {
+                import std.math;
+                return a.as!(typeof(this))."~name~".isIdentical(b.as!(typeof(this))."~name~");
+            } else
+                return a.as!(typeof(this))."~name~" == b.as!(typeof(this))."~name~";
+        };");
+
+        Properties[name] = TPropertyHelper!(T, name).getFieldInfo(getter, setter, equals).as!(shared(PropertyInfo));
     }
 
     // field
@@ -142,7 +169,17 @@ mixin template array(T, string name) if (canHandle!T) {
             } else return false;
         };");
 
-        Properties[name] = TPropertyHelper!(T, name).getArrayInfo(getter, setter).as!(shared(PropertyInfo));
+        mixin("bool function(Data, Data) equals = (a, b) {            
+            import std.algorithm.comparison;
+            static if(is(T == float) || is(T == double)) {
+                import std.math;
+                return a.as!(typeof(this))."~name~".equal!((x, y) => x.isIdentical(y))(b.as!(typeof(this))."~name~");
+            } else {
+                return a.as!(typeof(this))."~name~".equal(b.as!(typeof(this))."~name~");
+            }
+        };");
+
+        Properties[name] = TPropertyHelper!(T, name).getArrayInfo(getter, setter, equals).as!(shared(PropertyInfo));
     }
     
     // field
@@ -150,7 +187,7 @@ mixin template array(T, string name) if (canHandle!T) {
 }
 
 template TPropertyHelper(T, string name) {
-    PropertyInfo getFieldInfo(Variant function(Data) getter, bool function(Data, Variant) setter) {
+    PropertyInfo getFieldInfo(Variant function(Data) getter, bool function(Data, Variant) setter, bool function(Data, Data) equals) {
         PropertyInfo p;
         p._type = T.stringof;
         p._info = typeid(T);
@@ -158,6 +195,7 @@ template TPropertyHelper(T, string name) {
         p._array = false;
         p._getter = getter;
         p._setter = setter;
+        p._equals = equals;
 
         if(isScalarType!T) p._desc = TypeDesc.Scalar;
         else if(is(T : Data)) p._desc = TypeDesc.Data;
@@ -170,7 +208,7 @@ template TPropertyHelper(T, string name) {
         return p;
     }
 
-    PropertyInfo getArrayInfo(Variant function(Data) getter, bool function(Data, Variant) setter) {
+    PropertyInfo getArrayInfo(Variant function(Data) getter, bool function(Data, Variant) setter, bool function(Data, Data) equals) {
         PropertyInfo p;
         p._type = T.stringof;
         p._info = typeid(T);
@@ -178,6 +216,7 @@ template TPropertyHelper(T, string name) {
         p._array = true;
         p._getter = getter;
         p._setter = setter;
+        p._equals = equals;
 
         if(isScalarType!T) p._desc = TypeDesc.Scalar;
         else if(is(T : Data)) p._desc = TypeDesc.Data;
@@ -218,6 +257,10 @@ version (unittest) class TestData : Data {
 
     // testing for module name conflicts
     mixin field!(string, "flow");
+
+    // nan != nan
+    mixin field!(double, "nan");
+    mixin array!(double, "nanA");
 }
 
 version(unittest) class InheritedTestData : TestData {
@@ -235,6 +278,7 @@ unittest {
     assert(d !is null, "could not statically create instance of data");
     assert(d.integer is long.init && d.integerA.empty && d.text is string.init && d.inner is null, "data is not initialized correctly at static creation");
     
+    d.floating = 0.005; assert(d.floating == 0.005, "could not set basic scalar value");
     d.uinteger = 5; assert(d.uinteger == 5, "could not set basic scalar value");
     d.text = "foo"; assert(d.text == "foo", "could not set basic string value");    
     d.inner = new TestData; assert(d.inner !is null, "could not set basic data value");
@@ -246,6 +290,7 @@ unittest {
     d.innerA ~= new TestData; d.innerA ~= new TestData; assert(d.innerA.length == 2 && d.innerA[0] !is null && d.innerA[1] !is null && d.innerA[0] !is d.innerA[1], "could not set array data value");
     d.innerA = [new TestData]; assert(d.innerA.length == 1 && d.innerA[0] !is null, "could not set array data value");
     d.additional = "ble"; assert(d.additional == "ble", "could not set second level basic scalar");
+    d.nanA ~= double.nan; assert(d.nanA.length == 1 && d.nanA[0] is double.nan, "could not set second level basic scalar");
 }
 
 Data createData(string name) {
@@ -301,6 +346,9 @@ unittest {
     assert(d !is null, "could not dynamically create instance of data");
     assert(d.integer is long.init && d.integerA.empty, "data is not initialized correctly at dynamic creation");
 
+    assert(d.set("floating", 0.005) && d.floating == 0.005, "could not set basic scalar value");
+    assert(d.get!double("floating") == 0.005, "could not get basic scalar value");
+
     assert(d.set("uinteger", 4) && d.uinteger == 4, "could not set basic scalar value");
     assert(d.get!ulong("uinteger") == 4, "could not get basic scalar value");
     
@@ -313,16 +361,19 @@ unittest {
     assert(d.get!TestData("inner") is null, "could not get basic data value");
     
     assert(d.set("integerA", [2L, 3L, 4L]) && d.integerA.length == 3 && d.integerA[0] == 2 && d.integerA[1] == 3 && d.integerA[2] == 4, "could not set array scalar value");
-    assert(d.get!(long[])("integerA").length == 3, "could not get array scalar value");
+    assert(d.get!(long[])("integerA")[0] == 2L, "could not get array scalar value");
     
     assert(d.set("textA", ["foo", "bar"]) && d.textA.length == 2 && d.textA[0] == "foo" && d.textA[1] == "bar", "could not set array string value");
-    assert(d.get!(string[])("textA").length == 2, "could not get array string value");
+    assert(d.get!(string[])("textA")[0] == "foo", "could not get array string value");
     
     assert(d.set("innerA", [new TestData]) && d.innerA.length == 1 && d.innerA[0] !is null, "could not set array data value");
-    assert(d.get!(TestData[])("innerA").length == 1, "could not get array data value");
+    assert(d.get!(TestData[])("innerA")[0] !is null, "could not get array data value");
     
     assert(d.set("additional", "ble") && d.additional == "ble", "could not set second level basic scalar value");
     assert(d.get!string("additional") == "ble", "could not get second level basic scalar value");
+    
+    assert(d.set("nanA", [double.nan]) && d.nanA.length == 1 && d.nanA[0] is double.nan, "could not set array data value");
+    assert(d.get!(double[])("nanA")[0] is double.nan, "could not get array data value");
 }
 
 T[] dup(T)(T[] arr) if(is(T : Data)) {
@@ -409,7 +460,7 @@ Data dup(Data t) {
 unittest {
     import std.stdio;
     import std.range;
-    writeln("testing dup of data and member");
+    writeln("testing dup and == of data and member");
 
     auto d = new InheritedTestData;
     d.uinteger = 5;
@@ -423,6 +474,7 @@ unittest {
 
     auto d2 = d.dup().as!InheritedTestData;
  
+    assert(d !is d2, "clones references are matching");
     assert(d2.uinteger == 5, "could not dup basic scalar value");
     assert(d2.text == "foo", "could not dup basic string value");   
     assert(d2.inner !is null && d2.inner !is d.inner, "could not dup basic data value");
@@ -432,6 +484,8 @@ unittest {
     assert(d2.innerA.length == 2 && d2.innerA[0] !is null && d2.innerA[1] !is null && d2.innerA[0] !is d2.innerA[1] && d2.innerA[0] !is d.innerA[0], "could not set array data value");
 
     assert(d2.additional == "ble", "could not dup basic scalar value");
+
+    assert(d == d2, "clones don't ==");
 }
 
 private JSONValue json(Variant t, PropertyInfo p) {
