@@ -1,6 +1,6 @@
 module flow.base.engine;
 
-import flow.base.util, flow.base.data, flow.base.tasker;
+import flow.base.util, flow.base.data;
 import flow.data.base;
 
 import core.thread, core.sync.rwmutex;
@@ -177,25 +177,27 @@ class Tick {
         else return this.get(e.id);
     }
 
-    protected EntityController get(string e) {
+    private EntityController get(string e) {
         if(this.ticker.entity.meta.ptr.id == e)
             throw new TickException("entity cannot controll itself");
         else return this.ticker.entity.space.get(e);
     }
 
     protected EntityController spawn(EntityMeta e) {
-        return this.ticker.entity.space.add(e);
+        return this.ticker.entity.space.spawn(e);
     }
 
     protected void kill(EntityPtr e) {
+        if(e.space != this.ticker.entity.space.meta.id)
+            throw new TickException("an entity not belonging to own space cannot be killed");
         this.kill(e.addr);
     }
 
-    protected void kill(string e) {
+    private void kill(string e) {
         if(this.ticker.entity.meta.ptr.addr == e)
             throw new TickException("entity cannot kill itself");
         else
-            this.ticker.entity.space.remove(e);
+            this.ticker.entity.space.kill(e);
     }
 
     protected bool send(Unicast s) {
@@ -349,9 +351,8 @@ version(unittest) {
 }
 
 unittest {
-    import flow.base.tasker;
     import std.stdio;
-    writeln("testing ticking");
+    writeln("testing ticking (you should see exactly one \"tick failed\" warning in log)");
 
     auto p = new Process;
     scope(exit) p.destroy;
@@ -628,7 +629,7 @@ private class Space : StateMachine!SystemState {
             return (e in this.entities).as!bool ? new EntityController(this.entities[e]) : null;
     }
 
-    EntityController add(EntityMeta m) {
+    EntityController spawn(EntityMeta m) {
         synchronized(this.sync.writer) {
             if(m.ptr.id in this.entities)
                 throw new SpaceException("entity with addr \""~m.ptr.addr~"\" is already existing");
@@ -641,7 +642,7 @@ private class Space : StateMachine!SystemState {
         }
     }
 
-    void remove(string e) {
+    void kill(string e) {
         synchronized(this.sync.writer) {
             if(e in this.entities) {
                 this.entities[e].destroy;
