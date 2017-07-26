@@ -23,21 +23,13 @@ class ProcessConfig : Data {
     mixin data;
 
     mixin field!(size_t, "worker");
-    mixin field!(string, "address");
     mixin field!(bool, "hark");
-}
-
-class SpacePtr : Data {
-    mixin data;
-
-    mixin field!(string, "id");
-    mixin field!(string, "process");
 }
 
 class SpaceMeta : Data {
     mixin data;
 
-    mixin field!(SpacePtr, "ptr");
+    mixin field!(string, "id");
     mixin array!(EntityMeta, "entities");
 }
 
@@ -77,7 +69,6 @@ class EntityPtr : Data {
 
     mixin field!(string, "id");
     mixin field!(string, "space");
-    mixin field!(string, "process");
     mixin field!(Access, "access");
 }
 

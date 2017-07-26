@@ -369,8 +369,7 @@ package class Entity : StateMachine!SystemState {
 
     this(Space s, EntityMeta m) {
         this.sync = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
-        m.ptr.space = s.meta.ptr.id;
-        m.ptr.process = s.meta.ptr.process;
+        m.ptr.space = s.meta.id;
         this.meta = m;
         this.space = s;
     }
@@ -496,7 +495,7 @@ package TickMeta createTick(string t, Entity e, Signal s) {
 }
 
 string address(EntityPtr e) {
-    return e.id~"@"~e.space~"@"~e.process;
+    return e.id~"@"~e.space;
 }
 
 class EntityController {
@@ -525,7 +524,7 @@ package bool matches(Space space, string pattern) {
     import std.regex, std.array;
 
     auto hit = false;
-    auto s = matchAll(space.meta.ptr.id, regex("[A-Za-z]*")).array;
+    auto s = matchAll(space.meta.id, regex("[A-Za-z]*")).array;
     auto p = matchAll(pattern, regex("[A-Za-z\\*]*")).array;
     foreach(i, m; s) {
         if(p.length > i) {
@@ -548,7 +547,6 @@ package class Space : StateMachine!SystemState {
 
     this(Process p, SpaceMeta m) {
         this.sync = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
-        m.ptr.process = p.config.address;
         this.meta = m;
         this.process = p;
     }
@@ -611,7 +609,7 @@ package class Space : StateMachine!SystemState {
     
     bool route(Unicast s, bool intern = false) {
         // if its a perfect match assuming process only accepted a signal for itself
-        if(s.dst.space == this.meta.ptr.id) {
+        if(s.dst.space == this.meta.id) {
             synchronized(this.sync.reader) {
                 foreach(e; this.entities.values)
                     if((intern || e.meta.ptr.access == Access.Global) && e.meta.ptr == s.dst) {
@@ -627,7 +625,7 @@ package class Space : StateMachine!SystemState {
         auto r = false;
         // if its adressed to own space or parent using * wildcard or even none
         // in each case we do not want to regex search when ==
-        if(s.space == this.meta.ptr.id || this.matches(s.space)) {
+        if(s.space == this.meta.id || this.matches(s.space)) {
             synchronized(this.sync.reader) {
                 foreach(e; this.entities.values)
                     r = e.receipt(s) || r;
@@ -691,15 +689,14 @@ class Process {
             this.spaces[s].destroy;
     }
 
-    /// shifting signal from junction to junction also across processes
+    /// shifting signal from space to space also across processes
     package bool shift(Unicast s, bool intern = false) {
         /* each time a pointer leaves a space
         it has to get dereferenced */
         if(intern) s.dst = s.dst.dup.as!EntityPtr;
-
-        if((intern && s.dst.process == string.init) || s.dst.process == this.config.address)
-            foreach(spc; this.spaces.values)
-                if(spc.route(s, intern)) return true;
+        
+        foreach(spc; this.spaces.values)
+            if(spc.route(s, intern)) return true;
                 
         return false;
         /* TODO return intern && net.port(s);*/
@@ -722,10 +719,10 @@ class Process {
     void add(SpaceMeta s) {
         this.ensureThread();
         
-        if(s.ptr.id in this.spaces)
-            throw new ProcessException("space with id \""~s.ptr.id~"\" is already existing");
+        if(s.id in this.spaces)
+            throw new ProcessException("space with id \""~s.id~"\" is already existing");
         else
-            this.spaces[s.ptr.id] = new Space(this, s);
+            this.spaces[s.id] = new Space(this, s);
     }
 
     bool exists(string s) {
@@ -752,4 +749,9 @@ class Process {
         } else
             throw new ProcessException("space with id \""~s~"\" is not existing");
     }
+}
+
+unittest {
+    auto pc = new ProcessConfig;
+    auto p = new Process(pc);
 }
