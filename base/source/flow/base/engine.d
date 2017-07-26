@@ -132,15 +132,15 @@ package class Ticker : StateMachine!TickerState {
 }
 
 private void msg(Ticker t, LL level, string msg) {
-    Log.msg(level, "ticker@entity("~t.entity.meta.ptr.address~"): "~msg);
+    Log.msg(level, "ticker@entity("~t.entity.meta.ptr.addr~"): "~msg);
 }
 
 private void msg(Ticker t, LL level, Exception ex, string msg = string.init) {
-    Log.msg(level, ex, "ticker@entity("~t.entity.meta.ptr.address~"): "~msg);
+    Log.msg(level, ex, "ticker@entity("~t.entity.meta.ptr.addr~"): "~msg);
 }
 
 private void msg(Ticker t, LL level, Data d, string msg = string.init) {
-    Log.msg(level, d, "ticker@entity("~t.entity.meta.ptr.address~"): "~msg);
+    Log.msg(level, d, "ticker@entity("~t.entity.meta.ptr.addr~"): "~msg);
 }
 
 class Tick {
@@ -167,11 +167,11 @@ class Tick {
     }
 
     protected EntityController get(EntityPtr e) {
-        return this.get(e.address);
+        return this.get(e.addr);
     }
 
     protected EntityController get(string e) {
-        if(this.ticker.entity.meta.ptr.address == e)
+        if(this.ticker.entity.meta.ptr.addr == e)
             throw new TickException("entity cannot controll itself");
         else
             return this.ticker.entity.space.get(e);
@@ -182,11 +182,11 @@ class Tick {
     }
 
     protected void kill(EntityPtr e) {
-        this.kill(e.address);
+        this.kill(e.addr);
     }
 
     protected void kill(string e) {
-        if(this.ticker.entity.meta.ptr.address == e)
+        if(this.ticker.entity.meta.ptr.addr == e)
             throw new TickException("entity cannot kill itself");
         else
             this.ticker.entity.space.remove(e);
@@ -208,15 +208,15 @@ class Tick {
 }
 
 void msg(Tick t, LL level, string msg) {
-    Log.msg(level, "tick@entity("~t.ticker.entity.meta.ptr.address~"): "~msg);
+    Log.msg(level, "tick@entity("~t.ticker.entity.meta.ptr.addr~"): "~msg);
 }
 
 void msg(Tick t, LL level, Exception ex, string msg = string.init) {
-    Log.msg(level, ex, "tick@entity("~t.ticker.entity.meta.ptr.address~"): "~msg);
+    Log.msg(level, ex, "tick@entity("~t.ticker.entity.meta.ptr.addr~"): "~msg);
 }
 
 void msg(Tick t, LL level, Data d, string msg = string.init) {
-    Log.msg(level, d, "tick@entity("~t.ticker.entity.meta.ptr.address~"): "~msg);
+    Log.msg(level, d, "tick@entity("~t.ticker.entity.meta.ptr.addr~"): "~msg);
 }
 
 private Tick createTick(TickMeta m, Ticker ticker) {
@@ -494,7 +494,7 @@ package TickMeta createTick(string t, Entity e, Signal s) {
     return m;
 }
 
-string address(EntityPtr e) {
+string addr(EntityPtr e) {
     return e.id~"@"~e.space;
 }
 
@@ -580,14 +580,14 @@ package class Space : StateMachine!SystemState {
             if(e in this.entities)
                 return new EntityController(this.entities[e]);
             else
-                throw new SpaceException("entity with address \""~e~"\" is not existing");
+                throw new SpaceException("entity with addr \""~e~"\" is not existing");
     }
 
     EntityController add(EntityMeta m) {
         synchronized(this.sync.writer) {
-            string addr = m.ptr.address;
+            string addr = m.ptr.addr;
             if(addr in this.entities)
-                throw new SpaceException("entity with address \""~addr~"\" is already existing");
+                throw new SpaceException("entity with addr \""~addr~"\" is already existing");
             else {
                 this.meta.entities ~= m;
                 Entity e = new Entity(this, m);
@@ -603,7 +603,7 @@ package class Space : StateMachine!SystemState {
                 this.entities[e].destroy;
                 this.entities.remove(e);
             } else
-                throw new SpaceException("entity with address \""~e~"\" is not existing");
+                throw new SpaceException("entity with addr \""~e~"\" is not existing");
         }
     }
     

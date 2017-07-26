@@ -2,6 +2,7 @@ module flow.data.base;
 
 import flow.base.data;
 
+import core.time;
 import std.uuid;
 
 /// identifyable data
@@ -18,12 +19,44 @@ class Damage : Data {
     mixin field!(Data, "recovery");
 }
 
+class NetMeta : Data {
+    mixin data;
+
+    /// listener should listen to
+    mixin field!(string, "addr");
+}
+
+/** central nets are relying on a
+space lookup service to find certain spaces */
+class CentralNetMeta : NetMeta {
+    mixin data;
+
+    mixin array!(string, "lookups");
+}
+
+/** decentral nets are creating a cluod graph of
+related nodes to examine optimal routes to certain spaces */
+class DecentralNetMeta : NetMeta {
+    mixin data;
+    
+    mixin array!(NodeInfo, "nodes");
+}
+
+class NodeInfo : Data {
+    mixin data;
+
+    mixin field!(string, "addr");
+    
+    // TODO local part of cloud graph
+}
+
 /// configuration object of a process
 class ProcessConfig : Data {
     mixin data;
 
     mixin field!(size_t, "worker");
     mixin field!(bool, "hark");
+    mixin array!(NetMeta, "nets");
 }
 
 class SpaceMeta : Data {

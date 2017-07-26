@@ -16,6 +16,7 @@ template canHandle(T) {
         is(T == SysTime) ||
         is(T == DateTime) ||
         is(T == Date) ||
+        is(T == Duration) ||
         is(T == string) ||        
         is(T : Data);
 }
@@ -28,6 +29,7 @@ enum TypeDesc {
     SysTime,
     DateTime,
     Date,
+    Duration,
     String,
     Data
 }
@@ -203,6 +205,7 @@ template TPropertyHelper(T, string name) {
         else if(is(T == SysTime)) p._desc = TypeDesc.SysTime;
         else if(is(T == DateTime)) p._desc = TypeDesc.DateTime;
         else if(is(T == Date)) p._desc = TypeDesc.Date;
+        else if(is(T == Duration)) p._desc = TypeDesc.Duration;
         else if(is(T == string)) p._desc = TypeDesc.String;
 
         return p;
@@ -224,6 +227,7 @@ template TPropertyHelper(T, string name) {
         else if(is(T == SysTime)) p._desc = TypeDesc.SysTime;
         else if(is(T == DateTime)) p._desc = TypeDesc.DateTime;
         else if(is(T == Date)) p._desc = TypeDesc.Date;
+        else if(is(T == Duration)) p._desc = TypeDesc.Duration;
         else if(is(T == string)) p._desc = TypeDesc.String;
 
         return p;
@@ -242,6 +246,7 @@ version (unittest) class TestData : Data {
     mixin field!(UUID, "uuid");
     mixin field!(SysTime, "sysTime");
     mixin field!(DateTime, "dateTime");
+    mixin field!(Duration, "duration");
     mixin field!(string, "text");
 
     // testing array fields
@@ -253,6 +258,7 @@ version (unittest) class TestData : Data {
     mixin array!(UUID, "uuidA");
     mixin array!(SysTime, "sysTimeA");
     mixin array!(DateTime, "dateTimeA");
+    mixin array!(Duration, "durationA");
     mixin array!(string, "textA");
 
     // testing for module name conflicts
@@ -429,6 +435,8 @@ private Variant dup(Variant t, PropertyInfo p) {
             return Variant(t.get!(DateTime[]).dup);
         else if(p.desc == TypeDesc.Date)
             return Variant(t.get!(Date[]).dup);
+        else if(p.desc == TypeDesc.Duration)
+            return Variant(t.get!(Duration[]).dup);
         else if(p.desc == TypeDesc.String)
             return Variant(t.get!(string[]).dup);
         else if(p.desc == TypeDesc.Data)
@@ -527,6 +535,8 @@ private JSONValue json(Variant t, PropertyInfo p) {
             return t.get!(DateTime[]).json;
         else if(p.desc == TypeDesc.Date)
             return t.get!(Date[]).json;
+        else if(p.desc == TypeDesc.Duration)
+            return t.get!(Duration[]).json;
         else if(p.desc == TypeDesc.String)
             return t.get!(string[]).json;
         else if(p.desc == TypeDesc.Data)
@@ -569,6 +579,8 @@ private JSONValue json(Variant t, PropertyInfo p) {
             return t.get!(DateTime).json;
         else if(p.desc == TypeDesc.Date)
             return t.get!(Date).json;
+        else if(p.desc == TypeDesc.Duration)
+            return t.get!(Duration).json;
         else if(p.desc == TypeDesc.String)
             return t.get!(string).json;
         else if(p.desc == TypeDesc.Data)
@@ -577,7 +589,7 @@ private JSONValue json(Variant t, PropertyInfo p) {
     }
 }
 
-private JSONValue json(T)(T arr) if(isArray!T && is(ElementType!T : Data) || is(ElementType!T == UUID) || is(ElementType!T == SysTime) || is(ElementType!T == DateTime) || is(ElementType!T == Date)) {
+private JSONValue json(T)(T arr) if(isArray!T && (is(ElementType!T : Data) || is(ElementType!T == UUID) || is(ElementType!T == SysTime) || is(ElementType!T == DateTime) || is(ElementType!T == Date) || is(ElementType!T == Duration))) {
     if(!arr.empty) {
         JSONValue[] cArr;
         foreach(e; arr) cArr ~= e.json;
@@ -586,7 +598,7 @@ private JSONValue json(T)(T arr) if(isArray!T && is(ElementType!T : Data) || is(
     } else return JSONValue(null);
 }
 
-private JSONValue json(T)(T arr) if(isArray!T && canHandle!(ElementType!T) && !is(T == string) && !is(ElementType!T : Data) && !is(ElementType!T == UUID) && !is(ElementType!T == SysTime) && !is(ElementType!T == DateTime) && !is(ElementType!T == Date)) {
+private JSONValue json(T)(T arr) if(isArray!T && canHandle!(ElementType!T) && !is(T == string) && !is(ElementType!T : Data) && !is(ElementType!T == UUID) && !is(ElementType!T == SysTime) && !is(ElementType!T == DateTime) && !is(ElementType!T == Date) && !is(ElementType!T == Duration)) {
     if(!arr.empty) {
         JSONValue[] cArr;
         foreach(e; arr) cArr ~= JSONValue(e);
@@ -595,7 +607,7 @@ private JSONValue json(T)(T arr) if(isArray!T && canHandle!(ElementType!T) && !i
     } else return JSONValue(null);
 }
 
-private JSONValue json(T)(T val) if(canHandle!T && !is(T : Data) && !is(T == float) && !is(T == double) && !is(T == UUID) && !is(T == SysTime) && !is(T == DateTime) && !is(T == Date)) {
+private JSONValue json(T)(T val) if(canHandle!T && !is(T : Data) && !is(T == float) && !is(T == double) && !is(T == UUID) && !is(T == SysTime) && !is(T == DateTime) && !is(T == Date) && !is(T == Duration)) {
     return val is T.init ? JSONValue(null) : JSONValue(val);
 }
 
@@ -610,6 +622,10 @@ private JSONValue json(T)(T val) if(is(T == UUID)) {
 
 private JSONValue json(T)(T val) if(is(T == SysTime) || is(T == DateTime) || is(T == Date)) {
     return val is T.init ? JSONValue(null) : JSONValue(val.toISOExtString());
+}
+
+private JSONValue json(T)(T val) if(is(T == Duration)) {
+    return val is T.init ? JSONValue(null) : JSONValue(val.total!"hnsecs");
 }
 
 JSONValue json(T)(T t) if(is(T : Data)) {
@@ -661,6 +677,7 @@ Data createData(JSONValue j) {
             if(!val.hasValue) val = e.get!SysTime(d, p);
             if(!val.hasValue) val = e.get!DateTime(d, p);
             if(!val.hasValue) val = e.get!Date(d, p);
+            if(!val.hasValue) val = e.get!Duration(d, p);
             if(!val.hasValue) val = e.get!string(d, p);
             if(!val.hasValue)
                 val = e.get!Data(d, p);
@@ -686,6 +703,8 @@ private Variant get(T)(JSONValue j, Data d, PropertyInfo p) if(canHandle!T && !i
                     return Variant(j.str);
                 else static if(is(T == SysTime) || is(T == DateTime) || is(T == Date))
                     return Variant(T.fromISOString(j.str));
+                else static if(is(T == Duration))
+                    return Variant(j.integer.hnsecs);
                 else return Variant();
             case JSON_TYPE.INTEGER:
                 static if(isScalarType!T)
