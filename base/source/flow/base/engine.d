@@ -6,22 +6,21 @@ import flow.data.base;
 import core.thread, core.sync.rwmutex;
 import std.uuid, std.string;
 
-package enum TickerState {
-    Stopped = 0,
-    Started,
-    Destroyed
-}
-
-package class Ticker : StateMachine!TickerState {
+private class Ticker : StateMachine!SystemState {
     bool ticking;
+    bool disposing;
     
+    UUID id;
     Entity entity;
     TickMeta actual;
     TickMeta coming;
     Exception error;
 
     private this(Entity b) {
+        this.id = randomUUID;
         this.entity = b;
+
+        super();
     }
 
     this(Entity b, TickMeta initial) {
@@ -30,37 +29,48 @@ package class Ticker : StateMachine!TickerState {
     }
 
     ~this() {
-        if(this.state != TickerState.Destroyed)
-            this.state = TickerState.Destroyed;
+        if(this.state != SystemState.Destroyed)
+            this.state = SystemState.Destroyed;
     }
 
     void start() {
-        this.state = TickerState.Started;
+        this.state = SystemState.Ticking;
     }
 
-    void stop() {
-        this.state = TickerState.Stopped;
+    void stop(bool disposing = true) {
+        this.disposing = disposing;
+        this.state = SystemState.Frozen;
     }
 
-    override protected bool onStateChanging(TickerState o, TickerState n) {
+    void dispose() {
+        this.entity.dispose(this);
+    }
+
+    override protected bool onStateChanging(SystemState o, SystemState n) {
         switch(n) {
-            case TickerState.Started:
-                return o == TickerState.Stopped;
-            case TickerState.Stopped:
-                return o == TickerState.Started;
-            case TickerState.Destroyed:
+            case SystemState.Ticking:
+                return o == SystemState.Frozen;
+            case SystemState.Frozen:
+                return o == SystemState.Ticking;
+            case SystemState.Destroyed:
                 return true;
             default: return false;
         }
     }
 
-    override protected void onStateChanged(TickerState o, TickerState n) {
+    override protected void onStateChanged(SystemState o, SystemState n) {
         switch(n) {
-            case TickerState.Started:
+            case SystemState.Ticking:
                 this.entity.space.process.tasker.run(&this.tick);
                 break;
-            case TickerState.Stopped:
-            case TickerState.Destroyed:
+            case SystemState.Frozen:
+                while(this.ticking)
+                    Thread.sleep(5.msecs);
+
+                if(this.disposing)
+                    this.dispose();
+                break;
+            case SystemState.Destroyed:
                 while(this.ticking)
                     Thread.sleep(5.msecs);
                 break;
@@ -69,64 +79,59 @@ package class Ticker : StateMachine!TickerState {
     }
 
     void tick() {
-        if(this.coming !is null) {
-            Tick t = this.coming.createTick(this);
-            if(t !is null) {
-                if(t.ptr.id == UUID.init)
-                    t.ptr.id = randomUUID;
-        
-                if(this.runTick(t) && this.coming !is null) {
+        Tick t = this.coming.createTick(this);
+        if(t !is null) {
+            if(t.info.id == UUID.init)
+                t.info.id = randomUUID;
+    
+            if(this.state == SystemState.Ticking) {
+                this.ticking = true;
+                try { this.runTick(t); }
+                finally {this.ticking = false;}
+
+                if(this.coming !is null)
                     this.entity.space.process.tasker.run(&this.tick);
-                    return;
-                } else {
-                    if(this.state == TickerState.Started) this.stop();
-                    this.msg(LL.FDebug, "nothing to do, ticker ends");
+                else {
+                    this.msg(LL.FDebug, "nothing to do, ticker is ending");
+                    this.stop();
                 }
             } else {
-                if(this.state == TickerState.Started) this.stop();
-                this.msg(LL.Error, "nothing to do, ticker ends");
+                this.msg(LL.FDebug, "ticker is not ticking");
             }
         } else {
-            if(this.state == TickerState.Started) this.stop();
-            this.msg(LL.FDebug, "nothing to do, ticker ends");
+            this.msg(LL.Warning, "could not create tick -> ending");  
+            if(this.state == SystemState.Ticking) this.stop();
         }
     }
 
-    private bool runTick(Tick t) {
-        this.ticking = true;
-        scope(exit) this.ticking = false;
-
+    private void runTick(Tick t) {
         // check if entity is still running after getting the sync
-        if(this.state == TickerState.Started) {
-            this.actual = t.meta;
-            this.coming = null;
+        this.actual = t.meta;
+        this.coming = null;
 
+        try {
+            this.msg(LL.FDebug, this.actual, "executing tick");
+            t.run();
+            this.msg(LL.FDebug, this.actual, "finished tick");
+        }
+        catch(Exception ex) {
+            this.msg(LL.Warning, ex, "tick failed");
             try {
-                this.msg(LL.FDebug, this.actual, "executing tick");
-                t.run();
-                this.msg(LL.FDebug, this.actual, "finished tick");
+                this.msg(LL.Info, this.actual, "handling tick error");
+                t.error(ex);
+                this.msg(LL.Info, this.actual, "tick error handled");
             }
-            catch(Exception ex) {
-                this.msg(LL.Warning, ex, "tick failed");
-                try {
-                    this.msg(LL.Info, this.actual, "handling tick error");
-                    t.error(ex);
-                    this.msg(LL.Info, this.actual, "tick error handled");
-                }
-                catch(Exception ex2) {
-                    this.msg(LL.Warning, ex2, "handling tick error failed");
-                }
+            catch(Exception ex2) {
+                this.msg(LL.Warning, ex2, "handling tick error failed");
             }
-
-            return true;
-        } else return false;
+        }
     }
 
-    void next(TickPtr i, Data d) {
+    void next(TickInfo i, Data d) {
         this.coming = createTick(i, this.actual, d);
     }
 
-    void fork(TickPtr i, Data d) {
+    void fork(TickInfo i, Data d) {
         this.entity.start(createTick(i, this.actual, d));
     }
 }
@@ -144,15 +149,15 @@ private void msg(Ticker t, LL level, Data d, string msg = string.init) {
 }
 
 class Tick {
-    package Ticker ticker;
-    package TickMeta meta;
+    private Ticker ticker;
+    private TickMeta meta;
 
     protected @property ReadWriteMutex sync() {return this.ticker.entity.sync;}
     protected @property EntityPtr entity() {return this.ticker.entity.meta.ptr;}
     protected @property Data context() {return this.ticker.entity.meta.context;}
-    protected @property TickPtr ptr() {return this.meta.ptr;}
+    protected @property TickInfo info() {return this.meta.info;}
     protected @property Signal trigger() {return this.meta.trigger;}
-    protected @property TickPtr previous() {return this.meta.previous;}
+    protected @property TickInfo previous() {return this.meta.previous;}
     protected @property Data data() {return this.meta.data;}
 
     public abstract void run();
@@ -167,14 +172,15 @@ class Tick {
     }
 
     protected EntityController get(EntityPtr e) {
-        return this.get(e.addr);
+        if(e.space != this.ticker.entity.space.meta.id)
+            throw new TickException("an entity not belonging to own space cannot be controlled");
+        else return this.get(e.id);
     }
 
     protected EntityController get(string e) {
-        if(this.ticker.entity.meta.ptr.addr == e)
+        if(this.ticker.entity.meta.ptr.id == e)
             throw new TickException("entity cannot controll itself");
-        else
-            return this.ticker.entity.space.get(e);
+        else return this.ticker.entity.space.get(e);
     }
 
     protected EntityController spawn(EntityMeta e) {
@@ -220,7 +226,7 @@ void msg(Tick t, LL level, Data d, string msg = string.init) {
 }
 
 private Tick createTick(TickMeta m, Ticker ticker) {
-    auto t = Object.factory(ticker.coming.ptr.type).as!Tick;
+    auto t = Object.factory(ticker.coming.info.type).as!Tick;
     if(t !is null) {
         t.ticker = ticker;
         t.meta = m;
@@ -229,27 +235,27 @@ private Tick createTick(TickMeta m, Ticker ticker) {
     return t;
 }
 
-private TickPtr createTick(Tick tick, string t) {
-    auto i = new TickPtr;
+private TickInfo createTick(Tick tick, string t) {
+    auto i = new TickInfo;
     i.id = randomUUID;
     i.type = t;
-    i.group = tick.ptr.group;
+    i.group = tick.info.group;
 
     return i;
 }
 
-private TickMeta createTick(TickPtr t, TickMeta p, Data d = null) {
+private TickMeta createTick(TickInfo t, TickMeta p, Data d = null) {
     auto m = new TickMeta;
-    m.ptr = t;
+    m.info = t;
     m.trigger = p.trigger;
-    m.previous = p.ptr;
+    m.previous = p.info;
     m.data = d;
 
     return m;
 }
 
 version(unittest) {
-    class TestTickException : Exception {this(){super(string.init);}}
+    class TestTickException : FlowException {mixin exception;}
 
     class TestSignal : Signal {
         mixin signal;
@@ -259,7 +265,11 @@ version(unittest) {
         mixin data;
 
         mixin field!(size_t, "cnt");
-        mixin field!(bool, "error");
+        mixin field!(string, "error");
+        mixin field!(bool, "forked");
+        mixin field!(TickInfo, "info");
+        mixin field!(TestTickData, "data");
+        mixin field!(TestSignal, "trigger");
     }
 
     class TestTickData : Data {
@@ -275,103 +285,121 @@ version(unittest) {
             auto c = this.context.as!TestTickContext;
             auto d = this.data.as!TestTickData !is null ?
                 this.data.as!TestTickData :
-                "__flow.tick.TestTickData".createData().as!TestTickData;
+                "flow.base.engine.TestTickData".createData().as!TestTickData;
+            auto t = this.trigger.as!TestSignal;
+
+            c.info = this.info;
+            c.data = d;
+            c.trigger = t;
 
             d.cnt++;
 
-            if(d.cnt > 3)
+            if(d.cnt == 4) {
+                this.fork(this.info.type, data);
                 throw new TestTickException;
-            
-            synchronized(this.sync.writer)
-                c.cnt += d.cnt;
+            } else if(d.cnt > 4) {
+                c.forked = true;
+            } else {            
+                /* we do not really need to sync that beacause D
+                syncs integrals automatically but we need an example */
+                synchronized(this.sync.writer)
+                    c.cnt += d.cnt;
 
-            this.next("__flow.tick.TestTick", d);
+                this.next("flow.base.engine.TestTick", d);
+            }
         }
 
         override void error(Exception ex) {
             if(ex.as!TestTickException !is null) {
                 auto c = this.context.as!TestTickContext;
-                c.error = true;
+                synchronized(this.sync.writer)
+                    c.error = ex.as!FlowException.type;
             }
         }
+    }
+
+    SpaceMeta createTestSpace() {
+        auto s = new SpaceMeta;
+        s.id = "s";
+        s.entities ~= createTestEntity();
+
+        return s;
+    }
+
+    EntityMeta createTestEntity() {
+        auto e = new EntityMeta;
+        e.ptr = new EntityPtr;
+        e.ptr.id = "e";
+        e.context = new TestTickContext;
+        e.ticks ~= createTestTick();
+
+        return e;
+    }
+
+    TickMeta createTestTick() {
+        auto t = new TickMeta;
+        t.info = new TickInfo;
+        t.info.id = randomUUID;
+        t.info.type = "flow.base.engine.TestTick";
+        t.info.group = randomUUID;
+        t.trigger = new TestSignal;
+
+        return t;
     }
 }
 
 unittest {
-    /*import flow.base.tasker;
+    import flow.base.tasker;
     import std.stdio;
     writeln("testing ticking");
 
-    auto tasker = new Tasker(1);
-    tasker.start();
-    scope(exit) tasker.stop();
-
-    auto entity = new EntityMeta;
-    entity.ptr = new EntityPtr;
-    entity.ptr.id = "testentity";
-    entity.ptr.space = "testspace";
-    entity.ptr.process = "testprocess";
-    entity.context = new TestTickContext;
-
     auto p = new Process;
-    auto entity = new Entity(tasker, entity);
+    scope(exit) p.destroy;
+    auto s = p.add(createTestSpace());
+    auto e = s.get("e");
+    auto g = e.entity.meta.ticks[0].info.group;
 
-    auto s = new TestSignal;
-    auto t1 = new TickPtr;
-    t1.id = randomUUID;
-    t1.type = "__flow.tick.TestTick";
-    t1.group = randomUUID;
-    auto ticker1 = new Ticker(entity, s, t1);
-    ticker1.start();
+    s.tick();
 
-    while(ticker1.state == TickerState.Started)
+    while(e.entity.ticker.keys.length > 0)
         Thread.sleep(5.msecs);
 
-    assert(entity.context.as!TestTickContext.cnt == 6, "logic wasn't executed correct");
-    assert(ticker1.actual.trigger.as!TestSignal !is null, "trigger was not passed correctly");
-    assert(ticker1.actual.ptr.group == t1.group, "group was not passed correctly");
-    assert(ticker1.actual.data.as!TestTickData !is null, "data was not set correctly");
-    assert(ticker1.state == TickerState.Stopped, "ticker was left in wrong state");*/
-
-    /*auto t2 = new TickPtr;
-    t2.id = randomUUID;
-    t2.type = "__flow.tick.TestTickNotExisting";
-    t2.group = randomUUID;
-    auto ticker2 = new Ticker(entity, s, t2);
-    ticker2.start();
-
-    while(ticker2.state == TickerState.Started)
-        Thread.sleep(5.msecs);
-
-    assert(ticker2.error !is null, "ticker should notify that it could not create tick");
-    assert(ticker2.state == TickerState.Damaged, "ticker was left in wrong state");*/
+    s.freeze();
+    
+    auto em = e.snap;
+    assert(em.context.as!TestTickContext.cnt == 6, "logic wasn't executed correct");
+    assert(em.context.as!TestTickContext.trigger !is null, "trigger was not passed correctly");
+    assert(em.context.as!TestTickContext.info.group == g, "group was not passed correctly");
+    assert(em.context.as!TestTickContext.data !is null, "data was not set correctly");
+    assert(em.context.as!TestTickContext.error == "flow.base.engine.TestTickException", "error was not handled");
+    assert(em.context.as!TestTickContext.forked, "didn't fork as expected");
 
     // TODO
-    // fork
     // answer
-    // send
     // spawn
-    // kill (also killing itsetlf)
+    // kill
 }
 
-package enum SystemState {
+private enum SystemState {
     Frozen = 0,
     Ticking,
     Destroyed
 }
 
-package class Entity : StateMachine!SystemState {
+private class Entity : StateMachine!SystemState {
     ReadWriteMutex sync;
     Space space;
     EntityMeta meta;
 
-    private Ticker[] ticker;
+    private Ticker[UUID] ticker;
 
     this(Space s, EntityMeta m) {
         this.sync = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
         m.ptr.space = s.meta.id;
         this.meta = m;
         this.space = s;
+
+        super();
     }
 
     ~this() {
@@ -382,17 +410,17 @@ package class Entity : StateMachine!SystemState {
     void start(TickMeta t) {
         synchronized(this.sync.writer) {
             auto ticker = new Ticker(this, t);
-            this.ticker ~= ticker;
+            this.ticker[ticker.id] = ticker;
             ticker.start();
         }
     }
 
-    void stop(Ticker t) {
-        synchronized(this.sync.writer) {
-            t.stop();
+    void dispose(Ticker t) {
+        synchronized(this.sync.writer)
             if(t.coming !is null)
                 this.meta.ticks ~= t.coming;
-        }
+            this.ticker.remove(t.id);
+            t.destroy;
     }
 
     void freeze() {
@@ -409,7 +437,7 @@ package class Entity : StateMachine!SystemState {
             foreach(r; this.meta.receptors) {
                 if(s.dataType == r.signal) {
                     auto ticker = new Ticker(this, r.tick.createTick(this, s));
-                    this.ticker ~= ticker;
+                    this.ticker[ticker.id] = ticker;
                     ticker.start();
                     ret = true;
                 }
@@ -461,34 +489,39 @@ package class Entity : StateMachine!SystemState {
                 synchronized(this.sync.writer)
                     foreach(t; this.meta.ticks) {
                         auto ticker = new Ticker(this, t);
-                        this.ticker ~= ticker;
+                        this.ticker[ticker.id] = ticker;
                         ticker.start();
                     }
                 break;
-            case SystemState.Frozen:
-                synchronized(this.sync.writer)
-                    foreach(t; this.ticker) {
-                        t.stop();
+            case SystemState.Frozen: 
+                synchronized(this.sync.writer) {
+                    foreach(t; this.ticker.values.dup) {
+                        t.stop(false);
                         if(t.coming !is null)
                             this.meta.ticks ~= t.coming;
+                        this.ticker.remove(t.id);
+                        t.destroy;
                     }
+                }                    
                 break;
             case SystemState.Destroyed:
                 synchronized(this.sync.writer)
-                    foreach(t; this.ticker)
+                    foreach(t; this.ticker.values) {
+                        t.stop(false);
                         t.destroy;
+                    }
                 break;
             default: break;
         }
     }
 }
 
-package TickMeta createTick(string t, Entity e, Signal s) {
+private TickMeta createTick(string t, Entity e, Signal s) {
     auto m = new TickMeta;
-    m.ptr = new TickPtr;
-    m.ptr.entity = e.meta.ptr;
-    m.ptr.type = t;
-    m.ptr.group = s.group;
+    m.info = new TickInfo;
+    m.info.entity = e.meta.ptr;
+    m.info.type = t;
+    m.info.group = s.group;
     m.trigger = s;
 
     return m;
@@ -499,11 +532,11 @@ string addr(EntityPtr e) {
 }
 
 class EntityController {
-    package Entity entity;
+    private Entity entity;
 
     @property SystemState state() {return this.entity.state;}
 
-    package this(Entity e) {
+    private this(Entity e) {
         this.entity = e;
     }
 
@@ -520,7 +553,7 @@ class EntityController {
     }
 }
 
-package bool matches(Space space, string pattern) {
+private bool matches(Space space, string pattern) {
     import std.regex, std.array;
 
     auto hit = false;
@@ -538,7 +571,7 @@ package bool matches(Space space, string pattern) {
     return hit;
 }
 
-package class Space : StateMachine!SystemState {
+private class Space : StateMachine!SystemState {
     ReadWriteMutex sync;
     SpaceMeta meta;
     Process process;
@@ -549,6 +582,21 @@ package class Space : StateMachine!SystemState {
         this.sync = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
         this.meta = m;
         this.process = p;
+
+        super();
+
+        this.init();
+    }
+
+    void init() {
+        foreach(em; this.meta.entities) {
+            if(em.ptr.id in this.entities)
+                throw new SpaceException("entity with addr \""~em.ptr.addr~"\" is already existing");
+            else {
+                Entity e = new Entity(this, em);
+                this.entities[em.ptr.id] = e;
+            }
+        }
     }
 
     ~this() {
@@ -577,21 +625,17 @@ package class Space : StateMachine!SystemState {
 
     EntityController get(string e) {
         synchronized(this.sync.reader)
-            if(e in this.entities)
-                return new EntityController(this.entities[e]);
-            else
-                throw new SpaceException("entity with addr \""~e~"\" is not existing");
+            return (e in this.entities).as!bool ? new EntityController(this.entities[e]) : null;
     }
 
     EntityController add(EntityMeta m) {
         synchronized(this.sync.writer) {
-            string addr = m.ptr.addr;
-            if(addr in this.entities)
-                throw new SpaceException("entity with addr \""~addr~"\" is already existing");
+            if(m.ptr.id in this.entities)
+                throw new SpaceException("entity with addr \""~m.ptr.addr~"\" is already existing");
             else {
                 this.meta.entities ~= m;
                 Entity e = new Entity(this, m);
-                this.entities[addr] = e;
+                this.entities[m.ptr.id] = e;
                 return new EntityController(e);
             }
         }
@@ -661,7 +705,7 @@ package class Space : StateMachine!SystemState {
                 break;
             case SystemState.Frozen:
                 synchronized(this.sync.reader)
-                    foreach(e; this.entities)
+                    foreach(e; this.entities.values)
                         e.freeze();
                 break;
             case SystemState.Destroyed:
@@ -675,22 +719,33 @@ package class Space : StateMachine!SystemState {
 }
 
 class Process {
-    package ProcessConfig config;
-    package Tasker tasker;
-    package Space[string] spaces;
+    private ProcessConfig config;
+    private Tasker tasker;
+    private Space[string] spaces;
 
-    this(ProcessConfig c = null, Tasker t = null) {
+    this(ProcessConfig c = null) {
+        import core.cpuid;
+        if(c is null)
+            c = new ProcessConfig;
+
+        if(c.worker < 1)
+            c.worker = threadsPerCPU > 1 ? threadsPerCPU-1 : 1;
+
         this.config = c;
-        this.tasker = t;
+        this.tasker = new Tasker(c.worker);
+        this.tasker.start();
     }
 
     ~this() {
         foreach(s; this.spaces.keys)
             this.spaces[s].destroy;
+
+        this.tasker.stop();
+        this.tasker.destroy;
     }
 
     /// shifting signal from space to space also across processes
-    package bool shift(Unicast s, bool intern = false) {
+    private bool shift(Unicast s, bool intern = false) {
         /* each time a pointer leaves a space
         it has to get dereferenced */
         if(intern) s.dst = s.dst.dup.as!EntityPtr;
@@ -702,7 +757,7 @@ class Process {
         /* TODO return intern && net.port(s);*/
     }
 
-    package bool shift(Multicast s, bool intern = false) {
+    private bool shift(Multicast s, bool intern = false) {
         auto r = false;
         foreach(spc; this.spaces.values)
             r = spc.route(s, intern) || r;
@@ -716,19 +771,21 @@ class Process {
             throw new ProcessError("process can be only controlled by main thread");
     }
 
-    void add(SpaceMeta s) {
+    Space add(SpaceMeta s) {
         this.ensureThread();
         
         if(s.id in this.spaces)
             throw new ProcessException("space with id \""~s.id~"\" is already existing");
-        else
-            this.spaces[s.id] = new Space(this, s);
+        else {
+            auto space = new Space(this, s);
+            this.spaces[s.id] = space;
+            return space;
+        }
     }
 
-    bool exists(string s) {
+    Space get(string s) {
         this.ensureThread();
-
-        return (s in this.spaces).as!bool;
+        return (s in this.spaces).as!bool ? this.spaces[s] : null;
     }
 
     SpaceMeta snap(string s) {
@@ -752,6 +809,5 @@ class Process {
 }
 
 unittest {
-    auto pc = new ProcessConfig;
-    auto p = new Process(pc);
+    //auto p = new Process;
 }

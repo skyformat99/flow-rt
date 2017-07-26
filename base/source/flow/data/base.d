@@ -66,7 +66,7 @@ class SpaceMeta : Data {
     mixin array!(EntityMeta, "entities");
 }
 
-class TickPtr : IdData {
+class TickInfo : IdData {
     mixin data;
 
     mixin field!(EntityPtr, "entity");
@@ -77,9 +77,9 @@ class TickPtr : IdData {
 class TickMeta : Data {
     mixin data;
 
-    mixin field!(TickPtr, "ptr");
+    mixin field!(TickInfo, "info");
     mixin field!(Signal, "trigger");
-    mixin field!(TickPtr, "previous");
+    mixin field!(TickInfo, "previous");
     mixin field!(Data, "data");
 }
 
