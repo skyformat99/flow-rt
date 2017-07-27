@@ -113,7 +113,6 @@ class EntityMeta : Data {
     mixin field!(EntityPtr, "ptr");
     mixin field!(Data, "context");
     mixin array!(Receptor, "receptors");
-    mixin array!(Signal, "inbound");
     mixin array!(TickMeta, "ticks");
 }
 
