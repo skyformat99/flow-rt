@@ -498,15 +498,19 @@ private class Entity : StateMachine!SystemState {
             case SystemState.Ticking:
                 // here we need a writerlock since everyone could do that
                 synchronized(this.sync.writer)
-                    // creating and starting ticker for all
+                    // creating and starting ticker for all frozen ticks
                     foreach(t; this.meta.ticks) {
                         auto ticker = new Ticker(this, t);
                         this.ticker[ticker.id] = ticker;
                         ticker.start();
                     }
+
+                    // all frozen ticks are ticking -> empty store
+                    this.meta.ticks = [];
                 break;
             case SystemState.Frozen: 
                 synchronized(this.sync.writer) {
+                    // stopping and destroying all ticker and freeze coming ticks
                     foreach(t; this.ticker.values.dup) {
                         t.stop(false);
                         if(t.coming !is null)
@@ -517,11 +521,13 @@ private class Entity : StateMachine!SystemState {
                 }                    
                 break;
             case SystemState.Destroyed:
-                synchronized(this.sync.writer)
+                synchronized(this.sync.writer) {
+                    // just stopping and destroying all ticker
                     foreach(t; this.ticker.values) {
                         t.stop(false);
                         t.destroy;
                     }
+                }
                 break;
             default: break;
         }
@@ -543,25 +549,33 @@ string addr(EntityPtr e) {
     return e.id~"@"~e.space;
 }
 
+/// controlls an entity
 class EntityController {
-    private Entity entity;
+    private Entity _entity;
 
-    @property SystemState state() {return this.entity.state;}
+    /// deep clone of entity pointer of controlled entity
+    @property EntityPtr entity() {return this._entity.meta.ptr.dup.as!EntityPtr;}
+
+    /// state of entity
+    @property SystemState state() {return this._entity.state;}
 
     private this(Entity e) {
-        this.entity = e;
+        this._entity = e;
     }
 
+    /// makes entity freezing
     void freeze() {
-        this.entity.freeze();
+        this._entity.freeze();
     }
 
+    /// makes entity ticking
     void tick() {
-        this.entity.tick();
+        this._entity.tick();
     }
 
+    /// snapshots entity (only working when entity is frozen)
     EntityMeta snap() {
-        return this.entity.snap();
+        return this._entity.snap();
     }
 }
 
@@ -583,6 +597,7 @@ private bool matches(Space space, string pattern) {
     return hit;
 }
 
+/// hosts a space construct
 private class Space : StateMachine!SystemState {
     ReadWriteMutex sync;
     SpaceMeta meta;
@@ -600,6 +615,12 @@ private class Space : StateMachine!SystemState {
         this.init();
     }
 
+    ~this() {
+        if(this.state != SystemState.Destroyed)
+            this.state = SystemState.Destroyed;
+    }
+
+    /// initializes space
     void init() {
         foreach(em; this.meta.entities) {
             if(em.ptr.id in this.entities)
@@ -611,19 +632,17 @@ private class Space : StateMachine!SystemState {
         }
     }
 
-    ~this() {
-        if(this.state != SystemState.Destroyed)
-            this.state = SystemState.Destroyed;
-    }
-
+    /// makes space and all of its content freezing
     void freeze() {
         this.state = SystemState.Frozen;
     }
 
+    /// makes space and all of its content ticking
     void tick() {
         this.state = SystemState.Ticking;
     }
 
+    /// snapshots whole space (deep clone)
     SpaceMeta snap() {
         synchronized(this.sync.reader) {
             if(this.state == SystemState.Ticking) {
@@ -631,15 +650,17 @@ private class Space : StateMachine!SystemState {
                 scope(exit) this.state = SystemState.Ticking;
             }
             
-            return this.meta;
+            return this.meta.dup.as!SpaceMeta;
         }
     }
 
+    /// gets a controller for an entity contained in space (null if not existing)
     EntityController get(string e) {
         synchronized(this.sync.reader)
             return (e in this.entities).as!bool ? new EntityController(this.entities[e]) : null;
     }
 
+    /// spawns a new entity into space
     EntityController spawn(EntityMeta m) {
         synchronized(this.sync.writer) {
             if(m.ptr.id in this.entities)
@@ -653,6 +674,7 @@ private class Space : StateMachine!SystemState {
         }
     }
 
+    /// kills an existing entity in space
     void kill(string e) {
         synchronized(this.sync.writer) {
             if(e in this.entities) {
@@ -663,6 +685,7 @@ private class Space : StateMachine!SystemState {
         }
     }
     
+    /// routes a unicast signal to receipting entities if its in this space
     bool route(Unicast s, bool intern = false) {
         // if its a perfect match assuming process only accepted a signal for itself
         if(s.dst.space == this.meta.id) {
@@ -677,6 +700,7 @@ private class Space : StateMachine!SystemState {
         return false;
     }
     
+    /// routes a multicast signal to receipting entities if its addressed to space
     bool route(Multicast s, bool intern = false) {
         auto r = false;
         // if its adressed to own space or parent using * wildcard or even none
@@ -691,6 +715,7 @@ private class Space : StateMachine!SystemState {
         return r;
     }
 
+    /// routes a signal into this space or asks process to shift it to another space
     bool send(T)(T s) if(is(T : Unicast) || is(T : Multicast)) {
         return this.route(s) || this.process.shift(s, true);
     }
@@ -730,6 +755,8 @@ private class Space : StateMachine!SystemState {
     }
 }
 
+/** hosts one or more spaces and allows to controll them
+whatever happens on this level, it has to happen in main thread or an exception occurs */
 class Process {
     private ProcessConfig config;
     private Tasker tasker;
@@ -737,9 +764,11 @@ class Process {
 
     this(ProcessConfig c = null) {
         import core.cpuid;
+        // if no config given generate default one
         if(c is null)
             c = new ProcessConfig;
 
+        // if worker amount lesser 1 use default
         if(c.worker < 1)
             c.worker = threadsPerCPU > 1 ? threadsPerCPU-1 : 1;
 
@@ -756,7 +785,7 @@ class Process {
         this.tasker.destroy;
     }
 
-    /// shifting signal from space to space also across processes
+    /// shifting unicast signal from space to space also across nets
     private bool shift(Unicast s, bool intern = false) {
         /* each time a pointer leaves a space
         it has to get dereferenced */
@@ -769,6 +798,7 @@ class Process {
         /* TODO return intern && net.port(s);*/
     }
 
+    /// shifting multicast signal from space to space also across nets
     private bool shift(Multicast s, bool intern = false) {
         auto r = false;
         foreach(spc; this.spaces.values)
@@ -778,11 +808,13 @@ class Process {
         /* TODO return (intern && net.port(s)) || r ); */
     }
 
+    /// ensure it is executed in main thread or not at all
     private void ensureThread() {
         if(!thread_isMainThread)
             throw new ProcessError("process can be only controlled by main thread");
     }
 
+    /// add a space
     Space add(SpaceMeta s) {
         this.ensureThread();
         
@@ -795,11 +827,13 @@ class Process {
         }
     }
 
+    /// get an existing space or null
     Space get(string s) {
         this.ensureThread();
         return (s in this.spaces).as!bool ? this.spaces[s] : null;
     }
 
+    /// snaps an existing space
     SpaceMeta snap(string s) {
         this.ensureThread();
 
@@ -809,6 +843,7 @@ class Process {
             throw new ProcessException("space with id \""~s~"\" is not existing");
     }
 
+    /// removes an existing space
     void remove(string s) {
         this.ensureThread();
 
@@ -922,11 +957,11 @@ unittest {
     scope(exit) p.destroy;
     auto s = p.add(createTestSpace());
     auto e = s.get("e");
-    auto g = e.entity.meta.ticks[0].info.group;
+    auto g = e._entity.meta.ticks[0].info.group;
 
     s.tick();
 
-    while(e.entity.ticker.keys.length > 0)
+    while(e._entity.ticker.keys.length > 0)
         Thread.sleep(5.msecs);
 
     s.freeze();
