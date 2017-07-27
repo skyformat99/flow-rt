@@ -105,6 +105,13 @@ class EntityPtr : Data {
     mixin field!(Access, "access");
 }
 
+class Reception : Data {
+    mixin data;
+
+    mixin field!(string, "tick");
+    mixin field!(Signal, "signal");
+}
+
 class EntityMeta : Data {
     mixin data;
 
@@ -114,6 +121,7 @@ class EntityMeta : Data {
     mixin field!(Data, "context");
     mixin array!(Receptor, "receptors");
     mixin array!(TickMeta, "ticks");
+    mixin array!(Reception, "floating");
 }
 
 class Signal : IdData {

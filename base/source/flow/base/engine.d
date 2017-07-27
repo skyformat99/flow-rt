@@ -435,23 +435,29 @@ private class Entity : StateMachine!SystemState {
     also an unicast signal can fork and tehrefore
     trigger multiple local strings of causality */
     bool receipt(Signal s) {
-        if(this.state == SystemState.Ticking) {
-            auto ret = false;
-            synchronized(this.sync.writer) {
-                // looping all registered receptors
-                foreach(r; this.meta.receptors) {
-                    if(s.dataType == r.signal) {
+        auto ret = false;
+        synchronized(this.sync.writer) {
+            // looping all registered receptors
+            foreach(r; this.meta.receptors) {
+                if(s.dataType == r.signal) {
+                    if(this.state == SystemState.Ticking) {
                         // creating given tick
                         auto ticker = new Ticker(this, r.tick.createTick(this, s));
                         this.ticker[ticker.id] = ticker;
                         ticker.start();
-                        ret = true;
+                    } else { // entity is not ticking so make reception floating
+                        auto f = new Reception;
+                        f.tick = r.tick;
+                        f.signal = s;
+                        this.meta.floating ~= f;
                     }
+                    
+                    ret = true;
                 }
             }
-            
-            return ret;
-        } else return false;
+        }
+        
+        return ret;
     }
 
     /// send an unicast signal into own space
@@ -497,7 +503,7 @@ private class Entity : StateMachine!SystemState {
         switch(n) {
             case SystemState.Ticking:
                 // here we need a writerlock since everyone could do that
-                synchronized(this.sync.writer)
+                synchronized(this.sync.writer) {
                     // creating and starting ticker for all frozen ticks
                     foreach(t; this.meta.ticks) {
                         auto ticker = new Ticker(this, t);
@@ -507,6 +513,16 @@ private class Entity : StateMachine!SystemState {
 
                     // all frozen ticks are ticking -> empty store
                     this.meta.ticks = [];
+
+                    // recovering all floating signals
+                    foreach(f; this.meta.floating) {
+                        auto ticker = new Ticker(this, f.tick.createTick(this, f.signal));
+                        this.ticker[ticker.id] = ticker;
+                        ticker.start();
+                    }
+
+                    this.meta.floating = [];
+                }
                 break;
             case SystemState.Frozen: 
                 synchronized(this.sync.writer) {
@@ -688,7 +704,7 @@ private class Space : StateMachine!SystemState {
     /// routes a unicast signal to receipting entities if its in this space
     bool route(Unicast s, bool intern = false) {
         // if its a perfect match assuming process only accepted a signal for itself
-        if(s.dst.space == this.meta.id) {
+        if(this.state == SystemState.Ticking && s.dst.space == this.meta.id) {
             synchronized(this.sync.reader) {
                 foreach(e; this.entities.values)
                     if((intern || e.meta.ptr.access == Access.Global) && e.meta.ptr == s.dst) {
@@ -705,7 +721,7 @@ private class Space : StateMachine!SystemState {
         auto r = false;
         // if its adressed to own space or parent using * wildcard or even none
         // in each case we do not want to regex search when ==
-        if(s.space == this.meta.id || this.matches(s.space)) {
+        if(this.state == SystemState.Ticking && (s.space == this.meta.id || this.matches(s.space))) {
             synchronized(this.sync.reader) {
                 foreach(e; this.entities.values)
                     r = e.receipt(s) || r;
@@ -735,18 +751,17 @@ private class Space : StateMachine!SystemState {
     override protected void onStateChanged(SystemState o, SystemState n) {
         switch(n) {
             case SystemState.Ticking:
-                // here we need only a readerlock since only process can do that
-                synchronized(this.sync.reader)
+                synchronized(this.sync.writer)
                     foreach(e; this.entities)
                         e.tick();
                 break;
             case SystemState.Frozen:
-                synchronized(this.sync.reader)
+                synchronized(this.sync.writer)
                     foreach(e; this.entities.values)
                         e.freeze();
                 break;
             case SystemState.Destroyed:
-                synchronized(this.sync.reader)
+                synchronized(this.sync.writer)
                     foreach(e; this.entities.keys)
                         this.entities[e].destroy;
                 break;
