@@ -217,6 +217,9 @@ version(unittest) {
 }
 
 unittest {
+    import std.stdio;
+    writeln("testing state machine");
+
     auto t = new TestStateMachine;
     assert(t.state1Set, "initial state change wasn't executed");
     
@@ -381,6 +384,9 @@ version(unittest) class TaskerTest {
 }
 
 unittest {
+    import std.stdio;
+    writeln("testing tasker");
+
     auto t = new TaskerTest;
     auto e = new Tasker(1);
     e.start();
