@@ -873,7 +873,7 @@ class Process {
 version(unittest) {
     class TestTickException : FlowException {mixin exception;}
 
-    class TestSignal : Signal {
+    class TestSignal : Unicast {
         mixin signal;
     }
 
@@ -934,10 +934,26 @@ version(unittest) {
         }
     }
 
+    class TriggeringTestContext : Data {
+        mixin data;
+
+        mixin field!(EntityPtr, "target");
+    }
+
+    class TriggeringTestTick : Tick {
+        override void run() {
+            auto c = this.context.as!TriggeringTestContext;
+            this.send(new TestSignal, c.target);
+        }
+    }
+
     SpaceMeta createTestSpace() {
         auto s = new SpaceMeta;
         s.id = "s";
-        s.entities ~= createTestEntity();
+        auto te = createTestEntity();
+        s.entities ~= te;
+        auto tte = createTriggerTestEntity(te.ptr);
+        s.entities ~= tte;
 
         return s;
     }
@@ -946,19 +962,32 @@ version(unittest) {
         auto e = new EntityMeta;
         e.ptr = new EntityPtr;
         e.ptr.id = "e";
+        auto r = new Receptor;
+        r.signal = "flow.base.engine.TestSignal";
+        r.tick = "flow.base.engine.TestTick";
+        e.receptors ~= r;
         e.context = new TestTickContext;
-        e.ticks ~= createTestTick();
 
         return e;
     }
 
-    TickMeta createTestTick() {
+    EntityMeta createTriggerTestEntity(EntityPtr te) {
+        auto e = new EntityMeta;
+        e.ptr = new EntityPtr;
+        e.ptr.id = "te";
+        auto tc = new TriggeringTestContext;
+        e.context = tc;
+        e.ticks ~= createTriggeringTestTick();
+
+        return e;
+    }
+
+    TickMeta createTriggeringTestTick() {
         auto t = new TickMeta;
         t.info = new TickInfo;
         t.info.id = randomUUID;
-        t.info.type = "flow.base.engine.TestTick";
+        t.info.type = "flow.base.engine.TriggeringTestTick";
         t.info.group = randomUUID;
-        t.trigger = new TestSignal;
 
         return t;
     }
@@ -971,7 +1000,7 @@ unittest {
     auto p = new Process;
     scope(exit) p.destroy;
     auto s = p.add(createTestSpace());
-    auto e = s.get("e");
+    auto e = s.get("te");
     auto g = e._entity.meta.ticks[0].info.group;
 
     s.tick();
