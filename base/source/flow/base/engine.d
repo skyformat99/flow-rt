@@ -1000,21 +1000,25 @@ unittest {
     auto p = new Process;
     scope(exit) p.destroy;
     auto s = p.add(createTestSpace());
-    auto e = s.get("te");
-    auto g = e._entity.meta.ticks[0].info.group;
+    auto e = s.get("e");
+    auto te = s.get("te");
+    auto g = te._entity.meta.ticks[0].info.group;
 
     s.tick();
 
-    while(e._entity.ticker.keys.length > 0)
+    // TODO
+    // we have to wait for all systems to finish or we will get segfaults at the moment
+    while(e._entity.ticker.keys.length > 0 || te._entity.ticker.keys.length > 0)
         Thread.sleep(5.msecs);
 
     s.freeze();
     
-    auto em = e.snap;
-    assert(em.context.as!TestTickContext.cnt == 6, "logic wasn't executed correct");
-    assert(em.context.as!TestTickContext.trigger !is null, "trigger was not passed correctly");
-    assert(em.context.as!TestTickContext.info.group == g, "group was not passed correctly");
-    assert(em.context.as!TestTickContext.data !is null, "data was not set correctly");
-    assert(em.context.as!TestTickContext.error == "flow.base.engine.TestTickException", "error was not handled");
-    assert(em.context.as!TestTickContext.forked, "didn't fork as expected");
+    auto sm = s.snap;
+    assert(sm.entities.length == 2, "space snapshot does not contain correct amount of entities");
+    assert(sm.entities[0].context.as!TestTickContext.cnt == 6, "logic wasn't executed correct");
+    assert(sm.entities[0].context.as!TestTickContext.trigger !is null, "trigger was not passed correctly");
+    assert(sm.entities[0].context.as!TestTickContext.info.group == g, "group was not passed correctly");
+    assert(sm.entities[0].context.as!TestTickContext.data !is null, "data was not set correctly");
+    assert(sm.entities[0].context.as!TestTickContext.error == "flow.base.engine.TestTickException", "error was not handled");
+    assert(sm.entities[0].context.as!TestTickContext.forked, "didn't fork as expected");
 }
