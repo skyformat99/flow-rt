@@ -275,32 +275,42 @@ class Log {
                 //flush();
             }
         }
+
+        // a fatal causes an exit
+        if(level & LL.Fatal) {
+            import core.stdc.stdlib;
+            exit(-666);
+        }
     }
 
     public static void msg(LL level, Exception ex, string msg=string.init) {
-        string t;
-        
-        if(msg != string.init)
-            t ~= msg~newline~"    ";
-        
-        if(ex !is null && ex.msg != string.init)
-            t ~= ex.msg~newline;
+        if(level & logLevel) {
+            string t;
+            
+            if(msg != string.init)
+                t ~= msg~newline~"    ";
+            
+            if(ex !is null && ex.msg != string.init)
+                t ~= ex.msg~newline;
 
-        if(cast(FlowException)ex !is null && (cast(FlowException)ex).data !is null) {
-            t ~= sep;
-            t ~= (cast(FlowException)ex).data.json.toString~newline;
-            t ~= sep;
-            t ~= sep;
+            if(cast(FlowException)ex !is null && (cast(FlowException)ex).data !is null) {
+                t ~= sep;
+                t ~= (cast(FlowException)ex).data.json.toString~newline;
+                t ~= sep;
+                t ~= sep;
+            }
+
+            Log.msg(level, t);
         }
-
-        Log.msg(level, t);
     }
 
     public static void msg(LL level, Data d, string msg = string.init) {
-        auto t = msg;
-        t ~= Log.sep;
-        t ~= d !is null ? d.json.toString : "NULL";
-        Log.msg(level, t);
+        //if(level & logLevel) {
+            auto t = msg;
+            t ~= Log.sep;
+            t ~= d !is null ? d.json.toString : "NULL";
+            Log.msg(level, t);
+        //}
     }
 }
 

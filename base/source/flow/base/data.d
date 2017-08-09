@@ -11,7 +11,34 @@ import std.json;
 
 template canHandle(T) {
     enum canHandle =
-        isScalarType!T ||
+        is(T == bool) ||
+        is(T == byte) ||
+        is(T == ubyte) ||
+        is(T == short) ||
+        is(T == ushort) ||
+        is(T == int) ||
+        is(T == uint) ||
+        is(T == long) ||
+        is(T == ulong) ||
+        is(T == float) ||
+        is(T == double) ||
+        is(T == char) ||
+        is(T == wchar) ||
+        is(T == dchar) ||
+        (is(T == enum) && is(OriginalType!T == bool)) ||
+        (is(T == enum) && is(OriginalType!T == byte)) ||
+        (is(T == enum) && is(OriginalType!T == ubyte)) ||
+        (is(T == enum) && is(OriginalType!T == short)) ||
+        (is(T == enum) && is(OriginalType!T == ushort)) ||
+        (is(T == enum) && is(OriginalType!T == int)) ||
+        (is(T == enum) && is(OriginalType!T == uint)) ||
+        (is(T == enum) && is(OriginalType!T == long)) ||
+        (is(T == enum) && is(OriginalType!T == ulong)) ||
+        (is(T == enum) && is(OriginalType!T == float)) ||
+        (is(T == enum) && is(OriginalType!T == double)) ||
+        (is(T == enum) && is(OriginalType!T == char)) ||
+        (is(T == enum) && is(OriginalType!T == wchar)) ||
+        (is(T == enum) && is(OriginalType!T == dchar)) ||
         is(T == UUID) ||
         is(T == SysTime) ||
         is(T == DateTime) ||
@@ -77,8 +104,6 @@ abstract class Data {
         if(c !is null && this.dataType == c.dataType) {
             foreach(p; this.properties)
                 if(!p.as!PropertyInfo.equal(this, c)) {
-                    import std.stdio;
-                    writeln(p.as!PropertyInfo.name~" fails");
                     return false;
                 }
             
@@ -118,20 +143,21 @@ mixin template signal(T = void)
 
 mixin template field(T, string name) if (canHandle!T) {
     pragma(msg, "\t\t"~T.stringof~" "~name);
+
     shared static this() {
         import flow.base.util, flow.base.data;
 
-        import std.variant;
+        import std.variant, std.traits;
 
         mixin("Variant function(Data) getter = (d) {
             auto t = d.as!(typeof(this));
-            return Variant("~(is(T : Data) ? "t."~name~".as!Data" : "t."~name)~");
+            return Variant("~(is(T : Data) ? "t."~name~".as!Data" : "cast("~OriginalType!(T).stringof~")t."~name)~");
         };");
 
         mixin("bool function(Data, Variant) setter = (d, v) {
             auto t = d.as!(typeof(this));
-            if(v.convertsTo!("~(is(T : Data) ? "Data" : T.stringof)~")) {
-                t."~name~" = "~(is(T : Data) ? "v.get!Data().as!"~T.stringof : "v.get!("~T.stringof~")")~";
+            if(v.convertsTo!("~(is(T : Data) ? "Data" : OriginalType!(T).stringof)~")) {
+                t."~name~" = cast("~T.stringof~")"~(is(T : Data) ? "v.get!Data().as!"~T.stringof : "v.get!("~OriginalType!(T).stringof~")")~";
                 return true;
             } else return false;
         };");
@@ -153,20 +179,21 @@ mixin template field(T, string name) if (canHandle!T) {
 
 mixin template array(T, string name) if (canHandle!T) {
     pragma(msg, "\t\t"~T.stringof~"[] "~name);
+
     shared static this() {
         import flow.base.util, flow.base.data;
 
-        import std.variant;
+        import std.variant, std.traits;
 
         mixin("Variant function(Data) getter = (d) {
             auto t = d.as!(typeof(this));
-            return Variant("~(is(T : Data) ? "t."~name~".as!(Data[])" : "t."~name)~");
+            return Variant("~(is(T : Data) ? "t."~name~".as!(Data[])" : "cast("~OriginalType!(T).stringof~"[])t."~name)~");
         };");
 
         mixin("bool function(Data, Variant) setter = (d, v) {
             auto t = d.as!(typeof(this));
-            if(v.convertsTo!("~(is(T : Data) ? "Data" : T.stringof)~"[])) {
-                t."~name~" = "~(is(T : Data) ? "v.get!(Data[])().as!("~T.stringof~"[])" : "v.get!("~T.stringof~"[])")~";
+            if(v.convertsTo!("~(is(T : Data) ? "Data" : OriginalType!(T).stringof)~"[])) {
+                t."~name~" = cast("~T.stringof~"[])"~(is(T : Data) ? "v.get!(Data[])().as!("~T.stringof~"[])" : "v.get!("~OriginalType!(T).stringof~"[])")~";
                 return true;
             } else return false;
         };");
@@ -191,8 +218,15 @@ mixin template array(T, string name) if (canHandle!T) {
 template TPropertyHelper(T, string name) {
     PropertyInfo getFieldInfo(Variant function(Data) getter, bool function(Data, Variant) setter, bool function(Data, Data) equals) {
         PropertyInfo p;
-        p._type = T.stringof;
-        p._info = typeid(T);
+
+        static if(isScalarType!T) {
+            p._type = OriginalType!(T).stringof;
+            p._info = typeid(OriginalType!T);
+        } else {
+            p._type = T.stringof;
+            p._info = typeid(T);
+        }
+
         p._name = name;
         p._array = false;
         p._getter = getter;
@@ -213,8 +247,15 @@ template TPropertyHelper(T, string name) {
 
     PropertyInfo getArrayInfo(Variant function(Data) getter, bool function(Data, Variant) setter, bool function(Data, Data) equals) {
         PropertyInfo p;
-        p._type = T.stringof;
-        p._info = typeid(T);
+        
+        static if(isScalarType!T) {
+            p._type = OriginalType!(T).stringof;
+            p._info = typeid(OriginalType!T);
+        } else {
+            p._type = T.stringof;
+            p._info = typeid(T);
+        }
+        
         p._name = name;
         p._array = true;
         p._getter = getter;
@@ -234,6 +275,11 @@ template TPropertyHelper(T, string name) {
     }
 }
 
+version (unittest) enum TestEnum {
+    Foo,
+    Bar
+}
+
 version (unittest) class TestData : Data {
     mixin data;
 
@@ -243,6 +289,7 @@ version (unittest) class TestData : Data {
     mixin field!(long, "integer");
     mixin field!(ulong, "uinteger");
     mixin field!(double, "floating");
+    mixin field!(TestEnum, "enumeration");
     mixin field!(UUID, "uuid");
     mixin field!(SysTime, "sysTime");
     mixin field!(DateTime, "dateTime");
@@ -255,6 +302,7 @@ version (unittest) class TestData : Data {
     mixin array!(long, "integerA");
     mixin array!(ulong, "uintegerA");
     mixin array!(double, "floatingA");
+    mixin array!(TestEnum, "enumerationA");
     mixin array!(UUID, "uuidA");
     mixin array!(SysTime, "sysTimeA");
     mixin array!(DateTime, "dateTimeA");
@@ -629,7 +677,6 @@ private JSONValue json(T)(T val) if(is(T == Duration)) {
 }
 
 JSONValue json(T)(T t) if(is(T : Data)) {
-    import std.stdio;
     JSONValue c;
     if(t !is null) {
         c = JSONValue(["dataType" : JSONValue(t.dataType)]);
@@ -761,17 +808,21 @@ unittest {
     d.text = "foo";
     d.inner = new TestData;
     d.inner.integer = 3;
+    d.enumeration = TestEnum.Bar;
     d.uintegerA = [3, 4];
     d.textA = ["foo", "bar"];
     d.innerA = [new TestData, new TestData];
+    d.enumerationA = [TestEnum.Foo, TestEnum.Bar];
     d.additional = "ble";
 
     auto dStr = d.json.toString();
     assert(dStr == "{"~
         "\"additional\":\"ble\","~
         "\"boolean\":true,"~
-        "\"dataType\":\"flow.base.data.InheritedTestData\""~
-        ",\"inner\":{"~
+        "\"dataType\":\"flow.base.data.InheritedTestData\","~
+        "\"enumeration\":1,"~
+        "\"enumerationA\":[0,1],"~
+        "\"inner\":{"~
             "\"dataType\":\"flow.base.data.TestData\","~
             "\"integer\":3"~
         "},"~
@@ -790,10 +841,12 @@ unittest {
     assert(d2.uinteger == 5, "could not deserialize basic scalar value");
     assert(d2.text == "foo", "could not deserialize basic string value");   
     assert(d2.inner !is null && d2.inner !is d.inner, "could not deserialize basic data value");
+    assert(d2.enumeration == TestEnum.Bar, "could not deserialize basic enum value");
     assert(d2.inner.integer == 3, "could not deserialize property of basic data value");
     assert(d2.uintegerA.length == 2 && d2.uintegerA[0] == 3 && d2.uintegerA[1] == 4 && d2.uintegerA !is d.uintegerA, "could not deserialize array scalar value");
     assert(d2.textA.length == 2 && d2.textA[0] == "foo" && d2.textA[1] == "bar", "could not deserialize array string value");
     assert(d2.innerA.length == 2 && d2.innerA[0] !is null && d2.innerA[1] !is null && d2.innerA[0] !is d2.innerA[1] && d2.innerA[0] !is d.innerA[0], "could not set array data value");
+    assert(d2.enumerationA.length == 2 && d2.enumerationA[0] == TestEnum.Foo && d2.enumerationA[1] == TestEnum.Bar, "could not deserialize array enum value");
 
     assert(d2.additional == "ble", "could not deserialize basic scalar value");
 }

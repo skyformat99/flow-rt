@@ -87,31 +87,35 @@ private class Ticker : StateMachine!SystemState {
 
     /// run coming tick if possible, is usually called by a tasker
     void tick() {
-        // create a new tick of given type or notify failing and stop
-        Tick t = this.coming.createTick(this);
-        if(t !is null) {
-            t.info.id = randomUUID;
-    
-            // if in ticking state try to run created tick or notify wha nothing happens
-            if(this.state == SystemState.Ticking) {
-                this.ticking = true;
-                try { this.runTick(t); }
-                finally {this.ticking = false;}
+        try {
+            // create a new tick of given type or notify failing and stop
+            Tick t = this.coming.createTick(this);
+            if(t !is null) {
+                t.info.id = randomUUID;
+        
+                // if in ticking state try to run created tick or notify wha nothing happens
+                if(this.state == SystemState.Ticking) {
+                    this.ticking = true;
+                    try { this.runTick(t); }
+                    finally {this.ticking = false;}
 
-                /* if tick enqueued another one, enqueue it into tasker or
-                notify and stop if not done already by external instance */
-                if(this.coming !is null)
-                    this.entity.space.process.tasker.run(&this.tick);
-                else {
-                    this.msg(LL.FDebug, "nothing to do, ticker is ending");
-                    if(this.state == SystemState.Ticking) this.stop();
+                    /* if tick enqueued another one, enqueue it into tasker or
+                    notify and stop if not done already by external instance */
+                    if(this.coming !is null)
+                        this.entity.space.process.tasker.run(&this.tick);
+                    else {
+                        this.msg(LL.FDebug, "nothing to do, ticker is ending");
+                        if(this.state == SystemState.Ticking) this.stop();
+                    }
+                } else {
+                    this.msg(LL.FDebug, "ticker is not ticking");
                 }
             } else {
-                this.msg(LL.FDebug, "ticker is not ticking");
+                this.msg(LL.Error, "could not create tick -> ending");  
+                if(this.state == SystemState.Ticking) this.stop();
             }
-        } else {
-            this.msg(LL.Error, "could not create tick -> ending");  
-            if(this.state == SystemState.Ticking) this.stop();
+        } catch(Throwable thr) {
+            this.msg(LL.Fatal, "unexcpected failure occured at 'engine.d: void Ticker::tick()'");
         }
     }
 
@@ -785,7 +789,7 @@ class Process {
 
         // if worker amount lesser 1 use default
         if(c.worker < 1)
-            c.worker = threadsPerCPU > 1 ? threadsPerCPU-1 : 1;
+            c.worker = 1;//threadsPerCPU > 1 ? threadsPerCPU-1 : 1;
 
         this.config = c;
         this.tasker = new Tasker(c.worker);
@@ -976,6 +980,7 @@ version(unittest) {
         e.ptr = new EntityPtr;
         e.ptr.id = "te";
         auto tc = new TriggeringTestContext;
+        tc.target = te;
         e.context = tc;
         e.ticks ~= createTriggeringTestTick();
 
