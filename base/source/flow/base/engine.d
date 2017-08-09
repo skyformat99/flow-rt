@@ -294,6 +294,8 @@ abstract class Tick {
         if(signal.dst is null || signal.dst.id == string.init || signal.dst.space == string.init)
             throw new TickException("unicast signal needs a valid destination(dst)");
 
+        signal.group = this.meta.info.group;
+
         return this.ticker.entity.send(signal);
     }
 
@@ -303,6 +305,8 @@ abstract class Tick {
 
         if(signal.space == string.init)
             throw new TickException("multicast signal needs a space pattern");
+
+        signal.group = this.meta.info.group;
 
         return this.ticker.entity.send(signal);
     }
@@ -337,7 +341,7 @@ private TickInfo createTick(Tick tick, string t) {
     auto i = new TickInfo;
     i.id = randomUUID;
     i.type = t;
-    i.group = tick.info.group;
+    i.group = tick.meta.info.group;
 
     return i;
 }
@@ -787,9 +791,9 @@ class Process {
         if(c is null)
             c = new ProcessConfig;
 
-        // if worker amount lesser 1 use default
+        // if worker amount lesser 1 use default (vcores - 1)
         if(c.worker < 1)
-            c.worker = 1;//threadsPerCPU > 1 ? threadsPerCPU-1 : 1;
+            c.worker = threadsPerCPU > 1 ? threadsPerCPU-1 : 1;
 
         this.config = c;
         this.tasker = new Tasker(c.worker);
@@ -1002,7 +1006,11 @@ unittest {
     import std.stdio;
     writeln("testing engine (you should see exactly one \"tick failed\" warning in log)");
 
-    auto p = new Process;
+    auto pc = new ProcessConfig;
+    /* when there is one worker in taskpool, it has
+    to be perfectly deterministic using limited complexity */
+    pc.worker = 1;
+    auto p = new Process(pc);
     scope(exit) p.destroy;
     auto s = p.add(createTestSpace());
     auto e = s.get("e");
@@ -1022,7 +1030,8 @@ unittest {
     assert(sm.entities.length == 2, "space snapshot does not contain correct amount of entities");
     assert(sm.entities[0].context.as!TestTickContext.cnt == 6, "logic wasn't executed correct");
     assert(sm.entities[0].context.as!TestTickContext.trigger !is null, "trigger was not passed correctly");
-    assert(sm.entities[0].context.as!TestTickContext.info.group == g, "group was not passed correctly");
+    assert(sm.entities[0].context.as!TestTickContext.trigger.group == g, "group was not passed correctly to signal");
+    assert(sm.entities[0].context.as!TestTickContext.info.group == g, "group was not passed correctly to tick");
     assert(sm.entities[0].context.as!TestTickContext.data !is null, "data was not set correctly");
     assert(sm.entities[0].context.as!TestTickContext.error == "flow.base.engine.TestTickException", "error was not handled");
     assert(sm.entities[0].context.as!TestTickContext.forked, "didn't fork as expected");
