@@ -9,7 +9,9 @@ rootDir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 function buildLib {
     dub remove-local $rootDir/$1
     cd $rootDir/$1 &&
+    dub build $defBuildParams $buildParams &&
     dub test $defBuildParams $buildParams &&
+    cp -fr lib/libflow-$1.so ../run/lib &&
     dub add-local ./
 }
 
@@ -18,15 +20,8 @@ function buildBin {
     dub build --build $buildType $defBuildParams $buildParams
 }
 
-buildLib base #&&
-#buildLib data &&
-#buildLib net &&
-##buildLib alien &&
-#buildLib example/base/lib &&
+buildLib base &&
 
-#buildBin example/base/complex #&&
-#buildBin example/base/typingmonkeys &&
-#buildBin example/base/madtypingmonkeys #&&
-#buildBin example/net/http #&&
-##buildBin causal #&&
-##buildBin hive/experiments/take01
+buildLib complex &&
+
+buildBin run

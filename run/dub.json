@@ -1,0 +1,26 @@
+{
+	"authors": [
+		"Ralph Alexander Bariz"
+	],
+	"importPaths": [
+		"source/"
+	],
+	"dependencies": {
+		"flow-base": "==0.2.0"
+	},
+	"name": "flow-run",
+	"version": "0.2.0",
+	"license": "GPL-3.0",
+	"targetName": "flow-run",
+	"targetType": "executable",
+	"targetPath": "bin",
+	"description": "FLOW runner.",
+	"homepage": "https://github.com/RalphBariz/flow",
+	"sourcePaths": [
+		"source/"
+	],
+	"copyFiles": [
+		"config/",
+		"lib/"
+	]
+}

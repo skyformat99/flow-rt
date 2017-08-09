@@ -9,10 +9,10 @@
 	"version": "0.2.0",
 	"license": "GPL-3.0",
 	"targetName": "flow-base",
-	"targetType": "library",
+	"targetType": "dynamicLibrary",
 	"targetPath": "lib",
 	"description": "FLOW runtime",
-	"homepage": "https://github.com/RalphBariz/flow-base",
+	"homepage": "https://github.com/RalphBariz/flow",
 	"sourcePaths": [
 		"source/"
 	]

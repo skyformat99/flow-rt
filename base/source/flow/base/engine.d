@@ -622,14 +622,14 @@ private bool matches(Space space, string pattern) {
 }
 
 /// hosts a space construct
-private class Space : StateMachine!SystemState {
-    ReadWriteMutex sync;
-    SpaceMeta meta;
-    Process process;
+class Space : StateMachine!SystemState {
+    private ReadWriteMutex sync;
+    private SpaceMeta meta;
+    private Process process;
 
-    Entity[string] entities;
+    private Entity[string] entities;
 
-    this(Process p, SpaceMeta m) {
+    private this(Process p, SpaceMeta m) {
         this.sync = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
         this.meta = m;
         this.process = p;
@@ -645,7 +645,7 @@ private class Space : StateMachine!SystemState {
     }
 
     /// initializes space
-    void init() {
+    private void init() {
         foreach(em; this.meta.entities) {
             if(em.ptr.id in this.entities)
                 throw new SpaceException("entity with addr \""~em.ptr.addr~"\" is already existing");
@@ -710,7 +710,7 @@ private class Space : StateMachine!SystemState {
     }
     
     /// routes a unicast signal to receipting entities if its in this space
-    bool route(Unicast s, bool intern = false) {
+    private bool route(Unicast s, bool intern = false) {
         // if its a perfect match assuming process only accepted a signal for itself
         if(this.state == SystemState.Ticking && s.dst.space == this.meta.id) {
             synchronized(this.sync.reader) {
@@ -725,7 +725,7 @@ private class Space : StateMachine!SystemState {
     }
     
     /// routes a multicast signal to receipting entities if its addressed to space
-    bool route(Multicast s, bool intern = false) {
+    private bool route(Multicast s, bool intern = false) {
         auto r = false;
         // if its adressed to own space or parent using * wildcard or even none
         // in each case we do not want to regex search when ==
@@ -740,7 +740,7 @@ private class Space : StateMachine!SystemState {
     }
 
     /// routes a signal into this space or asks process to shift it to another space
-    bool send(T)(T s) if(is(T : Unicast) || is(T : Multicast)) {
+    private bool send(T)(T s) if(is(T : Unicast) || is(T : Multicast)) {
         return this.route(s) || this.process.shift(s, true);
     }
 
@@ -854,16 +854,6 @@ class Process {
     Space get(string s) {
         this.ensureThread();
         return (s in this.spaces).as!bool ? this.spaces[s] : null;
-    }
-
-    /// snaps an existing space
-    SpaceMeta snap(string s) {
-        this.ensureThread();
-
-        if(s in this.spaces)
-            return this.spaces[s].snap();
-        else
-            throw new ProcessException("space with id \""~s~"\" is not existing");
     }
 
     /// removes an existing space

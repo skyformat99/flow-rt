@@ -8,18 +8,15 @@
 	"dependencies": {
 		"flow-base": "==0.2.0"
 	},
-	"name": "flow-example-base-complex",
+	"name": "flow-complex",
 	"version": "0.2.0",
 	"license": "GPL-3.0",
-	"targetName": "flow-example-base-complex",
-	"targetType": "executable",
-	"targetPath": "bin",
-	"description": "FLOW example complex.",
+	"targetName": "flow-complex",
+	"targetType": "dynamicLibrary",
+	"targetPath": "lib",
+	"description": "FLOW complex library",
 	"homepage": "https://github.com/RalphBariz/flow",
 	"sourcePaths": [
 		"source/"
-	],
-	"copyFiles": [
-		"etc/"
 	]
 }

@@ -17,17 +17,8 @@ hive
 # Executables
 *.exe
 base/lib
-data/lib
-net/lib
-alien/lib
-causal/bin
-example/base/lib/lib
-example/base/complex/bin
-example/base/madtypingmonkeys/bin
-example/base/simplekicker/bin
-example/base/trainingkicker/bin
-example/base/typingmonkeys/bin
-example/net/httpBeacon/bin
+complex/lib
+run/bin
 
 # DUB
 .dub
@@ -42,3 +33,5 @@ __test__library__
 
 # Logs
 *.log
+run/bin/flow-run
+run/bin/flow-run
