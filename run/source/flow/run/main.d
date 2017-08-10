@@ -16,51 +16,52 @@ void main(string[] args) {
     import flow.base.util;
     import std.stdio, std.file, std.path, std.process, std.algorithm, std.algorithm.searching;
 
-    version(windows)
-        Log.msg(LL.Fatal, "this software doesn't support windows based systems yet!");
+    version(posix) {
+        // checking arguments
+        if(args.length > 1 && args[1] != "-h" && args[1] != "--help")
+            name = args[1];
+        else
+            writeln("Usage: flow-run [name]");
 
-    // checking arguments
-    if(args.length > 1 && args[1] != "-h" && args[1] != "--help")
-        name = args[1];
-    else
-        writeln("Usage: flow-run [name]");
+        // building configuration directory info
+        if(environment["FLOW_CONFIG_DIR"] != string.init)
+            confDir = environment["FLOW_CONFIG_DIR"];
+        else {
+            confDir = thisExePath.dirName.buildPath("config");
+            if(!confDir.exists)
+                confDir = "/etc".buildPath("flow");
+        }
+        confDir.buildPath(name);
+        
+        // checking if given config directory contains process config and at least one space meta
+        if(!confDir.exists ||
+            !confDir.dirEntries(SpanMode.shallow).any!(a => a.baseName == "process.cfg") ||
+            !confDir.dirEntries(SpanMode.shallow).any!(a => a.baseName == "libs.lst") ||
+            !confDir.dirEntries(SpanMode.shallow).any!(a => a.extension == ".spc"))
+            Log.msg(LL.Fatal, "could not find configuration directory -> exiting");
 
-    // building configuration directory info
-    if(environment["FLOW_CONFIG_DIR"] != string.init)
-        confDir = environment["FLOW_CONFIG_DIR"];
-    else {
-        confDir = thisExePath.dirName.buildPath("config");
-        if(!confDir.exists)
-            confDir = "/etc".buildPath("flow");
+        // building and checking flow library directory info
+        if(environment["FLOW_LIB_DIR"] != string.init)
+            libDir = environment["FLOW_LIB_DIR"];
+        else {
+            libDir = thisExePath.dirName.buildPath("lib");
+            if(!libDir.exists ||
+                !libDir.dirEntries(SpanMode.shallow)
+                .any!(
+                    a => a.extension == ".so" &&
+                    a.baseName(".so") != "flow-base" &&
+                    a.baseName.startsWith("flow-")))
+                libDir = "/etc".buildPath("flow");
+        }
+        
+        if(!libDir.exists)
+            Log.msg(LL.Fatal, "could not find library directory -> exiting");
+
+        // everything ok so far, run
+        run();
+    } else {
+        Log.msg(LL.Fatal, "This software doesn't support operating systems not implementing the posix standard!");
     }
-    confDir.buildPath(name);
-    
-    // checking if given config directory contains process config and at least one space meta
-    if(!confDir.exists ||
-        !confDir.dirEntries(SpanMode.shallow).any!(a => a.baseName == "process.cfg") ||
-        !confDir.dirEntries(SpanMode.shallow).any!(a => a.baseName == "libs.lst") ||
-        !confDir.dirEntries(SpanMode.shallow).any!(a => a.extension == ".spc"))
-        Log.msg(LL.Fatal, "could not find configuration directory -> exiting");
-
-    // building and checking flow library directory info
-    if(environment["FLOW_LIB_DIR"] != string.init)
-        libDir = environment["FLOW_LIB_DIR"];
-    else {
-        libDir = thisExePath.dirName.buildPath("lib");
-        if(!libDir.exists ||
-            !libDir.dirEntries(SpanMode.shallow)
-            .any!(
-                a => a.extension == ".so" &&
-                a.baseName(".so") != "flow-base" &&
-                a.baseName.startsWith("flow-")))
-            libDir = "/etc".buildPath("flow");
-    }
-    
-    if(!libDir.exists)
-        Log.msg(LL.Fatal, "could not find library directory -> exiting");
-
-    // everything ok so far, run
-    run();
 }
 
 void run() {
