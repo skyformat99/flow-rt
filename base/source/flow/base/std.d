@@ -1,4 +1,4 @@
-module flow.data.base;
+module flow.base.std;
 
 import flow.base.data;
 
