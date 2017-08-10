@@ -3,11 +3,13 @@
 		"Ralph Alexander Bariz"
 	],
 	"importPaths": [
+		"../base/source/",
 		"source/"
 	],
-	"dependencies": {
-		"flow-base": "==0.2.0"
-	},
+	"lflags": [
+		"-l:libphobos2.so",
+		"-l:libflow-base.so"
+	],
 	"name": "flow-complex",
 	"version": "0.2.0",
 	"license": "GPL-3.0",

@@ -38,6 +38,7 @@ void main(string[] args) {
     // checking if given config directory contains process config and at least one space meta
     if(!confDir.exists ||
         !confDir.dirEntries(SpanMode.shallow).any!(a => a.baseName == "process.cfg") ||
+        !confDir.dirEntries(SpanMode.shallow).any!(a => a.baseName == "libs.lst") ||
         !confDir.dirEntries(SpanMode.shallow).any!(a => a.extension == ".spc"))
         Log.msg(LL.Fatal, "could not find configuration directory -> exiting");
 
@@ -64,28 +65,31 @@ void main(string[] args) {
 
 void run() {
     import flow.base.util, flow.base.data, flow.base.engine, flow.data.base;
-    import core.thread, std.algorithm.iteration, std.file, std.path;
+    import core.sys.posix.dlfcn, core.thread, std.string, std.array, std.algorithm.iteration, std.file, std.path;
 
     static import core.sys.posix.signal;
     core.sys.posix.signal.sigset(core.sys.posix.signal.SIGINT, &stop);
 
     auto procFile = confDir.buildPath("process.cfg");
+    auto libsFile = confDir.buildPath("libs.lst");
     auto spcFiles = confDir.dirEntries(SpanMode.shallow).filter!(a => a.extension == ".spc");
 
-    Log.msg(LL.Message, "loading...");
+    Log.msg(LL.Message, "loading libraries...");
+    foreach(lib; libsFile.readText().split())
+        dlopen(lib.toStringz(), RTLD_NOW|RTLD_GLOBAL);
 
-    // creating process
-    auto pc = createData(procFile.readText).as!ProcessConfig;
+    Log.msg(LL.Message, "initializing process");
+    auto pc = createData(procFile.readText()).as!ProcessConfig;
     if(pc is null)
         Log.msg(LL.Fatal, "process configuration is invalid -> exiting");
     
     auto p = new Process(pc);
     scope(exit) p.destroy;
 
-    // creating spaces
+    Log.msg(LL.Message, "initializing spaces");
     Space[] spaces;
     foreach(spcFile; spcFiles) {
-        auto sm = createData(spcFile.readText).as!SpaceMeta;
+        auto sm = createData(spcFile.readText()).as!SpaceMeta;
 
         if(sm is null)
             Log.msg(LL.Fatal, "space meta \""~spcFile~"\" is invalid -> exiting");

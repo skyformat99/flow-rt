@@ -33,5 +33,3 @@ __test__library__
 
 # Logs
 *.log
-run/bin/flow-run
-run/bin/flow-run

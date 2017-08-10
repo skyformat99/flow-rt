@@ -6,22 +6,31 @@ if [ $1 ]; then buildType=$1; else buildType=debug; fi
 buildParams=${@:2}
 rootDir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
+function buildBase {
+    cd $rootDir/base &&
+    dub build $defBuildParams $buildParams &&
+    dub test $defBuildParams $buildParams &&
+    export LIBRARY_PATH=$rootDir/base/lib
+    export LD_LIBRARY_PATH=$rootDir/base/lib
+}
+
 function buildLib {
-    dub remove-local $rootDir/$1
     cd $rootDir/$1 &&
     dub build $defBuildParams $buildParams &&
     dub test $defBuildParams $buildParams &&
-    cp -fr lib/libflow-$1.so ../run/lib &&
-    dub add-local ./
+    mkdir -p ../run/bin/lib &&
+    cp -fr lib/libflow-$1.so ../run/bin/lib
 }
 
 function buildBin {
     cd $rootDir/$1 &&
-    dub build --build $buildType $defBuildParams $buildParams
+    dub build --build $buildType $defBuildParams $buildParams &&
+    mkdir -p bin &&
+    cp -fr ../base/lib/libflow-base.so bin
 }
 
-buildLib base &&
+buildBase &&
+buildBin run &&
 
-buildLib complex &&
+buildLib complex
 
-buildBin run

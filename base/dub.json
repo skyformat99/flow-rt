@@ -2,6 +2,9 @@
 	"authors": [
 		"Ralph Alexander Bariz"
 	],
+	"lflags": [
+		"-l:libphobos2.so"
+	],
 	"importPaths": [
 		"source/"
 	],
