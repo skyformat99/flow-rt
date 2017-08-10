@@ -39,6 +39,11 @@ private class Ticker : StateMachine!SystemState {
         this.state = SystemState.Ticking;
     }
 
+    void join() {
+        while(this.state == SystemState.Ticking)
+            Thread.sleep(5.msecs);
+    }
+
     /// stops ticking with or without causing dispose
     void stop(bool disposing = true) {
         this.disposing = disposing;
@@ -415,27 +420,56 @@ private class Entity : StateMachine!SystemState {
     /// registers a receptor if not registered
     void register(string s, string t) {
         synchronized(this.sync.writer) {
-            import std.algorithm.iteration;
+            foreach(r; this.meta.receptors)
+                if(r.signal == s && r.tick == t)
+                    return; // nothing to do
 
             auto r = new Receptor;
             r.signal = s;
             r.tick = t;
-
-            this.meta.receptors = this.meta.receptors.splitter(r).join();
             this.meta.receptors ~= r; 
         }
     }
 
     /// deregisters a receptor if registerd
     void deregister(string s, string t) {
-        synchronized(this.sync.writer) {
-            import std.algorithm.iteration;
+        import std.algorithm.mutation;
 
-            auto cr = new Receptor;
-            cr.signal = s;
-            cr.tick = t;
-            
-            this.meta.receptors = this.meta.receptors.splitter(cr).join();
+        synchronized(this.sync.writer) {
+            foreach(i, r; this.meta.receptors.dup) {
+                if(r.signal == s && r.tick == t) {
+                    this.meta.receptors.remove(i);
+                    break;
+                }
+            }
+        }
+    }
+
+    /// registers an event if not registered
+    void register(EventType et, string t) {
+        synchronized(this.sync.writer) {
+            foreach(e; this.meta.events)
+                if(e.type == et && e.tick == t)
+                    return; // nothing to do
+
+            auto e = new Event;
+            e.type = et;
+            e.tick = t;
+            this.meta.events ~= e;
+        }
+    }
+
+    /// deregisters an event if registerd
+    void deregister(EventType et, string t) {
+        import std.algorithm.mutation;
+
+        synchronized(this.sync.writer) {
+            foreach(i, e; this.meta.events.dup) {
+                if(e.type == et && e.tick == t) {
+                    this.meta.events.remove(i);
+                    break;
+                }
+            }
         }
     }
 
@@ -508,10 +542,20 @@ private class Entity : StateMachine!SystemState {
     }
 
     override protected void onStateChanged(SystemState o, SystemState n) {
+        import std.algorithm.iteration;
+
         switch(n) {
             case SystemState.Ticking:
                 // here we need a writerlock since everyone could do that
                 synchronized(this.sync.writer) {
+                    // running onTick ticks
+                    foreach(e; this.meta.events.filter!(e => e.type == EventType.OnTick)) {
+                        auto ticker = new Ticker(this, e.tick.createTick(this));
+                        ticker.start();
+                        ticker.join();
+                        ticker.destroy();
+                    }
+
                     // creating and starting ticker for all frozen ticks
                     foreach(t; this.meta.ticks) {
                         auto ticker = new Ticker(this, t);
@@ -540,7 +584,15 @@ private class Entity : StateMachine!SystemState {
                         if(t.coming !is null)
                             this.meta.ticks ~= t.coming;
                         this.ticker.remove(t.id);
-                        t.destroy;
+                        t.destroy();
+                    }
+
+                    // running onFreeze ticks
+                    foreach(e; this.meta.events.filter!(e => e.type == EventType.OnFreeze)) {
+                        auto ticker = new Ticker(this, e.tick.createTick(this));
+                        ticker.start();
+                        ticker.join();
+                        ticker.destroy();
                     }
                 }                    
                 break;
@@ -549,7 +601,7 @@ private class Entity : StateMachine!SystemState {
                     // just stopping and destroying all ticker
                     foreach(t; this.ticker.values) {
                         t.stop(false);
-                        t.destroy;
+                        t.destroy();
                     }
                 }
                 break;
@@ -558,13 +610,15 @@ private class Entity : StateMachine!SystemState {
     }
 }
 
-private TickMeta createTick(string t, Entity e, Signal s) {
+private TickMeta createTick(string t, Entity e, Signal s = null) {
     auto m = new TickMeta;
     m.info = new TickInfo;
     m.info.entity = e.meta.ptr;
     m.info.type = t;
-    m.info.group = s.group;
-    m.trigger = s;
+    if(s !is null) {
+        m.info.group = s.group;
+        m.trigger = s;
+    }
 
     return m;
 }
@@ -884,6 +938,8 @@ version(unittest) {
         mixin field!(TickInfo, "info");
         mixin field!(TestTickData, "data");
         mixin field!(TestSignal, "trigger");
+        mixin field!(bool, "onTick");
+        mixin field!(bool, "onFreeze");
     }
 
     class TestTickData : Data {
@@ -932,6 +988,20 @@ version(unittest) {
         }
     }
 
+    class TestOnTickTick : Tick {
+        override void run() {
+            auto c = this.context.as!TestTickContext;
+            c.onTick = true;
+        }
+    }
+
+    class TestOnFreezeTick : Tick {
+        override void run() {
+            auto c = this.context.as!TestTickContext;
+            c.onFreeze = true;
+        }
+    }
+
     class TriggeringTestContext : Data {
         mixin data;
 
@@ -960,6 +1030,16 @@ version(unittest) {
         auto e = new EntityMeta;
         e.ptr = new EntityPtr;
         e.ptr.id = "e";
+
+        auto ont = new Event;
+        ont.type = EventType.OnTick;
+        ont.tick = "flow.base.engine.TestOnTickTick";
+        e.events ~= ont;
+        auto onf = new Event;
+        onf.type = EventType.OnFreeze;
+        onf.tick = "flow.base.engine.TestOnFreezeTick";
+        e.events ~= onf;
+
         auto r = new Receptor;
         r.signal = "flow.base.engine.TestSignal";
         r.tick = "flow.base.engine.TestTick";
@@ -1018,6 +1098,8 @@ unittest {
     
     auto sm = s.snap;
     assert(sm.entities.length == 2, "space snapshot does not contain correct amount of entities");
+    assert(sm.entities[0].context.as!TestTickContext.onTick, "onTick entity event wasn't triggered");
+    assert(sm.entities[0].context.as!TestTickContext.onFreeze, "onFreeze entity event wasn't triggered");
     assert(sm.entities[0].context.as!TestTickContext.cnt == 6, "logic wasn't executed correct");
     assert(sm.entities[0].context.as!TestTickContext.trigger !is null, "trigger was not passed correctly");
     assert(sm.entities[0].context.as!TestTickContext.trigger.group == g, "group was not passed correctly to signal");

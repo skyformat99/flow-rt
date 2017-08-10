@@ -110,6 +110,19 @@ abstract class Data {
             return true;
         } else return false;
     }
+
+    @property Data dup() {
+        import std.stdio;
+        Data c = Object.factory(this.dataType).as!Data;
+
+        foreach(prop; this.properties) {
+            auto p = prop.as!PropertyInfo;
+            auto val = p.get(this);
+            p.set(c, val.dup(p));
+        }
+
+        return c;
+    }
 }
 
 mixin template data() {
@@ -430,15 +443,15 @@ unittest {
     assert(d.get!(double[])("nanA")[0] is double.nan, "could not get array data value");
 }
 
-T[] dup(T)(T[] arr) if(is(T : Data)) {
-    T[] cArr;
-    foreach(e; arr) cArr ~= e.dup;
+T dup(T)(T arr) if(isArray!T && is(ElementType!T : Data)) {
+    T cArr;
+    foreach(e; arr) cArr ~= cast(ElementType!T)e.dup;
 
     return cArr;
 }
 
-T[] dup(T)(T[] arr) if(canHandle!T && !is(T : Data)) {
-    T[] cArr;
+T dup(T)(T arr) if(isArray!T && canHandle!(ElementType!T) && !is(ElementType!T : Data)) {
+    T cArr;
     foreach(e; arr) cArr ~= e;
 
     return cArr;
@@ -495,22 +508,6 @@ private Variant dup(Variant t, PropertyInfo p) {
             return Variant(t.get!(Data).dup);
         else return t;
     }
-}
-
-Data dup(Data t) {
-    import std.stdio;
-    Data c;
-    if(t !is null) {
-        c = Object.factory(t.dataType).as!Data;
-
-        foreach(prop; t.properties) {
-            auto p = prop.as!PropertyInfo;
-            auto val = p.get(t);
-            p.set(c, val.dup(p));
-        }
-    }
-
-    return c;
 }
 
 unittest {

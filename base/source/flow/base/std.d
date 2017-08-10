@@ -96,6 +96,18 @@ class Receptor : Data {
     mixin field!(string, "tick");
 }
 
+enum EventType {
+    OnTick,
+    OnFreeze
+}
+
+class Event : Data {
+    mixin data;
+
+    mixin field!(EventType, "type");
+    mixin field!(string, "tick");
+}
+
 /// referencing a specific entity 
 class EntityPtr : Data {
     mixin data;
@@ -108,8 +120,8 @@ class EntityPtr : Data {
 class Reception : Data {
     mixin data;
 
-    mixin field!(string, "tick");
     mixin field!(Signal, "signal");
+    mixin field!(string, "tick");
 }
 
 class EntityMeta : Data {
@@ -119,7 +131,9 @@ class EntityMeta : Data {
 
     mixin field!(EntityPtr, "ptr");
     mixin field!(Data, "context");
+    mixin array!(Event, "events");
     mixin array!(Receptor, "receptors");
+
     mixin array!(TickMeta, "ticks");
     mixin array!(Reception, "floating");
 }

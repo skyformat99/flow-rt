@@ -9,9 +9,7 @@ rootDir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 function buildBase {
     cd $rootDir/base &&
     dub build $defBuildParams $buildParams &&
-    dub test $defBuildParams $buildParams &&
-    export LIBRARY_PATH=$rootDir/base/lib
-    export LD_LIBRARY_PATH=$rootDir/base/lib
+    dub test $defBuildParams $buildParams
 }
 
 function buildLib {
@@ -30,6 +28,9 @@ function buildBin {
 }
 
 buildBase &&
+export LIBRARY_PATH=$rootDir/base/lib &&
+export LD_LIBRARY_PATH=$rootDir/base/lib &&
+
 buildBin run &&
 
 buildLib complex
