@@ -16,6 +16,7 @@ hive
 
 # Executables
 *.exe
+base/iface
 base/lib
 complex/lib
 run/bin
