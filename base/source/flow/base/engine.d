@@ -35,7 +35,8 @@ private class Ticker : StateMachine!SystemState {
     }
 
     /// starts ticking
-    void start() {
+    void start(bool disposing = true) {
+        this.disposing = disposing;
         this.state = SystemState.Ticking;
     }
 
@@ -45,8 +46,7 @@ private class Ticker : StateMachine!SystemState {
     }
 
     /// stops ticking with or without causing dispose
-    void stop(bool disposing = true) {
-        this.disposing = disposing;
+    void stop() {
         this.state = SystemState.Frozen;
     }
 
@@ -160,7 +160,7 @@ private class Ticker : StateMachine!SystemState {
     void fork(TickInfo i, Data d) {
         /* since tick data needs not to be synchronized
         new causal branch has to have its own instance -> deep clone */
-        if(d !is null) d = d.dup;
+        if(d !is null) d = d.clone;
 
         this.entity.start(createTick(i, this.actual, d));
     }
@@ -189,7 +189,7 @@ abstract class Tick {
     /// pointer of hosting entity, just a deep clone we never pass references to others
     protected @property EntityPtr entity() {
         if(this._entity is null)
-            this._entity = this.ticker.entity.meta.ptr.dup.as!EntityPtr;
+            this._entity = this.ticker.entity.meta.ptr.clone;
         return this._entity;
     }
 
@@ -202,7 +202,7 @@ abstract class Tick {
     /// info of current tick, again just a deep clone
     protected @property TickInfo info() {
         if(this._info is null)
-            this._info = this.meta.info.dup.as!TickInfo;
+            this._info = this.meta.info.clone;
         return this._info;
     }
 
@@ -210,7 +210,7 @@ abstract class Tick {
     /// signal wich triggered this part of causal string, again just a deep clone
     protected @property Signal trigger() {
         if(this._trigger is null)
-            this._trigger = this.meta.trigger.dup.as!Signal;
+            this._trigger = this.meta.trigger.clone;
         return this._trigger;
     }
 
@@ -218,7 +218,7 @@ abstract class Tick {
     /// info of previous tick, again just a deep clone
     protected @property TickInfo previous() {
         if(this._previous is null)
-            this._previous = this.meta.previous.dup.as!TickInfo;
+            this._previous = this.meta.previous.clone;
         return this._previous;
     }
 
@@ -436,7 +436,7 @@ private class Entity : StateMachine!SystemState {
         import std.algorithm.mutation;
 
         synchronized(this.sync.writer) {
-            foreach(i, r; this.meta.receptors.dup) {
+            foreach(i, r; this.meta.receptors.clone) {
                 if(r.signal == s && r.tick == t) {
                     this.meta.receptors.remove(i);
                     break;
@@ -464,7 +464,7 @@ private class Entity : StateMachine!SystemState {
         import std.algorithm.mutation;
 
         synchronized(this.sync.writer) {
-            foreach(i, e; this.meta.events.dup) {
+            foreach(i, e; this.meta.events.clone) {
                 if(e.type == et && e.tick == t) {
                     this.meta.events.remove(i);
                     break;
@@ -508,7 +508,7 @@ private class Entity : StateMachine!SystemState {
             new EntityException("entity cannot send signals to itself, use fork");
 
         // also here we deep clone before passing its pointer
-        s.src = this.meta.ptr.dup.as!EntityPtr;
+        s.src = this.meta.ptr.clone;
 
         return this.space.send(s);
     }
@@ -516,7 +516,7 @@ private class Entity : StateMachine!SystemState {
     /// send a multicast signal into own space
     bool send(Multicast s) {
         // also here we deep clone before passing its pointer
-        s.src = this.meta.ptr.dup.as!EntityPtr;
+        s.src = this.meta.ptr.clone;
 
         return this.space.send(s);
     }
@@ -526,7 +526,7 @@ private class Entity : StateMachine!SystemState {
     EntityMeta snap() {
         this.ensureState(SystemState.Frozen);
         // if someone snaps using this function, it is another entity. it will only get a deep clone.
-        return this.meta.dup.as!EntityMeta;
+        return this.meta.clone;
     }
 
     override protected bool onStateChanging(SystemState o, SystemState n) {
@@ -551,7 +551,7 @@ private class Entity : StateMachine!SystemState {
                     // running onTick ticks
                     foreach(e; this.meta.events.filter!(e => e.type == EventType.OnTick)) {
                         auto ticker = new Ticker(this, e.tick.createTick(this));
-                        ticker.start();
+                        ticker.start(false);
                         ticker.join();
                         ticker.destroy();
                     }
@@ -580,7 +580,8 @@ private class Entity : StateMachine!SystemState {
                 synchronized(this.sync.writer) {
                     // stopping and destroying all ticker and freeze coming ticks
                     foreach(t; this.ticker.values.dup) {
-                        t.stop(false);
+                        t.disposing = false;
+                        t.stop();
                         if(t.coming !is null)
                             this.meta.ticks ~= t.coming;
                         this.ticker.remove(t.id);
@@ -590,7 +591,7 @@ private class Entity : StateMachine!SystemState {
                     // running onFreeze ticks
                     foreach(e; this.meta.events.filter!(e => e.type == EventType.OnFreeze)) {
                         auto ticker = new Ticker(this, e.tick.createTick(this));
-                        ticker.start();
+                        ticker.start(false);
                         ticker.join();
                         ticker.destroy();
                     }
@@ -600,7 +601,8 @@ private class Entity : StateMachine!SystemState {
                 synchronized(this.sync.writer) {
                     // just stopping and destroying all ticker
                     foreach(t; this.ticker.values) {
-                        t.stop(false);
+                        t.disposing = false;
+                        t.stop();
                         t.destroy();
                     }
                 }
@@ -632,7 +634,7 @@ class EntityController {
     private Entity _entity;
 
     /// deep clone of entity pointer of controlled entity
-    @property EntityPtr entity() {return this._entity.meta.ptr.dup.as!EntityPtr;}
+    @property EntityPtr entity() {return this._entity.meta.ptr.clone;}
 
     /// state of entity
     @property SystemState state() {return this._entity.state;}
@@ -728,7 +730,7 @@ class Space : StateMachine!SystemState {
                 scope(exit) this.state = SystemState.Ticking;
             }
             
-            return this.meta.dup.as!SpaceMeta;
+            return this.meta.clone;
         }
     }
 
@@ -866,7 +868,7 @@ class Process {
     private bool shift(Unicast s, bool intern = false) {
         /* each time a pointer leaves a space
         it has to get dereferenced */
-        if(intern) s.dst = s.dst.dup.as!EntityPtr;
+        if(intern) s.dst = s.dst.clone;
         
         foreach(spc; this.spaces.values)
             if(spc.route(s, intern)) return true;

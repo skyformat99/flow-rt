@@ -111,14 +111,14 @@ abstract class Data {
         } else return false;
     }
 
-    @property Data dup() {
+    @property Data clone() {
         import std.stdio;
         Data c = Object.factory(this.dataType).as!Data;
 
         foreach(prop; this.properties) {
             auto p = prop.as!PropertyInfo;
             auto val = p.get(this);
-            p.set(c, val.dup(p));
+            p.set(c, val.clone(p));
         }
 
         return c;
@@ -140,6 +140,10 @@ mixin template data() {
 		static if(__flowutil.fqn!(typeof(super)) != "flow.base.data.Data")
             foreach(n, i; super.Properties)
                 Properties[n] = i;
+    }
+
+    override @property typeof(this) clone() {
+        return cast(typeof(this))super.clone;
     }
 }
 
@@ -350,12 +354,15 @@ unittest {
     d.text = "foo"; assert(d.text == "foo", "could not set basic string value");    
     d.inner = new TestData; assert(d.inner !is null, "could not set basic data value");
     d.inner.integer = 3; assert(d.inner.integer == 3, "could not set property of basic data value");
+    d.enumeration = TestEnum.Bar; assert(d.enumeration == TestEnum.Bar, "could not ser property of basic enum value");
     d.uintegerA ~= 3; d.uintegerA ~= 4; assert(d.uintegerA.length == 2 && d.uintegerA[0] == 3 && d.uintegerA[1] == 4, "could not set array scalar value");
     d.uintegerA = [1]; assert(d.uintegerA.length == 1 && d.uintegerA[0] == 1, "could not set array scalar value");
     d.textA ~= "foo"; d.textA ~= "bar"; assert(d.textA.length == 2 && d.textA[0] == "foo" && d.textA[1] == "bar", "could not set array string value");
     d.textA = ["bla"]; assert(d.textA.length == 1 && d.textA[0] == "bla", "could not set array string value");
     d.innerA ~= new TestData; d.innerA ~= new TestData; assert(d.innerA.length == 2 && d.innerA[0] !is null && d.innerA[1] !is null && d.innerA[0] !is d.innerA[1], "could not set array data value");
     d.innerA = [new TestData]; assert(d.innerA.length == 1 && d.innerA[0] !is null, "could not set array data value");
+    d.enumerationA ~= TestEnum.Bar; d.enumerationA ~= TestEnum.Foo; assert(d.enumerationA.length == 2 && d.enumerationA[0] == TestEnum.Bar && d.enumerationA[1] == TestEnum.Foo, "could not set array enum value");
+    d.enumerationA = [TestEnum.Bar]; assert(d.enumerationA.length == 1 && d.enumerationA[0] == TestEnum.Bar, "could not set array enum value");
     d.additional = "ble"; assert(d.additional == "ble", "could not set second level basic scalar");
     d.nanA ~= double.nan; assert(d.nanA.length == 1 && d.nanA[0] is double.nan, "could not set second level basic scalar");
 }
@@ -381,8 +388,12 @@ T get(T)(Data d, string name) if(isArray!T && is(ElementType!T : Data)) {
     return d.get(name).get!(Data[])().as!T;
 }
 
-T get(T)(Data d, string name) if((canHandle!T && !is(T : Data)) || (isArray!T && canHandle!(ElementType!T) && !is(ElementType!T : Data))) {
-    return d.get(name).get!T();
+T get(T)(Data d, string name) if(canHandle!T && !is(T : Data)) {
+    return cast(T)d.get(name).get!(OriginalType!T)();
+}
+
+T get(T)(Data d, string name) if(!is(T == string) && isArray!T && canHandle!(ElementType!T) && !is(ElementType!T : Data)) {
+    return cast(T)d.get(name).get!(OriginalType!(ElementType!T)[])();
 }
 
 private bool set(Data d, string name, Variant val) {
@@ -400,8 +411,12 @@ bool set(T)(Data d, string name, T val) if(isArray!T && is(ElementType!T : Data)
     return d.set(name, Variant(val.as!(Data[])));
 }
 
-bool set(T)(Data d, string name, T val) if((canHandle!T && !is(T : Data)) || (isArray!T && canHandle!(ElementType!T) && !is(ElementType!T : Data))) {
-    return d.set(name, Variant(val));
+bool set(T)(Data d, string name, T val) if(canHandle!T && !is(T : Data)) {
+    return d.set(name, Variant(cast(OriginalType!T)val));
+}
+
+bool set(T)(Data d, string name, T val) if(!is(T == string) && isArray!T && canHandle!(ElementType!T) && !is(ElementType!T : Data)) {
+    return d.set(name, Variant(cast(OriginalType!(ElementType!T)[])val));
 }
 
 unittest {
@@ -426,6 +441,9 @@ unittest {
     assert(d.get!TestData("inner") !is null, "could not get basic data value");
     assert(d.set("inner", null.as!TestData) && d.inner is null, "could not set basic data value");
     assert(d.get!TestData("inner") is null, "could not get basic data value");
+
+    assert(d.set("enumeration", TestEnum.Bar) && d.enumeration == TestEnum.Bar, "could not set basic enum value");
+    assert(d.get!TestEnum("enumeration") == TestEnum.Bar, "could not get basic enum value");
     
     assert(d.set("integerA", [2L, 3L, 4L]) && d.integerA.length == 3 && d.integerA[0] == 2 && d.integerA[1] == 3 && d.integerA[2] == 4, "could not set array scalar value");
     assert(d.get!(long[])("integerA")[0] == 2L, "could not get array scalar value");
@@ -436,6 +454,9 @@ unittest {
     assert(d.set("innerA", [new TestData]) && d.innerA.length == 1 && d.innerA[0] !is null, "could not set array data value");
     assert(d.get!(TestData[])("innerA")[0] !is null, "could not get array data value");
     
+    assert(d.set("enumerationA", [TestEnum.Bar, TestEnum.Foo]) && d.enumerationA.length == 2 && d.enumerationA[0] == TestEnum.Bar && d.enumerationA[1] == TestEnum.Foo, "could not set array enum value");
+    assert(d.get!(TestEnum[])("enumerationA")[0] == TestEnum.Bar, "could not get array enum value");
+    
     assert(d.set("additional", "ble") && d.additional == "ble", "could not set second level basic scalar value");
     assert(d.get!string("additional") == "ble", "could not get second level basic scalar value");
     
@@ -443,69 +464,72 @@ unittest {
     assert(d.get!(double[])("nanA")[0] is double.nan, "could not get array data value");
 }
 
-T dup(T)(T arr) if(isArray!T && is(ElementType!T : Data)) {
+T clone(T)(T arr) if(isArray!T && is(ElementType!T : Data)) {
     T cArr;
-    foreach(e; arr) cArr ~= cast(ElementType!T)e.dup;
+    foreach(e; arr) cArr ~= cast(ElementType!T)e.clone;
 
     return cArr;
 }
 
-T dup(T)(T arr) if(isArray!T && canHandle!(ElementType!T) && !is(ElementType!T : Data)) {
+T clone(T)(T arr) if(isArray!T && canHandle!(ElementType!T) && !is(ElementType!T : Data)) {
     T cArr;
     foreach(e; arr) cArr ~= e;
 
     return cArr;
 }
 
-private Variant dup(Variant t, PropertyInfo p) {
+private Variant clone(Variant t, PropertyInfo p) {
     import std.stdio;
+
     if(p.array) {
         if(p.desc == TypeDesc.Scalar && p.info == typeid(bool))
-            return Variant(t.get!(bool[]).dup);
+            return Variant(t.get!(bool[]).clone);
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(byte))
-            return Variant(t.get!(byte[]).dup);
+            return Variant(t.get!(byte[]).clone);
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(ubyte))
-            return Variant(t.get!(ubyte[]).dup);
+            return Variant(t.get!(ubyte[]).clone);
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(short))
-            return Variant(t.get!(short[]).dup);
+            return Variant(t.get!(short[]).clone);
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(ushort))
-            return Variant(t.get!(ushort[]).dup);
+            return Variant(t.get!(ushort[]).clone);
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(int))
-            return Variant(t.get!(int[]).dup);
+            return Variant(t.get!(int[]).clone);
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(uint))
-            return Variant(t.get!(uint[]).dup);
+            return Variant(t.get!(uint[]).clone);
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(long))
-            return Variant(t.get!(long[]).dup);
+            return Variant(t.get!(long[]).clone);
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(ulong))
-            return Variant(t.get!(ulong[]).dup);
+            return Variant(t.get!(ulong[]).clone);
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(float))
-            return Variant(t.get!(float[]).dup);
+            return Variant(t.get!(float[]).clone);
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(double))
-            return Variant(t.get!(double[]).dup);
+            return Variant(t.get!(double[]).clone);
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(char))
-            return Variant(t.get!(char[]).dup);
+            return Variant(t.get!(char[]).clone);
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(wchar))
-            return Variant(t.get!(wchar[]).dup);
+            return Variant(t.get!(wchar[]).clone);
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(dchar))
-            return Variant(t.get!(dchar[]).dup);
+            return Variant(t.get!(dchar[]).clone);
         else if(p.desc == TypeDesc.UUID)
-            return Variant(t.get!(UUID[]).dup);
+            return Variant(t.get!(UUID[]).clone);
         else if(p.desc == TypeDesc.SysTime)
-            return Variant(t.get!(SysTime[]).dup);
+            return Variant(t.get!(SysTime[]).clone);
         else if(p.desc == TypeDesc.DateTime)
-            return Variant(t.get!(DateTime[]).dup);
+            return Variant(t.get!(DateTime[]).clone);
         else if(p.desc == TypeDesc.Date)
-            return Variant(t.get!(Date[]).dup);
+            return Variant(t.get!(Date[]).clone);
         else if(p.desc == TypeDesc.Duration)
-            return Variant(t.get!(Duration[]).dup);
+            return Variant(t.get!(Duration[]).clone);
         else if(p.desc == TypeDesc.String)
-            return Variant(t.get!(string[]).dup);
+            return Variant(t.get!(string[]).clone);
         else if(p.desc == TypeDesc.Data)
-            return Variant(t.get!(Data[]).dup);
+            return Variant(t.get!(Data[]).clone);
         else assert(false, "this is an impossible situation");
     } else {
-        if(p.desc == TypeDesc.Data)
-            return Variant(t.get!(Data).dup);
+        if(p.desc == TypeDesc.Data) {
+            auto d = t.get!(Data);
+            return Variant(d !is null ? d.clone : null);
+        }
         else return t;
     }
 }
@@ -513,30 +537,34 @@ private Variant dup(Variant t, PropertyInfo p) {
 unittest {
     import std.stdio;
     import std.range;
-    writeln("testing dup and == of data and member");
+    writeln("testing clone and == of data and member");
 
     auto d = new InheritedTestData;
     d.uinteger = 5;
     d.text = "foo";
     d.inner = new TestData;
     d.inner.integer = 3;
+    d.enumeration = TestEnum.Bar;
     d.uintegerA = [3, 4];
     d.textA = ["foo", "bar"];
     d.innerA = [new TestData, new TestData];
+    d.enumerationA = [TestEnum.Bar, TestEnum.Foo];
     d.additional = "ble";
 
-    auto d2 = d.dup().as!InheritedTestData;
+    auto d2 = d.clone().as!InheritedTestData;
  
     assert(d !is d2, "clones references are matching");
-    assert(d2.uinteger == 5, "could not dup basic scalar value");
-    assert(d2.text == "foo", "could not dup basic string value");   
-    assert(d2.inner !is null && d2.inner !is d.inner, "could not dup basic data value");
-    assert(d2.inner.integer == 3, "could not dup property of basic data value");
-    assert(d2.uintegerA.length == 2 && d2.uintegerA[0] == 3 && d2.uintegerA[1] == 4 && d2.uintegerA !is d.uintegerA, "could not dup array scalar value");
-    assert(d2.textA.length == 2 && d2.textA[0] == "foo" && d2.textA[1] == "bar", "could not dup array string value");
+    assert(d2.uinteger == 5, "could not clone basic scalar value");
+    assert(d2.text == "foo", "could not clone basic string value");   
+    assert(d2.inner !is null && d2.inner !is d.inner, "could not clone basic data value");
+    assert(d2.inner.integer == 3, "could not clone property of basic data value");
+    assert(d2.enumeration == TestEnum.Bar, "could not clone basic enum value");
+    assert(d2.uintegerA.length == 2 && d2.uintegerA[0] == 3 && d2.uintegerA[1] == 4 && d2.uintegerA !is d.uintegerA, "could not clone array scalar value");
+    assert(d2.textA.length == 2 && d2.textA[0] == "foo" && d2.textA[1] == "bar", "could not clone array string value");
     assert(d2.innerA.length == 2 && d2.innerA[0] !is null && d2.innerA[1] !is null && d2.innerA[0] !is d2.innerA[1] && d2.innerA[0] !is d.innerA[0], "could not set array data value");
+    assert(d2.enumerationA.length == 2 && d2.enumerationA[0] == TestEnum.Bar && d2.enumerationA[1] == TestEnum.Foo && d2.enumerationA !is d.enumerationA, "could not clone array enum value");
 
-    assert(d2.additional == "ble", "could not dup basic scalar value");
+    assert(d2.additional == "ble", "could not clone basic scalar value");
 
     assert(d == d2, "clones don't ==");
 }
@@ -809,7 +837,7 @@ unittest {
     d.uintegerA = [3, 4];
     d.textA = ["foo", "bar"];
     d.innerA = [new TestData, new TestData];
-    d.enumerationA = [TestEnum.Foo, TestEnum.Bar];
+    d.enumerationA = [TestEnum.Bar, TestEnum.Foo];
     d.additional = "ble";
 
     auto dStr = d.json.toString();
@@ -818,7 +846,7 @@ unittest {
         "\"boolean\":true,"~
         "\"dataType\":\"flow.base.data.InheritedTestData\","~
         "\"enumeration\":1,"~
-        "\"enumerationA\":[0,1],"~
+        "\"enumerationA\":[1,0],"~
         "\"inner\":{"~
             "\"dataType\":\"flow.base.data.TestData\","~
             "\"integer\":3"~
@@ -843,7 +871,7 @@ unittest {
     assert(d2.uintegerA.length == 2 && d2.uintegerA[0] == 3 && d2.uintegerA[1] == 4 && d2.uintegerA !is d.uintegerA, "could not deserialize array scalar value");
     assert(d2.textA.length == 2 && d2.textA[0] == "foo" && d2.textA[1] == "bar", "could not deserialize array string value");
     assert(d2.innerA.length == 2 && d2.innerA[0] !is null && d2.innerA[1] !is null && d2.innerA[0] !is d2.innerA[1] && d2.innerA[0] !is d.innerA[0], "could not set array data value");
-    assert(d2.enumerationA.length == 2 && d2.enumerationA[0] == TestEnum.Foo && d2.enumerationA[1] == TestEnum.Bar, "could not deserialize array enum value");
+    assert(d2.enumerationA.length == 2 && d2.enumerationA[0] == TestEnum.Bar && d2.enumerationA[1] == TestEnum.Foo, "could not deserialize array enum value");
 
     assert(d2.additional == "ble", "could not deserialize basic scalar value");
 }

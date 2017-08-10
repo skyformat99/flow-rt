@@ -29,7 +29,7 @@ Simply not passing sublevels will return the whole domain(example: existing doma
 * ~~Explaination: as you can see "foo.224.bar.two.bla" is not matching "/[0-9]23/" and "foo.223.bar.two.bli" is not matching "bla"~~
 
 ## Data
-Flow offers you the possibility to easily define **data** objects having certain characteristics . They can contain **field**s(1:1) and **list**s(1:n). Lists cannot be set but, you may **put** something in **remove** it again or completely **clear** its content. Data may be **dup**licated(deep cloning the hierarchies memory). You may also **get** and **set** fields or lists by their name and type informations.
+Flow offers you the possibility to easily define **data** objects having certain characteristics . They can contain **field**s(1:1) and **list**s(1:n). Lists cannot be set but, you may **put** something in **remove** it again or completely **clear** its content. Data may be **clone**ed(deep cloning the hierarchies memory). You may also **get** and **set** fields or lists by their name and type informations.
 
 ## Signal
 There are different signal types which are derrived from data.
