@@ -360,7 +360,7 @@ package class Tasker : StateMachine!TaskerState {
         this.state = TaskerState.Stopped;
     }
 
-    void run(void delegate() t, Duration d = Duration.init) {
+    void run(string id, size_t costs, void delegate() t, Duration d = Duration.init) {
         this.ensureState(TaskerState.Started);
 
         if(d == Duration.init)
@@ -402,9 +402,9 @@ unittest {
     e.start();
 
     try {
-        e.run(&t.set1);
-        e.run(&t.set2);
-        e.run(&t.set3);
+        e.run("1", 1, &t.set1);
+        e.run("2", 2, &t.set2);
+        e.run("3", 3, &t.set3);
     } finally {
         e.stop();
     }

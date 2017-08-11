@@ -8,7 +8,7 @@ import std.uuid, std.string;
 
 /// executes an entitycentric string of discretized causality 
 private class Ticker : StateMachine!SystemState {
-    bool ticking;
+    Tick running;
     bool disposing;
     
     UUID id;
@@ -70,11 +70,11 @@ private class Ticker : StateMachine!SystemState {
     override protected void onStateChanged(SystemState o, SystemState n) {
         switch(n) {
             case SystemState.Ticking:
-                this.entity.space.process.tasker.run(&this.tick);
+                this.tick();
                 break;
             case SystemState.Frozen:
                 // wait for executing tick to end
-                while(this.ticking)
+                while(this.running !is null)
                     Thread.sleep(5.msecs);
 
                 // if stopped using disposing flag -> dispose
@@ -83,7 +83,7 @@ private class Ticker : StateMachine!SystemState {
                 break;
             case SystemState.Destroyed:
                 // wait for executing tick to end
-                while(this.ticking)
+                while(this.running !is null)
                     Thread.sleep(5.msecs);
                 break;
             default: break;
@@ -93,30 +93,23 @@ private class Ticker : StateMachine!SystemState {
     /// run coming tick if possible, is usually called by a tasker
     void tick() {
         try {
-            // create a new tick of given type or notify failing and stop
-            Tick t = this.coming.createTick(this);
-            if(t !is null) {
-                t.info.id = randomUUID;
-        
+            if(this.coming !is null) {
                 // if in ticking state try to run created tick or notify wha nothing happens
                 if(this.state == SystemState.Ticking) {
-                    this.ticking = true;
-                    try { this.runTick(t); }
-                    finally {this.ticking = false;}
-
-                    /* if tick enqueued another one, enqueue it into tasker or
-                    notify and stop if not done already by external instance */
-                    if(this.coming !is null)
-                        this.entity.space.process.tasker.run(&this.tick);
-                    else {
-                        this.msg(LL.FDebug, "nothing to do, ticker is ending");
+                    // create a new tick of given type or notify failing and stop
+                    this.running = this.coming.createTick(this);
+                    if(this.running !is null) {
+                        this.running.info.id = randomUUID;
+                        this.entity.space.process.tasker.run(this.entity.meta.ptr.addr, this.running.costs, &this.runTick);
+                    } else {
+                        this.msg(LL.Error, "could not create tick -> ending");
                         if(this.state == SystemState.Ticking) this.stop();
                     }
                 } else {
                     this.msg(LL.FDebug, "ticker is not ticking");
                 }
             } else {
-                this.msg(LL.Error, "could not create tick -> ending");  
+                this.msg(LL.FDebug, "nothing to do, ticker is ending");
                 if(this.state == SystemState.Ticking) this.stop();
             }
         } catch(Throwable thr) {
@@ -125,15 +118,15 @@ private class Ticker : StateMachine!SystemState {
     }
 
     /// run coming tick and handle exception if it occurs
-    void runTick(Tick t) {
+    void runTick() {
         // check if entity is still running after getting the sync
-        this.actual = t.meta;
+        this.actual = this.running.meta;
         this.coming = null;
 
         try {
             // run tick
             this.msg(LL.FDebug, this.actual, "running tick");
-            t.run();
+            this.running.run();
             this.msg(LL.FDebug, this.actual, "finished tick");
         }
         catch(Exception ex) {
@@ -141,14 +134,21 @@ private class Ticker : StateMachine!SystemState {
             this.msg(LL.Warning, ex, "tick failed");
             try {
                 this.msg(LL.Info, this.actual, "handling tick error");
-                t.error(ex);
+                this.running.error(ex);
                 this.msg(LL.Info, this.actual, "tick error handled");
             }
             catch(Exception ex2) {
                 // if even handling exception failes notify that an error occured
                 this.msg(LL.Error, ex2, "handling tick error failed");
+
+                this.running = null;
+                if(this.state == SystemState.Ticking) this.stop();
+                return;
             }
         }
+        
+        this.running = null;
+        this.tick();
     }
 
     /// set next tick in causal string
@@ -224,6 +224,9 @@ abstract class Tick {
 
     /// data dedicated to this tick (only available to this tick, no need to sync)
     protected @property Data data() {return this.meta.data;}
+
+    /// predicted costs of tick (default=1)
+    public @property size_t costs() {return 1;}
 
     /// algorithm implementation of tick
     public abstract void run();
