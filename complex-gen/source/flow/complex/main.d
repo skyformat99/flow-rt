@@ -2,7 +2,6 @@ module flow.complex.main;
 
 import std.getopt;
 
-///
 private struct ComplexOpts {
     string output;
     bool force;
@@ -37,17 +36,35 @@ void main(string[] args) {
     else help(rslt);
 
     if(sm !is null) {
+        import std.path, std.array;
+
         if(opts.output.exists && opts.force)
             opts.output.remove();
 
         opts.output.write(sm.json.toString);
+
+        auto pcFile = opts.output.dirName.buildPath("process.cfg");
+        if(!pcFile.exists) {
+            auto pc = new ProcessConfig;
+            pcFile.write(pc.json.toString);
+        }
+
+        auto libsFile = opts.output.dirName.buildPath("libs.lst");
+        if(libsFile.exists) {
+            import std.string, std.algorithm.searching;
+
+            if(!libsFile.readText.split.any!(a=>a.strip == "libflow-complex.so"))
+                libsFile.append("libflow-complex.so");
+        } else {
+            libsFile.write("libflow-complex.so\n");
+        }
     }
 }
 
 private void help(GetoptResult rslt) {
     defaultGetoptPrinter("FLOW complex generator.\n"~
             "[Type]\n"~
-            "power\tGenerates a system driver by power interaction.\n"~
+            "power\tGenerates a system driven by interacting power.\n"~
             "\n[Options]", rslt.options);
 }
 

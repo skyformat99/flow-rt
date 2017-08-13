@@ -27,14 +27,19 @@ function buildLib {
     cp -fr lib/libflow-$1.so ../run/bin/lib
 }
 
+function buildRun {
+    cd $rootDir/run &&
+    dub build --build $buildType $defBuildParams $buildParams &&
+    mkdir -p $rootDir/run/bin/cfg
+}
+
 function buildBin {
     cd $rootDir/$1 &&
     dub build --build $buildType $defBuildParams $buildParams
 }
 
 buildBase &&
-buildBin run &&
-mkdir -p run/bin/config &&
+buildRun &&
 
 buildLib complex &&
 

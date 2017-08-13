@@ -777,6 +777,8 @@ private Variant get(T)(JSONValue j, Data d, PropertyInfo p) if(canHandle!T && !i
                     return Variant(T.fromISOString(j.str));
                 else static if(is(T == Duration))
                     return Variant(j.integer.hnsecs);
+                else static if(is(T == UUID))
+                    return Variant(j.str.parseUUID);
                 else return Variant();
             case JSON_TYPE.INTEGER:
                 static if(isScalarType!T)
@@ -831,6 +833,7 @@ unittest {
     d.boolean = true;
     d.uinteger = 5;
     d.text = "foo";
+    d.uuid = "1bf8eac7-64ee-4cde-aa9e-8877ac2d511d".parseUUID;
     d.inner = new TestData;
     d.inner.integer = 3;
     d.enumeration = TestEnum.Bar;
@@ -841,6 +844,7 @@ unittest {
     d.additional = "ble";
 
     auto dStr = d.json.toString();
+    debug(data) writeln(dStr);
     assert(dStr == "{"~
         "\"additional\":\"ble\","~
         "\"boolean\":true,"~
@@ -858,13 +862,15 @@ unittest {
         "\"text\":\"foo\","~
         "\"textA\":[\"foo\",\"bar\"],"~
         "\"uinteger\":5,"~
-        "\"uintegerA\":[3,4]}", "could not serialize data");
+        "\"uintegerA\":[3,4],"~
+        "\"uuid\":\"1bf8eac7-64ee-4cde-aa9e-8877ac2d511d\"}", "could not serialize data");
 
     auto d2 = parseJSON(dStr).createData().as!InheritedTestData;
     assert(d2 !is null, "could not deserialize data");
     assert(d2.boolean, "could not deserialize basic scalar value");
     assert(d2.uinteger == 5, "could not deserialize basic scalar value");
     assert(d2.text == "foo", "could not deserialize basic string value");   
+    assert(d2.uuid == "1bf8eac7-64ee-4cde-aa9e-8877ac2d511d".parseUUID, "could not deserialize basic uuid value");
     assert(d2.inner !is null && d2.inner !is d.inner, "could not deserialize basic data value");
     assert(d2.enumeration == TestEnum.Bar, "could not deserialize basic enum value");
     assert(d2.inner.integer == 3, "could not deserialize property of basic data value");

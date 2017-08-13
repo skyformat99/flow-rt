@@ -132,7 +132,15 @@
             "cwd": "${workspaceRoot}/example/base/complex/bin"
         }
     ]
-    */
+    
+    "configurations": [
+        
+    ]*/
+    
+    /*"configurations": [
+        
+    ]*/
+
     "configurations": [
         {
             "name": "flow-base",
@@ -145,6 +153,33 @@
             ],
             "target": "flow-base-test-library",
             "cwd": "${workspaceRoot}/base/lib"
+        },
+        {
+            "name": "flow-complex-gen",
+            "type": "gdb",
+            "request": "launch",
+            "autorun": [
+                "set environment LD_LIBRARY_PATH ${workspaceRoot}/base/lib:${workspaceRoot}/run/bin/lib",
+                "handle SIGUSR1 nostop noprint",
+                "handle SIGUSR2 nostop noprint",
+                "break onInvalidMemoryOperationError"
+            ],
+            "target": "flow-complex-gen",
+            "cwd": "${workspaceRoot}/complex-gen/bin"
+        },
+        {
+            "name": "flow-run",
+            "type": "gdb",
+            "request": "launch",
+            "autorun": [
+                "set environment LD_LIBRARY_PATH ${workspaceRoot}/base/lib",
+                "handle SIGUSR1 nostop noprint",
+                "handle SIGUSR2 nostop noprint",
+                "break onInvalidMemoryOperationError"
+            ],
+            "target": "flow-run",
+            "cwd": "${workspaceRoot}/run/bin",
+            "arguments": "${workspaceRoot}/tmp/cfg/complex/power/1"
         }
     ]
 }

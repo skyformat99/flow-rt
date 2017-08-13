@@ -1,0 +1,7 @@
+#!/bin/bash
+
+rootDir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$rootDir/base/lib:$rootDir/run/bin/lib
+
+$rootDir/complex-gen/bin/flow-complex-gen ${@:1}
