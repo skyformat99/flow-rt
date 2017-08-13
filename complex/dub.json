@@ -3,9 +3,23 @@
 		"Ralph Alexander Bariz"
 	],
 	"importPaths": [
-		"../base/source/",
+		"../base/iface/source/",
 		"source/"
 	],
+	"buildTypes": {
+		"debug": {
+			"dflags": [
+				"-Hd=iface",
+				"-op"
+			]
+		},
+		"release": {
+			"dflags": [
+				"-Hd=iface",
+				"-op"
+			]
+		}
+	},
 	"lflags": [
 		"-l:libphobos2.so",
 		"-l:libflow-base.so"

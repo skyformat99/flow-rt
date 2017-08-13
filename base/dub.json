@@ -8,6 +8,20 @@
 	"importPaths": [
 		"source/"
 	],
+	"buildTypes": {
+		"debug": {
+			"dflags": [
+				"-Hd=iface",
+				"-op"
+			]
+		},
+		"release": {
+			"dflags": [
+				"-Hd=iface",
+				"-op"
+			]
+		}
+	},
 	"name": "flow-base",
 	"version": "0.2.0",
 	"license": "GPL-3.0",

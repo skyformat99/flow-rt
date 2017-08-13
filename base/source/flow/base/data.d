@@ -127,7 +127,7 @@ abstract class Data {
 
 mixin template data() {
     static import __flowutil = flow.base.util, __flowdata = flow.base.data;
-    pragma(msg, "\tdata "~__flowutil.fqn!(typeof(this)));
+    debug(data) pragma(msg, "\tdata "~__flowutil.fqn!(typeof(this)));
 
     shared static __flowdata.PropertyInfo[string] Properties;
     override @property shared(__flowdata.PropertyInfo[string]) properties() {
@@ -159,7 +159,7 @@ mixin template signal(T = void)
 }
 
 mixin template field(T, string name) if (canHandle!T) {
-    pragma(msg, "\t\t"~T.stringof~" "~name);
+    debug(data) pragma(msg, "\t\t"~T.stringof~" "~name);
 
     shared static this() {
         import flow.base.util, flow.base.data;
@@ -195,7 +195,7 @@ mixin template field(T, string name) if (canHandle!T) {
 }
 
 mixin template array(T, string name) if (canHandle!T) {
-    pragma(msg, "\t\t"~T.stringof~"[] "~name);
+    debug(data) pragma(msg, "\t\t"~T.stringof~"[] "~name);
 
     shared static this() {
         import flow.base.util, flow.base.data;

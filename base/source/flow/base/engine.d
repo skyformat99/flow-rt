@@ -439,7 +439,7 @@ private class Entity : StateMachine!SystemState {
         import std.algorithm.mutation;
 
         synchronized(this.sync.writer) {
-            foreach(i, r; this.meta.receptors.clone) {
+            foreach(i, r; this.meta.receptors) {
                 if(r.signal == s && r.tick == t) {
                     this.meta.receptors.remove(i);
                     break;
@@ -467,7 +467,7 @@ private class Entity : StateMachine!SystemState {
         import std.algorithm.mutation;
 
         synchronized(this.sync.writer) {
-            foreach(i, e; this.meta.events.clone) {
+            foreach(i, e; this.meta.events) {
                 if(e.type == et && e.tick == t) {
                     this.meta.events.remove(i);
                     break;
@@ -774,7 +774,7 @@ class Space : StateMachine!SystemState {
         if(this.state == SystemState.Ticking && s.dst.space == this.meta.id) {
             synchronized(this.sync.reader) {
                 foreach(e; this.entities.values)
-                    if((intern || e.meta.ptr.access == Access.Global) && e.meta.ptr == s.dst) {
+                    if((intern || e.meta.access == EntityAccess.Global) && e.meta.ptr == s.dst) {
                         return e.receipt(s);
                     }
             }

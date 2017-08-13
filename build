@@ -1,7 +1,7 @@
 #!/bin/bash
 
 compiler=dmd
-defBuildParams="--compiler=$compiler"
+defBuildParams="--compiler=$compiler" # --debug=data"
 if [ $1 ]; then buildType=$1; else buildType=debug; fi
 buildParams=${@:2}
 rootDir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -9,29 +9,34 @@ rootDir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 function buildBase {
     cd $rootDir/base &&
     dub build $defBuildParams $buildParams &&
-    dub test $defBuildParams $buildParams
+    dub test $defBuildParams $buildParams &&
+
+    export LIBRARY_PATH=$LIBRARY_PATH:$rootDir/base/lib &&
+    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$rootDir/base/lib
 }
 
 function buildLib {
     cd $rootDir/$1 &&
     dub build $defBuildParams $buildParams &&
     dub test $defBuildParams $buildParams &&
+
+    export LIBRARY_PATH=$LIBRARY_PATH:$rootDir/$1/lib &&
+    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$rootDir/$1/lib &&
+
     mkdir -p ../run/bin/lib &&
     cp -fr lib/libflow-$1.so ../run/bin/lib
 }
 
 function buildBin {
     cd $rootDir/$1 &&
-    dub build --build $buildType $defBuildParams $buildParams &&
-    mkdir -p bin &&
-    cp -fr ../base/lib/libflow-base.so bin
+    dub build --build $buildType $defBuildParams $buildParams
 }
 
 buildBase &&
-export LIBRARY_PATH=$rootDir/base/lib &&
-export LD_LIBRARY_PATH=$rootDir/base/lib &&
-
 buildBin run &&
+mkdir -p run/bin/config &&
 
-buildLib complex
+buildLib complex &&
+
+buildBin complex-gen
 

@@ -1,4 +1,4 @@
-module flow.example.base.complex;
+module flow.run;
 
 bool stopped = false;
 string confDir;

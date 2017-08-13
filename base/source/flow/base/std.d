@@ -84,7 +84,7 @@ class TickMeta : Data {
 }
 
 /// scopes an entity can have
-enum Access {
+enum EntityAccess {
     Local,
     Global
 }
@@ -114,7 +114,6 @@ class EntityPtr : Data {
 
     mixin field!(string, "id");
     mixin field!(string, "space");
-    mixin field!(Access, "access");
 }
 
 class Reception : Data {
@@ -127,9 +126,8 @@ class Reception : Data {
 class EntityMeta : Data {
     mixin data;
 
-    mixin array!(Damage, "damages");
-
     mixin field!(EntityPtr, "ptr");
+    mixin field!(EntityAccess, "access");
     mixin field!(Data, "context");
     mixin array!(Event, "events");
     mixin array!(Receptor, "receptors");
