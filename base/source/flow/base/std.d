@@ -59,28 +59,12 @@ class ProcessConfig : Data {
     mixin array!(NetMeta, "nets");
 }
 
-class SpaceMeta : Data {
-    mixin data;
-
-    mixin field!(string, "id");
-    mixin array!(EntityMeta, "entities");
-}
-
 class TickInfo : IdData {
     mixin data;
 
     mixin field!(EntityPtr, "entity");
     mixin field!(string, "type");
     mixin field!(UUID, "group");
-}
-
-class TickMeta : Data {
-    mixin data;
-
-    mixin field!(TickInfo, "info");
-    mixin field!(Signal, "trigger");
-    mixin field!(TickInfo, "previous");
-    mixin field!(Data, "data");
 }
 
 /// scopes an entity can have
@@ -125,53 +109,46 @@ class Reception : Data {
     mixin field!(string, "tick");
 }
 
-class EntityMeta : Data {
-    mixin data;
-
-    mixin field!(EntityPtr, "ptr");
-    mixin field!(EntityAccess, "access");
-    mixin field!(Data, "context");
-    mixin array!(Event, "events");
-    mixin array!(Receptor, "receptors");
-
-    mixin array!(TickMeta, "ticks");
-    mixin array!(Reception, "floating");
-}
-
 class Signal : IdData {
-    mixin signal;
+    mixin data;
 
     mixin field!(UUID, "group");
     mixin field!(EntityPtr, "src");
 }
 
 class Unicast : Signal {
-    mixin signal;
+    mixin data;
 
     mixin field!(EntityPtr, "dst");
 }
 
 class Multicast : Signal {
-    mixin signal;
+    mixin data;
 
     mixin field!(string, "space");
 }
 
+class Anycast : Signal {
+    mixin data;
+}
+
 class Ping : Multicast {
-    mixin signal;
+    mixin data;
 }
 
 class UPing : Unicast {
-    mixin signal;
+    mixin data;
 }
 
 class Pong : Unicast {
-    mixin signal;
+    mixin data;
 
     mixin field!(EntityPtr, "ptr");
     mixin array!(string, "signals");
 }
 
 class WrappedSignal : Unicast {
-    mixin signal!(Signal);
+    mixin data;
+
+    mixin field!(Signal, "signal");
 }

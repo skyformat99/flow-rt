@@ -147,17 +147,6 @@ mixin template data() {
     }
 }
 
-mixin template signal(T = void)
-    if (is(T == void) || canHandle!T) {   
-    static import __flowdata = flow.base.data;
-    mixin __flowdata.data;
-
-    static if(!is(T == void)) {
-        mixin __flowdata.field!(ulong, "seq");
-        mixin __flowdata.field!(T, "data");
-    }
-}
-
 mixin template field(T, string name) if (canHandle!T) {
     debug(data) pragma(msg, "\t\t"~T.stringof~" "~name);
 

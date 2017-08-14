@@ -19,22 +19,10 @@ class Actuality : Data {
 }
 
 /// signals an act of power
-class Act : Unicast {
-    mixin signal;
+class Act : Anycast {
+    mixin data;
 
     mixin field!(double, "power");
-}
-
-/// initializes a power driven entity
-class OnCreated : Tick {
-    override void run() {
-        // on startup we calculate the power of actuality for each entity
-        auto c = this.context.as!Actuality;
-
-        c.power = 0.0;
-        foreach(r; c.relations)
-            c.power += r.power;
-    }
 }
 
 /// reaction of a power driven entity on an act of power
