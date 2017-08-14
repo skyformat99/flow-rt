@@ -97,8 +97,10 @@ class Receptor : Data {
 }
 
 enum EventType {
-    OnTick,
-    OnFreeze
+    OnCreated,
+    OnTicking,
+    OnFrozen,
+    OnDisposed
 }
 
 class Event : Data {

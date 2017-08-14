@@ -20,11 +20,11 @@ void main(string[] args) {
         "o|out",    "Output space file (OBLIGATE)", &opts.output,
         "f|force",  "Force overwrite", &opts.force,
         "s|space",  "Id of space (OBLIGATE != \"\")", &opts.space,
-        "a|amount", "Amount of generated complex core entities (OBLIGATE >1)", &opts.amount,
+        "a|amount", "Amount of generated complex core entities (OBLIGATE >2)", &opts.amount,
         "p|param",  "Generation parameter", &opts.params);
 
     SpaceMeta sm;
-    if(args.length > 1 && opts.output != string.init && (!opts.output.exists || opts.force) && opts.amount > 1)
+    if(args.length > 1 && opts.output != string.init && (!opts.output.exists || opts.force) && opts.amount > 2)
         switch(args[1]) {
             case "power":
                 import flow.complex.power;

@@ -26,7 +26,7 @@ class Act : Unicast {
 }
 
 /// initializes a power driven entity
-class OnTick : Tick {
+class OnCreated : Tick {
     override void run() {
         // on startup we calculate the power of actuality for each entity
         auto c = this.context.as!Actuality;
@@ -40,65 +40,13 @@ class OnTick : Tick {
 /// reaction of a power driven entity on an act of power
 class React : Tick {    
     override void run() {
-        import std.math, std.range, std.algorithm.mutation;
+        import std.math, std.algorithm.mutation, std.algorithm.searching;
 
         auto s = this.trigger.as!Act;
         auto c = this.context.as!Actuality;
 
-        auto req = s.power;
-
         synchronized(this.sync.writer) {
-            /* requested power is dragged from all other relations,
-            this would be a task for a quantum computer I assume */
-            auto rest = s.power;
-            while(!rest.isIdentical(0.0)) {
-                c.power = 0.0; // we recalculate actuality power
-                auto share = rest/c.relations.length-1;
-                foreach(i, r; c.relations.enumerate.retro) {
-                    if(s.src != r.entity) {
-                        if(r.power <= share) {
-                            rest -= share - r.power;
-                            c.relations.remove(i);
-                        } else {
-                            rest -= share;
-                            r.power -= share;
-                            c.power += r.power;
-                        }
-                    }
-                }
-            }
         }
-    }
-}
-
-/// what an entity is doing as long as it exists
-class Exist : Tick {
-    /// ticks equals costs is the amount of relations
-    override @property size_t costs() {
-        return this.context.as!Actuality.relations.length;
-    }
-
-    override void run() {
-        import std.math;
-
-        auto c = this.context.as!Actuality;
-
-        synchronized(this.sync.writer) {
-            // I request from each relation the adequate share of the own actuality
-            foreach(i, r; c.relations) {
-                auto addition = r.power/c.power;
-                auto s = new Act;
-                s.power = addition;
-                if(this.send(s, r.entity)) {
-                    r.power += addition;
-
-                    // since we avoid recalculating power of own actuality again and again, we track changes
-                    c.power += addition;
-                }
-            }
-        }
-
-        this.next(this.info.type);
     }
 }
 
@@ -132,8 +80,8 @@ SpaceMeta createPower(string id, size_t amount, string[string] params) {
         em.context = c;
 
         auto ote = new Event;
-        ote.type = EventType.OnTick;
-        ote.tick = "flow.complex.power.OnTick";
+        ote.type = EventType.OnCreated;
+        ote.tick = "flow.complex.power.OnCreated";
         em.events ~= ote;
 
         auto rr = new Receptor;

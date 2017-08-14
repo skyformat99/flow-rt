@@ -5,7 +5,10 @@ bool stopped = false;
 extern (C) void stop(int signal) {
     import flow.base.util;
 
-    stopped = true;
+    if(!stopped)
+        stopped = true;
+    else
+        Log.msg(LL.Fatal, "requested force exit");
     Log.msg(LL.Message, "stopping...");
 }
 
@@ -113,9 +116,12 @@ void run(string confDir, string libDir) {
     foreach(s; spaces)
         s.tick();
 
+    auto cnt = 0;
     // watiting for sigint (ctrl+c)
-    while(!stopped)
+    while(!stopped && cnt < 100) {
         Thread.sleep(100.msecs);
+        cnt++;
+    }
 
     // stopping spaces
     Log.msg(LL.Message, "freezing...");
@@ -126,6 +132,6 @@ void run(string confDir, string libDir) {
     Log.msg(LL.Message, "snapping...");
     foreach(s; spaces) {
         auto sm = s.snap;
-        confDir.buildPath(sm.id).write(sm.json.toString);
+        confDir.buildPath(sm.id).setExtension(".spc").write(sm.json.toString);
     }
 }

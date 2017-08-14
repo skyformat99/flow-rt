@@ -10,12 +10,21 @@
 	],
 	"buildTypes": {
 		"debug": {
+			"buildOptions": ["debugMode", "debugInfo"],
+			"dflags": [
+				"-Hd=iface",
+				"-op"
+			]
+		},
+		"debug-profile": {
+			"buildOptions": ["profile", "optimize", "inline", "debugInfo"],
 			"dflags": [
 				"-Hd=iface",
 				"-op"
 			]
 		},
 		"release": {
+			"buildOptions": ["releaseMode", "optimize", "inline"],
 			"dflags": [
 				"-Hd=iface",
 				"-op"

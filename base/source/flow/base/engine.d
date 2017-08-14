@@ -6,10 +6,17 @@ import flow.base.std;
 import core.thread, core.sync.rwmutex;
 import std.uuid, std.string;
 
+private enum SystemState {
+    Created = 0,
+    Ticking,
+    Frozen,
+    Disposed
+}
+
 /// executes an entitycentric string of discretized causality 
 private class Ticker : StateMachine!SystemState {
     Tick running;
-    bool disposing;
+    bool detaching;
     
     UUID id;
     Entity entity;
@@ -30,13 +37,13 @@ private class Ticker : StateMachine!SystemState {
     }
 
     ~this() {
-        if(this.state != SystemState.Destroyed)
-            this.state = SystemState.Destroyed;
+        if(this.state != SystemState.Disposed)
+            this.dispose;
     }
 
     /// starts ticking
-    void start(bool disposing = true) {
-        this.disposing = disposing;
+    void start(bool detaching = true) {
+        this.detaching = detaching;
         this.state = SystemState.Ticking;
     }
 
@@ -50,19 +57,26 @@ private class Ticker : StateMachine!SystemState {
         this.state = SystemState.Frozen;
     }
 
-    /// causes entity to dispose ticker
     void dispose() {
-        this.entity.dispose(this);
+        if(this.state == SystemState.Ticking)
+            this.stop();
+
+        this.state = SystemState.Disposed;
+    }
+
+    /// causes entity to dispose ticker
+    void detach() {
+        this.entity.detach(this);
     }
 
     override protected bool onStateChanging(SystemState o, SystemState n) {
         switch(n) {
             case SystemState.Ticking:
-                return o == SystemState.Frozen;
+                return o == SystemState.Created || o == SystemState.Frozen;
             case SystemState.Frozen:
                 return o == SystemState.Ticking;
-            case SystemState.Destroyed:
-                return true;
+            case SystemState.Disposed:
+                return o == SystemState.Created || o == SystemState.Frozen;
             default: return false;
         }
     }
@@ -76,15 +90,14 @@ private class Ticker : StateMachine!SystemState {
                 // wait for executing tick to end
                 while(this.running !is null)
                     Thread.sleep(5.msecs);
-
-                // if stopped using disposing flag -> dispose
-                if(this.disposing)
-                    this.dispose();
                 break;
-            case SystemState.Destroyed:
+            case SystemState.Disposed:
                 // wait for executing tick to end
                 while(this.running !is null)
                     Thread.sleep(5.msecs);
+
+                if(this.detaching)
+                    this.detach();
                 break;
             default: break;
         }
@@ -103,14 +116,14 @@ private class Ticker : StateMachine!SystemState {
                         this.entity.space.process.tasker.run(this.entity.meta.ptr.addr, this.running.costs, &this.runTick);
                     } else {
                         this.msg(LL.Error, "could not create tick -> ending");
-                        if(this.state == SystemState.Ticking) this.stop();
+                        if(this.state != SystemState.Disposed) this.dispose;
                     }
                 } else {
                     this.msg(LL.FDebug, "ticker is not ticking");
                 }
             } else {
                 this.msg(LL.FDebug, "nothing to do, ticker is ending");
-                if(this.state == SystemState.Ticking) this.stop();
+                if(this.state != SystemState.Disposed) this.dispose;
             }
         } catch(Throwable thr) {
             this.msg(LL.Fatal, "unexcpected failure occured at 'engine.d: void Ticker::tick()'");
@@ -128,6 +141,9 @@ private class Ticker : StateMachine!SystemState {
             this.msg(LL.FDebug, this.actual, "running tick");
             this.running.run();
             this.msg(LL.FDebug, this.actual, "finished tick");
+            
+            this.running = null;        
+            this.tick();
         }
         catch(Exception ex) {
             // handle thrown exception and notify
@@ -136,19 +152,17 @@ private class Ticker : StateMachine!SystemState {
                 this.msg(LL.Info, this.actual, "handling tick error");
                 this.running.error(ex);
                 this.msg(LL.Info, this.actual, "tick error handled");
+                
+                this.running = null;        
+                this.tick();
             }
             catch(Exception ex2) {
                 // if even handling exception failes notify that an error occured
                 this.msg(LL.Error, ex2, "handling tick error failed");
-
                 this.running = null;
-                if(this.state == SystemState.Ticking) this.stop();
-                return;
+                if(this.state != SystemState.Disposed) this.dispose;
             }
         }
-        
-        this.running = null;
-        this.tick();
     }
 
     /// set next tick in causal string
@@ -225,8 +239,8 @@ abstract class Tick {
     /// data dedicated to this tick (only available to this tick, no need to sync)
     protected @property Data data() {return this.meta.data;}
 
-    /// predicted costs of tick (default=1)
-    public @property size_t costs() {return 1;}
+    /// predicted costs of tick (default=0)
+    public @property size_t costs() {return 0;}
 
     /// algorithm implementation of tick
     public abstract void run();
@@ -364,12 +378,6 @@ private TickMeta createTick(TickInfo t, TickMeta p, Data d = null) {
     return m;
 }
 
-private enum SystemState {
-    Frozen = 0,
-    Ticking,
-    Destroyed
-}
-
 /// hosts an entity construct
 private class Entity : StateMachine!SystemState {
     ReadWriteMutex sync;
@@ -388,8 +396,8 @@ private class Entity : StateMachine!SystemState {
     }
 
     ~this() {
-        if(this.state != SystemState.Destroyed)
-            this.state = SystemState.Destroyed;
+        if(this.state != SystemState.Disposed)
+            this.dispose;
     }
 
     /// starts a ticker
@@ -402,7 +410,7 @@ private class Entity : StateMachine!SystemState {
     }
 
     /// disposes a ticker
-    void dispose(Ticker t) {
+    void detach(Ticker t) {
         synchronized(this.sync.writer)
             if(t.coming !is null)
                 this.meta.ticks ~= t.coming;
@@ -418,6 +426,13 @@ private class Entity : StateMachine!SystemState {
     /// makes entity tick
     void tick() {
         this.state = SystemState.Ticking;
+    }
+
+    void dispose() {
+        if(this.state == SystemState.Ticking)
+            this.freeze();
+
+        this.state = SystemState.Disposed;
     }
 
     /// registers a receptor if not registered
@@ -534,12 +549,12 @@ private class Entity : StateMachine!SystemState {
 
     override protected bool onStateChanging(SystemState o, SystemState n) {
         switch(n) {
+            case SystemState.Ticking:
+                return o == SystemState.Created || o == SystemState.Frozen;
             case SystemState.Frozen:
                 return o == SystemState.Ticking;
-            case SystemState.Ticking:
-                return o == SystemState.Frozen;
-            case SystemState.Destroyed:
-                return true;
+            case SystemState.Disposed:
+                return o == SystemState.Created || o == SystemState.Frozen;
             default: return false;
         }
     }
@@ -548,11 +563,22 @@ private class Entity : StateMachine!SystemState {
         import std.algorithm.iteration;
 
         switch(n) {
+            case SystemState.Created:
+                synchronized(this.sync.writer) {
+                    // running onCreated ticks
+                    foreach(e; this.meta.events.filter!(e => e.type == EventType.OnCreated)) {
+                        auto ticker = new Ticker(this, e.tick.createTick(this));
+                        ticker.start(false);
+                        ticker.join();
+                        ticker.destroy();
+                    }
+                }
+                break;
             case SystemState.Ticking:
                 // here we need a writerlock since everyone could do that
                 synchronized(this.sync.writer) {
-                    // running onTick ticks
-                    foreach(e; this.meta.events.filter!(e => e.type == EventType.OnTick)) {
+                    // running onTicking ticks
+                    foreach(e; this.meta.events.filter!(e => e.type == EventType.OnTicking)) {
                         auto ticker = new Ticker(this, e.tick.createTick(this));
                         ticker.start(false);
                         ticker.join();
@@ -583,7 +609,7 @@ private class Entity : StateMachine!SystemState {
                 synchronized(this.sync.writer) {
                     // stopping and destroying all ticker and freeze coming ticks
                     foreach(t; this.ticker.values.dup) {
-                        t.disposing = false;
+                        t.detaching = false;
                         t.stop();
                         if(t.coming !is null)
                             this.meta.ticks ~= t.coming;
@@ -591,8 +617,8 @@ private class Entity : StateMachine!SystemState {
                         t.destroy();
                     }
 
-                    // running onFreeze ticks
-                    foreach(e; this.meta.events.filter!(e => e.type == EventType.OnFreeze)) {
+                    // running onFrozen ticks
+                    foreach(e; this.meta.events.filter!(e => e.type == EventType.OnFrozen)) {
                         auto ticker = new Ticker(this, e.tick.createTick(this));
                         ticker.start(false);
                         ticker.join();
@@ -600,13 +626,14 @@ private class Entity : StateMachine!SystemState {
                     }
                 }                    
                 break;
-            case SystemState.Destroyed:
+            case SystemState.Disposed:
                 synchronized(this.sync.writer) {
-                    // just stopping and destroying all ticker
-                    foreach(t; this.ticker.values) {
-                        t.disposing = false;
-                        t.stop();
-                        t.destroy();
+                    // running onDisposed ticks
+                    foreach(e; this.meta.events.filter!(e => e.type == EventType.OnDisposed)) {
+                        auto ticker = new Ticker(this, e.tick.createTick(this));
+                        ticker.start(false);
+                        ticker.join();
+                        ticker.destroy();
                     }
                 }
                 break;
@@ -699,8 +726,8 @@ class Space : StateMachine!SystemState {
     }
 
     ~this() {
-        if(this.state != SystemState.Destroyed)
-            this.state = SystemState.Destroyed;
+        if(this.state != SystemState.Disposed)
+            this.state = SystemState.Disposed;
     }
 
     /// initializes space
@@ -723,6 +750,13 @@ class Space : StateMachine!SystemState {
     /// makes space and all of its content ticking
     void tick() {
         this.state = SystemState.Ticking;
+    }
+
+    void dispose() {
+        if(this.state == SystemState.Ticking)
+            this.freeze();
+
+        this.state = SystemState.Disposed;
     }
 
     /// snapshots whole space (deep clone)
@@ -805,12 +839,12 @@ class Space : StateMachine!SystemState {
 
     override protected bool onStateChanging(SystemState o, SystemState n) {
         switch(n) {
+            case SystemState.Ticking:
+                return o == SystemState.Created || o == SystemState.Frozen;
             case SystemState.Frozen:
                 return o == SystemState.Ticking;
-            case SystemState.Ticking:
-                return o == SystemState.Frozen;
-            case SystemState.Destroyed:
-                return true;
+            case SystemState.Disposed:
+                return o == SystemState.Created || o == SystemState.Frozen;
             default: return false;
         }
     }
@@ -827,7 +861,7 @@ class Space : StateMachine!SystemState {
                     foreach(e; this.entities.values)
                         e.freeze();
                 break;
-            case SystemState.Destroyed:
+            case SystemState.Disposed:
                 synchronized(this.sync.writer)
                     foreach(e; this.entities.keys)
                         this.entities[e].destroy;
@@ -943,8 +977,9 @@ version(unittest) {
         mixin field!(TickInfo, "info");
         mixin field!(TestTickData, "data");
         mixin field!(TestSignal, "trigger");
-        mixin field!(bool, "onTick");
-        mixin field!(bool, "onFreeze");
+        mixin field!(bool, "onCreated");
+        mixin field!(bool, "onTicking");
+        mixin field!(bool, "onFrozen");
     }
 
     class TestTickData : Data {
@@ -993,17 +1028,24 @@ version(unittest) {
         }
     }
 
-    class TestOnTickTick : Tick {
+    class TestOnCreatedTick : Tick {
         override void run() {
             auto c = this.context.as!TestTickContext;
-            c.onTick = true;
+            c.onCreated = true;
         }
     }
 
-    class TestOnFreezeTick : Tick {
+    class TestOnTickingTick : Tick {
         override void run() {
             auto c = this.context.as!TestTickContext;
-            c.onFreeze = true;
+            c.onTicking = true;
+        }
+    }
+
+    class TestOnFrozenTick : Tick {
+        override void run() {
+            auto c = this.context.as!TestTickContext;
+            c.onFrozen = true;
         }
     }
 
@@ -1036,13 +1078,17 @@ version(unittest) {
         e.ptr = new EntityPtr;
         e.ptr.id = "e";
 
+        auto onc = new Event;
+        onc.type = EventType.OnCreated;
+        onc.tick = "flow.base.engine.TestOnCreatedTick";
+        e.events ~= onc;
         auto ont = new Event;
-        ont.type = EventType.OnTick;
-        ont.tick = "flow.base.engine.TestOnTickTick";
+        ont.type = EventType.OnTicking;
+        ont.tick = "flow.base.engine.TestOnTickingTick";
         e.events ~= ont;
         auto onf = new Event;
-        onf.type = EventType.OnFreeze;
-        onf.tick = "flow.base.engine.TestOnFreezeTick";
+        onf.type = EventType.OnFrozen;
+        onf.tick = "flow.base.engine.TestOnFrozenTick";
         e.events ~= onf;
 
         auto r = new Receptor;
@@ -1103,8 +1149,9 @@ unittest {
     
     auto sm = s.snap;
     assert(sm.entities.length == 2, "space snapshot does not contain correct amount of entities");
-    assert(sm.entities[0].context.as!TestTickContext.onTick, "onTick entity event wasn't triggered");
-    assert(sm.entities[0].context.as!TestTickContext.onFreeze, "onFreeze entity event wasn't triggered");
+    assert(sm.entities[0].context.as!TestTickContext.onCreated, "onCreated entity event wasn't triggered");
+    assert(sm.entities[0].context.as!TestTickContext.onTicking, "onTicking entity event wasn't triggered");
+    assert(sm.entities[0].context.as!TestTickContext.onFrozen, "onFrozen entity event wasn't triggered");
     assert(sm.entities[0].context.as!TestTickContext.cnt == 6, "logic wasn't executed correct");
     assert(sm.entities[0].context.as!TestTickContext.trigger !is null, "trigger was not passed correctly");
     assert(sm.entities[0].context.as!TestTickContext.trigger.group == g, "group was not passed correctly to signal");
