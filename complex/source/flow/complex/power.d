@@ -60,14 +60,22 @@ class React : Tick {
     override void run() {
         import std.math;
 
-        this.next("flow.complex.power.Do");
+        auto s = this.trigger.as!Act;
+        auto d = new DoData;
+        d.req = s.power;
+        d.rest = d.req;
+        d.excludes = [s.src];
+        d.done = d.excludes;
+        this.next("flow.complex.power.Do", d);
     }
 }
 
 class DoData : Data {
     mixin data;
 
+    mixin field!(double, "req");
     mixin field!(double, "rest");
+    mixin array!(EntityPtr, "excludes");
     mixin array!(EntityPtr, "done");
 }
 
@@ -75,10 +83,8 @@ class Do : Tick {
     override void run() {
         import std.math, std.algorithm.searching, std.algorithm.mutation;
 
-        auto s = this.trigger.as!Act;
         auto c = this.context.as!Actuality;
         auto d = this.data.as!DoData;
-        if(d is null) {d = new DoData; d.rest = s.power;}
 
         EntityPtr done;
         synchronized(this.sync.writer) {
@@ -88,7 +94,7 @@ class Do : Tick {
             foreach_reverse(i, r;c.relations) {
                 // do not handle it again
                 if(!d.done.any!(a=>a == r.entity)) {
-                    act.power = r.power * (r.power/s.power);
+                    act.power = r.power * (r.power/d.req);
                     // if target can deliver power from own pov and its pov
                     if(act.power <= r.power && act.power <= d.rest && this.send(act, r.entity)) {
                         d.rest -= act.power;
@@ -110,7 +116,7 @@ class Do : Tick {
         if(done !is null)
             d.done ~= done;
         else // we have to continue at the beginning (can this case even happen?)
-            d.done = [];
+            d.done = d.excludes;
 
         // if there is still something to do, do it
         if(d.rest > 0.0)
@@ -128,6 +134,7 @@ SpaceMeta createPower(string id, size_t amount, string[string] params) {
     for(size_t i = 0; i < amount; i++) {
         auto em = new EntityMeta;
         auto c = new Actuality;
+        c.power = 1000;
         em.ptr = new EntityPtr;
         em.ptr.id = i.to!string;
         em.ptr.space = id;
@@ -151,6 +158,10 @@ SpaceMeta createPower(string id, size_t amount, string[string] params) {
         em.receptors ~= rr;
 
         auto dt = em.createTickMeta("flow.complex.power.Do");
+        auto d = new DoData;
+        d.req = c.power/amount;
+        d.rest = d.req;
+        dt.data = d;
         em.ticks ~= dt;
 
         sm.entities ~= em;

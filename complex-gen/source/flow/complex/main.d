@@ -11,20 +11,20 @@ private struct ComplexOpts {
 }
 
 void main(string[] args) {
-    import flow.base.engine, flow.base.data, flow.base.std;
+    import flow.base.engine, flow.base.data, flow.base.std, flow.base.util;
     import std.file;
 
     ComplexOpts opts;
 
     auto rslt = getopt(args,
-        "o|out",    "Output space file (OBLIGATE)", &opts.output,
+        "o|out",    "Output directory path (OBLIGATE)", &opts.output,
         "f|force",  "Force overwrite", &opts.force,
         "s|space",  "Id of space (OBLIGATE != \"\")", &opts.space,
         "a|amount", "Amount of generated complex core entities (OBLIGATE >2)", &opts.amount,
         "p|param",  "Generation parameter", &opts.params);
 
     SpaceMeta sm;
-    if(args.length > 1 && opts.output != string.init && (!opts.output.exists || opts.force) && opts.amount > 2)
+    if(args.length > 1 && opts.output != string.init && opts.output.exists && opts.amount > 2)
         switch(args[1]) {
             case "power":
                 import flow.complex.power;
@@ -38,18 +38,20 @@ void main(string[] args) {
     if(sm !is null) {
         import std.path, std.array;
 
-        if(opts.output.exists && opts.force)
-            opts.output.remove();
+        auto outputFile = opts.output.buildPath(opts.space.setExtension(".spc"));
+        if(outputFile.exists && opts.force)
+            outputFile.remove();
+        else Log.msg(LL.Fatal, "output path already contains a space named \""~opts.space~"\" (use -f to overwrite)");
 
-        opts.output.write(sm.json.toString);
+        outputFile.write(sm.json.toPrettyString());
 
-        auto pcFile = opts.output.dirName.buildPath("process.cfg");
+        auto pcFile = opts.output.buildPath("process.cfg");
         if(!pcFile.exists) {
             auto pc = new ProcessConfig;
             pcFile.write(pc.json.toString);
         }
 
-        auto libsFile = opts.output.dirName.buildPath("libs.lst");
+        auto libsFile = opts.output.buildPath("libs.lst");
         if(libsFile.exists) {
             import std.string, std.algorithm.searching;
 

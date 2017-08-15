@@ -111,7 +111,10 @@ private class Ticker : StateMachine!SystemState {
                 if(this.state == SystemState.Ticking) {
                     // create a new tick of given type or notify failing and stop
                     if(this.coming !is null) {
-                        this.entity.space.process.tasker.run(this.entity.meta.ptr.addr, this.coming.costs, &this.runTick);
+                        // check if entity is still running after getting the sync
+                        this.actual = this.coming;
+                        this.coming = null;
+                        this.entity.space.process.tasker.run(this.entity.meta.ptr.addr, this.actual.costs, &this.runTick);
                     } else {
                         this.msg(LL.Error, "could not create tick -> ending");
                         if(this.state != SystemState.Disposed) this.dispose;
@@ -130,10 +133,6 @@ private class Ticker : StateMachine!SystemState {
 
     /// run coming tick and handle exception if it occurs
     void runTick() {
-        // check if entity is still running after getting the sync
-        this.actual = this.coming;
-        this.coming = null;
-
         try {
             // run tick
             this.msg(LL.FDebug, this.actual.meta, "running tick");
@@ -189,9 +188,9 @@ abstract class Tick {
     private TickMeta meta;
     private Ticker ticker;
 
-    protected @property TickInfo info() {return this.meta.info.clone;}
-    protected @property Signal trigger() {return this.meta.trigger.clone;}
-    protected @property TickInfo previous() {return this.meta.previous.clone;}
+    protected @property TickInfo info() {return this.meta.info !is null ? this.meta.info.clone : null;}
+    protected @property Signal trigger() {return this.meta.trigger !is null ? this.meta.trigger.clone : null;}
+    protected @property TickInfo previous() {return this.meta.previous !is null ? this.meta.previous.clone : null;}
     protected @property Data data() {return this.meta.data;}
 
     /// lock to use for synchronizing entity context access across parallel casual strings
@@ -373,7 +372,10 @@ class EntityMeta : Data {
 
 /// hosts an entity construct
 private class Entity : StateMachine!SystemState {
+    /** mutex dedicated to sync context accesses */
     ReadWriteMutex sync;
+    /** mutex dedicated to sync meta except context accesses */
+    ReadWriteMutex metaLock;
     Space space;
     EntityMeta meta;
 
@@ -381,6 +383,7 @@ private class Entity : StateMachine!SystemState {
 
     this(Space s, EntityMeta m) {
         this.sync = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
+        this.metaLock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
         m.ptr.space = s.meta.id;
         this.meta = m;
         this.space = s;
@@ -395,12 +398,13 @@ private class Entity : StateMachine!SystemState {
 
     /// starts a ticker
     bool start(Tick t) {
-        auto ticker = new Ticker(this, t);
-        if(this.state == SystemState.Ticking && t.accept) {
-            synchronized(this.sync.writer)
+        synchronized(this.lock.writer) {
+            auto ticker = new Ticker(this, t);
+            if(this.state == SystemState.Ticking && t.accept) {
                 this.ticker[ticker.id] = ticker;
-            ticker.start();
-            return true;
+                ticker.start();
+                return true;
+            }
         }
 
         return false;
@@ -408,9 +412,10 @@ private class Entity : StateMachine!SystemState {
 
     /// disposes a ticker
     void detach(Ticker t) {
-        synchronized(this.sync.writer) {
+        synchronized(this.lock.writer) {
             if(t.coming !is null)
-                this.meta.ticks ~= t.coming.meta;
+                synchronized(this.metaLock.writer)
+                    this.meta.ticks ~= t.coming.meta;
             this.ticker.remove(t.id);
         }
         t.destroy;
@@ -435,7 +440,7 @@ private class Entity : StateMachine!SystemState {
 
     /// registers a receptor if not registered
     void register(string s, string t) {
-        synchronized(this.sync.writer) {
+        synchronized(this.metaLock.writer) {
             foreach(r; this.meta.receptors)
                 if(r.signal == s && r.tick == t)
                     return; // nothing to do
@@ -451,7 +456,7 @@ private class Entity : StateMachine!SystemState {
     void deregister(string s, string t) {
         import std.algorithm.mutation;
 
-        synchronized(this.sync.writer) {
+        synchronized(this.metaLock.writer) {
             foreach(i, r; this.meta.receptors) {
                 if(r.signal == s && r.tick == t) {
                     this.meta.receptors.remove(i);
@@ -463,7 +468,7 @@ private class Entity : StateMachine!SystemState {
 
     /// registers an event if not registered
     void register(EventType et, string t) {
-        synchronized(this.sync.writer) {
+        synchronized(this.metaLock.writer) {
             foreach(e; this.meta.events)
                 if(e.type == et && e.tick == t)
                     return; // nothing to do
@@ -479,7 +484,7 @@ private class Entity : StateMachine!SystemState {
     void deregister(EventType et, string t) {
         import std.algorithm.mutation;
 
-        synchronized(this.sync.writer) {
+        synchronized(this.metaLock.writer) {
             foreach(i, e; this.meta.events) {
                 if(e.type == et && e.tick == t) {
                     this.meta.events.remove(i);
@@ -495,19 +500,14 @@ private class Entity : StateMachine!SystemState {
     bool receipt(Signal s) {
         auto ret = false;
         if(this.state == SystemState.Ticking) {
-            synchronized(this.sync.writer) {
+            synchronized(this.metaLock.reader) {
                 // looping all registered receptors
                 foreach(r; this.meta.receptors) {
                     if(s.dataType == r.signal) {
                         // creating given tick
                         auto t = this.meta.createTickMeta(r.tick, s.group).tick;
                         t.meta.trigger = s;
-                        auto ticker = new Ticker(this, t);
-                        if(t.accept) {
-                            this.ticker[ticker.id] = ticker;
-                            ticker.start();
-                            ret = true;
-                        }
+                        ret = this.start(t) || ret;
                     }
                 }
             }
@@ -518,27 +518,31 @@ private class Entity : StateMachine!SystemState {
 
     /// send an unicast signal into own space
     bool send(Unicast s) {
-        if(s.dst == this.meta.ptr)
-            new EntityException("entity cannot send signals to itself, use fork");
+        synchronized(this.metaLock.reader) {
+            if(s.dst == this.meta.ptr)
+                new EntityException("entity cannot send signals to itself, use fork");
 
-        // ensure correct source entity pointer
-        s.src = this.meta.ptr;
+            // ensure correct source entity pointer
+            s.src = this.meta.ptr;
+        }
 
         return this.space.send(s);
     }
 
     /// send an anycast signal into own space
     bool send(Anycast s) {
-        // ensure correct source entity pointer
-        s.src = this.meta.ptr;
+        synchronized(this.metaLock.reader)
+            // ensure correct source entity pointer
+            s.src = this.meta.ptr;
 
         return this.space.send(s);
     }
 
     /// send a multicast signal into own space
     bool send(Multicast s) {
-        // ensure correct source entity pointer
-        s.src = this.meta.ptr;
+        synchronized(this.metaLock.reader)
+            // ensure correct source entity pointer
+            s.src = this.meta.ptr;
 
         return this.space.send(s);
     }
@@ -546,9 +550,11 @@ private class Entity : StateMachine!SystemState {
     /** creates a snapshot of entity(deep clone)
     if entity is not in frozen state an exception is thrown */
     EntityMeta snap() {
-        this.ensureState(SystemState.Frozen);
-        // if someone snaps using this function, it is another entity. it will only get a deep clone.
-        return this.meta.clone;
+        synchronized(this.metaLock.reader) {
+            this.ensureState(SystemState.Frozen);
+            // if someone snaps using this function, it is another entity. it will only get a deep clone.
+            return this.meta.clone;
+        }
     }
 
     override protected bool onStateChanging(SystemState o, SystemState n) {
@@ -568,7 +574,7 @@ private class Entity : StateMachine!SystemState {
 
         switch(n) {
             case SystemState.Created:
-                synchronized(this.sync.writer) {
+                synchronized(this.metaLock.reader) {
                     // running onCreated ticks
                     foreach(e; this.meta.events.filter!(e => e.type == EventType.OnCreated)) {
                         auto t = this.meta.createTickMeta(e.tick).tick;
@@ -583,7 +589,7 @@ private class Entity : StateMachine!SystemState {
                 break;
             case SystemState.Ticking:
                 // here we need a writerlock since everyone could do that
-                synchronized(this.sync.writer) {
+                synchronized(this.metaLock.reader) {
                     // running onTicking ticks
                     foreach(e; this.meta.events.filter!(e => e.type == EventType.OnTicking)) {
                         auto t = this.meta.createTickMeta(e.tick).tick;
@@ -594,7 +600,9 @@ private class Entity : StateMachine!SystemState {
                             ticker.destroy();
                         }
                     }
+                }
 
+                synchronized(this.lock.writer) {
                     // creating and starting ticker for all frozen ticks
                     foreach(t; this.meta.ticks) {
                         auto ticker = new Ticker(this, t.tick);
@@ -607,7 +615,7 @@ private class Entity : StateMachine!SystemState {
                 }
                 break;
             case SystemState.Frozen: 
-                synchronized(this.sync.writer) {
+                synchronized(this.lock.writer) {
                     // stopping and destroying all ticker and freeze coming ticks
                     foreach(t; this.ticker.values.dup) {
                         t.detaching = false;
@@ -617,7 +625,9 @@ private class Entity : StateMachine!SystemState {
                         this.ticker.remove(t.id);
                         t.destroy();
                     }
+                }
 
+                synchronized(this.metaLock.reader) {
                     // running onFrozen ticks
                     foreach(e; this.meta.events.filter!(e => e.type == EventType.OnFrozen)) {
                         auto t = this.meta.createTickMeta(e.tick).tick;
@@ -631,7 +641,7 @@ private class Entity : StateMachine!SystemState {
                 }                    
                 break;
             case SystemState.Disposed:
-                synchronized(this.sync.writer) {
+                synchronized(this.metaLock.reader) {
                     // running onDisposed ticks
                     foreach(e; this.meta.events.filter!(e => e.type == EventType.OnDisposed)) {
                         auto ticker = new Ticker(this, this.meta.createTickMeta(e.tick).tick);
@@ -707,14 +717,12 @@ class SpaceMeta : Data {
 
 /// hosts a space construct
 class Space : StateMachine!SystemState {
-    private ReadWriteMutex sync;
     private SpaceMeta meta;
     private Process process;
 
     private Entity[string] entities;
 
     private this(Process p, SpaceMeta m) {
-        this.sync = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
         this.meta = m;
         this.process = p;
 
@@ -759,7 +767,7 @@ class Space : StateMachine!SystemState {
 
     /// snapshots whole space (deep clone)
     SpaceMeta snap() {
-        synchronized(this.sync.reader) {
+        synchronized(this.lock.reader) {
             if(this.state == SystemState.Ticking) {
                 this.state = SystemState.Frozen;
                 scope(exit) this.state = SystemState.Ticking;
@@ -771,13 +779,13 @@ class Space : StateMachine!SystemState {
 
     /// gets a controller for an entity contained in space (null if not existing)
     EntityController get(string e) {
-        synchronized(this.sync.reader)
+        synchronized(this.lock.reader)
             return (e in this.entities).as!bool ? new EntityController(this.entities[e]) : null;
     }
 
     /// spawns a new entity into space
     EntityController spawn(EntityMeta m) {
-        synchronized(this.sync.writer) {
+        synchronized(this.lock.writer) {
             if(m.ptr.id in this.entities)
                 throw new SpaceException("entity with addr \""~m.ptr.addr~"\" is already existing");
             else {
@@ -791,7 +799,7 @@ class Space : StateMachine!SystemState {
 
     /// kills an existing entity in space
     void kill(string e) {
-        synchronized(this.sync.writer) {
+        synchronized(this.lock.writer) {
             if(e in this.entities) {
                 this.entities[e].destroy;
                 this.entities.remove(e);
@@ -804,7 +812,7 @@ class Space : StateMachine!SystemState {
     private bool route(Unicast s) {
         // if its a perfect match assuming process only accepted a signal for itself
         if(this.state == SystemState.Ticking) {
-            synchronized(this.sync.reader) {
+            synchronized(this.lock.reader) {
                 foreach(e; this.entities.values)
                     if(e.meta.ptr == s.dst) {
                         return e.receipt(s);
@@ -821,7 +829,7 @@ class Space : StateMachine!SystemState {
         // if its adressed to own space or parent using * wildcard or even none
         // in each case we do not want to regex search when ==
         if(this.state == SystemState.Ticking) {
-            synchronized(this.sync.reader) {
+            synchronized(this.lock.reader) {
                 foreach(e; this.entities.values)
                     if(e.receipt(s)) return true;
             }
@@ -836,7 +844,7 @@ class Space : StateMachine!SystemState {
         // if its adressed to own space or parent using * wildcard or even none
         // in each case we do not want to regex search when ==
         if(this.state == SystemState.Ticking && (s.space == this.meta.id || this.matches(s.space))) {
-            synchronized(this.sync.reader) {
+            synchronized(this.lock.reader) {
                 foreach(e; this.entities.values)
                 if(intern || e.meta.access == EntityAccess.Global)
                     r = e.receipt(s) || r;
@@ -878,17 +886,17 @@ class Space : StateMachine!SystemState {
     override protected void onStateChanged(SystemState o, SystemState n) {
         switch(n) {
             case SystemState.Ticking:
-                synchronized(this.sync.writer)
+                synchronized(this.lock.writer)
                     foreach(e; this.entities)
                         e.tick();
                 break;
             case SystemState.Frozen:
-                synchronized(this.sync.writer)
+                synchronized(this.lock.writer)
                     foreach(e; this.entities.values)
                         e.freeze();
                 break;
             case SystemState.Disposed:
-                synchronized(this.sync.writer)
+                synchronized(this.lock.writer)
                     foreach(e; this.entities.keys)
                         this.entities[e].destroy;
                 break;
