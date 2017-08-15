@@ -211,6 +211,8 @@ abstract class Tick : Data {
         auto t = this.ticker.entity.meta.createTick(tick, this.info.group);
         if(t !is null) {
             t.ticker = this.ticker;
+            t.trigger = this.trigger;
+            t.previous = this.info;
             t.data = data;
 
             if(t.allowed) {
@@ -226,7 +228,9 @@ abstract class Tick : Data {
         auto t = this.ticker.entity.meta.createTick(tick, this.info.group);
         if(t !is null) {
             t.ticker = this.ticker;
-            t.data = data.clone;
+            t.trigger = this.trigger;
+            t.previous = this.info;
+            t.data = data;
             return this.ticker.entity.start(t);
         } else return false;
     }
@@ -389,11 +393,12 @@ private class Entity : StateMachine!SystemState {
 
     /// disposes a ticker
     void detach(Ticker t) {
-        synchronized(this.sync.writer)
+        synchronized(this.sync.writer) {
             if(t.coming !is null)
                 this.meta.ticks ~= t.coming;
             this.ticker.remove(t.id);
-            t.destroy;
+        }
+        t.destroy;
     }
 
     /// meakes entity freeze
@@ -481,10 +486,10 @@ private class Entity : StateMachine!SystemState {
                     if(s.dataType == r.signal) {
                         // creating given tick
                         auto t = this.meta.createTick(r.tick, s.group);
+                        t.trigger = s;
                         auto ticker = new Ticker(this, t);
                         if(t.allowed) {
-                            synchronized(this.sync.writer)
-                                this.ticker[ticker.id] = ticker;
+                            this.ticker[ticker.id] = ticker;
                             ticker.start();
                             ret = true;
                         }
@@ -778,12 +783,12 @@ class Space : StateMachine!SystemState {
     }
     
     /// routes an unicast signal to receipting entities if its in this space
-    private bool route(Unicast s, bool intern = false) {
+    private bool route(Unicast s) {
         // if its a perfect match assuming process only accepted a signal for itself
         if(this.state == SystemState.Ticking) {
             synchronized(this.sync.reader) {
                 foreach(e; this.entities.values)
-                    if((intern || e.meta.access == EntityAccess.Global) && e.meta.ptr == s.dst) {
+                    if(e.meta.ptr == s.dst) {
                         return e.receipt(s);
                     }
             }

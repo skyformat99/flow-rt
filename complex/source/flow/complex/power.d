@@ -40,8 +40,6 @@ class React : Tick {
 
 /// creates a power driven complex
 SpaceMeta createPower(string id, size_t amount, string[string] params) {
-    import flow.base.util;
-
     import std.conv, std.uuid;
 
     auto sm = new SpaceMeta;
@@ -76,13 +74,6 @@ SpaceMeta createPower(string id, size_t amount, string[string] params) {
         rr.signal = "flow.complex.power.Act";
         rr.tick = "flow.complex.power.React";
         em.receptors ~= rr;
-
-        auto etm = new TickMeta;
-        etm.info = new TickInfo;
-        etm.info.entity = em.ptr;
-        etm.info.type = "flow.complex.power.Exist";
-        etm.info.group = randomUUID;
-        em.ticks ~= etm;
 
         sm.entities ~= em;
     }

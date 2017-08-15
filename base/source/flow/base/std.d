@@ -102,13 +102,6 @@ class EntityPtr : Data {
     mixin field!(string, "space");
 }
 
-class Reception : Data {
-    mixin data;
-
-    mixin field!(Signal, "signal");
-    mixin field!(string, "tick");
-}
-
 class Signal : IdData {
     mixin data;
 
