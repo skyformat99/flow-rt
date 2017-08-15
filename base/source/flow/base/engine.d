@@ -506,6 +506,7 @@ private class Entity : StateMachine!SystemState {
         if(s.dst == this.meta.ptr)
             new EntityException("entity cannot send signals to itself, use fork");
 
+        // ensure correct source entity pointer
         s.src = this.meta.ptr;
 
         return this.space.send(s);
@@ -513,6 +514,7 @@ private class Entity : StateMachine!SystemState {
 
     /// send an anycast signal into own space
     bool send(Anycast s) {
+        // ensure correct source entity pointer
         s.src = this.meta.ptr;
 
         return this.space.send(s);
@@ -520,6 +522,7 @@ private class Entity : StateMachine!SystemState {
 
     /// send a multicast signal into own space
     bool send(Multicast s) {
+        // ensure correct source entity pointer
         s.src = this.meta.ptr;
 
         return this.space.send(s);
@@ -837,6 +840,11 @@ class Space : StateMachine!SystemState {
     }
 
     private bool send(Multicast s) {
+        // ensure correct source space
+        s.src.space = this.meta.id;
+
+        /* Only inside own space memory is shared,
+        as soon as a signal is getting shifted to another space it is deep cloned */
         return this.route(s, true) || this.process.shift(s.clone);
     }
 
