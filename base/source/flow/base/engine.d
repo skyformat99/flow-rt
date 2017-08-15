@@ -136,9 +136,9 @@ private class Ticker : StateMachine!SystemState {
 
         try {
             // run tick
-            this.msg(LL.FDebug, this.actual, "running tick");
+            this.msg(LL.FDebug, this.actual.meta, "running tick");
             this.actual.run();
-            this.msg(LL.FDebug, this.actual, "finished tick");
+            this.msg(LL.FDebug, this.actual.meta, "finished tick");
             
             this.actual = null;        
             this.tick();
@@ -147,9 +147,9 @@ private class Ticker : StateMachine!SystemState {
             // handle thrown exception and notify
             this.msg(LL.Warning, ex, "tick failed");
             try {
-                this.msg(LL.Info, this.actual, "handling tick error");
+                this.msg(LL.Info, this.actual.meta, "handling tick error");
                 this.actual.error(ex);
-                this.msg(LL.Info, this.actual, "tick error handled");
+                this.msg(LL.Info, this.actual.meta, "tick error handled");
                 
                 this.actual = null;        
                 this.tick();
@@ -176,15 +176,23 @@ private void msg(Ticker t, LL level, Data d, string msg = string.init) {
     Log.msg(level, d, "ticker@entity("~t.entity.meta.ptr.addr~"): "~msg);
 }
 
-abstract class Tick : Data {
+public class TickMeta : Data {
     mixin data;
 
     mixin field!(TickInfo, "info");
     mixin field!(Signal, "trigger");
     mixin field!(TickInfo, "previous");
     mixin field!(Data, "data");
+}
 
+abstract class Tick {    
+    private TickMeta meta;
     private Ticker ticker;
+
+    protected @property TickInfo info() {return this.meta.info.clone;}
+    protected @property Signal trigger() {return this.meta.trigger.clone;}
+    protected @property TickInfo previous() {return this.meta.previous.clone;}
+    protected @property Data data() {return this.meta.data;}
 
     /// lock to use for synchronizing entity context access across parallel casual strings
     protected @property ReadWriteMutex sync() {return this.ticker.entity.sync;}
@@ -194,28 +202,28 @@ abstract class Tick : Data {
     and as writer when accessing it writing */
     protected @property Data context() {return this.ticker.entity.meta.context;}
 
-    /// check if execution of tick is allowed
-    public @property bool allowed() {return true;}
+    /// check if execution of tick is accepted
+    public @property bool accept() {return true;}
 
     /// predicted costs of tick (default=0)
     public @property size_t costs() {return 0;}
 
     /// algorithm implementation of tick
-    public abstract void run();
+    public void run() {}
 
     /// exception handling implementation of tick
     public void error(Exception ex) {}
 
     /// set next tick in causal string
     protected bool next(string tick, Data data = null) {
-        auto t = this.ticker.entity.meta.createTick(tick, this.info.group);
+        auto t = this.ticker.entity.meta.createTickMeta(tick, this.meta.info.group).tick;
         if(t !is null) {
             t.ticker = this.ticker;
-            t.trigger = this.trigger;
-            t.previous = this.info;
-            t.data = data;
+            t.meta.trigger = this.meta.trigger;
+            t.meta.previous = this.meta.info;
+            t.meta.data = data;
 
-            if(t.allowed) {
+            if(t.accept) {
                 this.ticker.coming = t;
                 return true;
             } else return false;
@@ -225,12 +233,12 @@ abstract class Tick : Data {
     /** fork causal string by starting a new ticker
     given data will be deep cloned, since tick data has not to be synced */
     protected bool fork(string tick, Data data = null) {
-        auto t = this.ticker.entity.meta.createTick(tick, this.info.group);
+        auto t = this.ticker.entity.meta.createTickMeta(tick, this.meta.info.group).tick;
         if(t !is null) {
             t.ticker = this.ticker;
-            t.trigger = this.trigger;
-            t.previous = this.info;
-            t.data = data;
+            t.meta.trigger = this.meta.trigger;
+            t.meta.previous = this.meta.info;
+            t.meta.data = data;
             return this.ticker.entity.start(t);
         } else return false;
     }
@@ -291,14 +299,14 @@ abstract class Tick : Data {
         if(signal.dst is null || signal.dst.id == string.init || signal.dst.space == string.init)
             throw new TickException("unicast signal needs a valid destination(dst)");
 
-        signal.group = this.info.group;
+        signal.group = this.meta.info.group;
 
         return this.ticker.entity.send(signal);
     }
 
     /// send an anycast signal to spaces matching space pattern
     protected bool send(Anycast signal) {
-        signal.group = this.info.group;
+        signal.group = this.meta.info.group;
 
         return this.ticker.entity.send(signal);
     }
@@ -310,7 +318,7 @@ abstract class Tick : Data {
         if(signal.space == string.init)
             throw new TickException("multicast signal needs a space pattern");
 
-        signal.group = this.info.group;
+        signal.group = this.meta.info.group;
 
         return this.ticker.entity.send(signal);
     }
@@ -331,17 +339,24 @@ void msg(Tick t, LL level, Data d, string msg = string.init) {
     Log.msg(level, d, "tick@entity("~t.ticker.entity.meta.ptr.addr~"): "~msg);
 }
 
-private Tick createTick(EntityMeta entity, string type, UUID group = UUID.init) {
-    auto t = createData(type).as!Tick;
-    if(t !is null) {
-        t.info = new TickInfo;
-        t.info.id = randomUUID;
-        t.info.type = type;
-        t.info.entity = entity.ptr.clone;
-        t.info.group = group == UUID.init ? randomUUID : group;
-    }
+TickMeta createTickMeta(EntityMeta entity, string type, UUID group = randomUUID) {
+    auto m = new TickMeta;
+    m.info = new TickInfo;
+    m.info.id = randomUUID;
+    m.info.type = type;
+    m.info.entity = entity.ptr.clone;
+    m.info.group = group;
 
-    return t;
+    return m;
+}
+
+private Tick tick(TickMeta m) {
+    if(m !is null && m.info !is null) {
+        auto t = Object.factory(m.info.type).as!Tick;
+        if(t !is null)
+            t.meta = m;
+        return t;
+    } else return null;
 }
 
 class EntityMeta : Data {
@@ -353,7 +368,7 @@ class EntityMeta : Data {
     mixin array!(Event, "events");
     mixin array!(Receptor, "receptors");
 
-    mixin array!(Tick, "ticks");
+    mixin array!(TickMeta, "ticks");
 }
 
 /// hosts an entity construct
@@ -381,7 +396,7 @@ private class Entity : StateMachine!SystemState {
     /// starts a ticker
     bool start(Tick t) {
         auto ticker = new Ticker(this, t);
-        if(this.state == SystemState.Ticking && t.allowed) {
+        if(this.state == SystemState.Ticking && t.accept) {
             synchronized(this.sync.writer)
                 this.ticker[ticker.id] = ticker;
             ticker.start();
@@ -395,7 +410,7 @@ private class Entity : StateMachine!SystemState {
     void detach(Ticker t) {
         synchronized(this.sync.writer) {
             if(t.coming !is null)
-                this.meta.ticks ~= t.coming;
+                this.meta.ticks ~= t.coming.meta;
             this.ticker.remove(t.id);
         }
         t.destroy;
@@ -485,10 +500,10 @@ private class Entity : StateMachine!SystemState {
                 foreach(r; this.meta.receptors) {
                     if(s.dataType == r.signal) {
                         // creating given tick
-                        auto t = this.meta.createTick(r.tick, s.group);
-                        t.trigger = s;
+                        auto t = this.meta.createTickMeta(r.tick, s.group).tick;
+                        t.meta.trigger = s;
                         auto ticker = new Ticker(this, t);
-                        if(t.allowed) {
+                        if(t.accept) {
                             this.ticker[ticker.id] = ticker;
                             ticker.start();
                             ret = true;
@@ -556,8 +571,8 @@ private class Entity : StateMachine!SystemState {
                 synchronized(this.sync.writer) {
                     // running onCreated ticks
                     foreach(e; this.meta.events.filter!(e => e.type == EventType.OnCreated)) {
-                        auto t = this.meta.createTick(e.tick);
-                        if(t.allowed) {
+                        auto t = this.meta.createTickMeta(e.tick).tick;
+                        if(t.accept) {
                             auto ticker = new Ticker(this, t);
                             ticker.start(false);
                             ticker.join();
@@ -571,8 +586,8 @@ private class Entity : StateMachine!SystemState {
                 synchronized(this.sync.writer) {
                     // running onTicking ticks
                     foreach(e; this.meta.events.filter!(e => e.type == EventType.OnTicking)) {
-                        auto t = this.meta.createTick(e.tick);
-                        if(t.allowed) {
+                        auto t = this.meta.createTickMeta(e.tick).tick;
+                        if(t.accept) {
                             auto ticker = new Ticker(this, t);
                             ticker.start(false);
                             ticker.join();
@@ -582,7 +597,7 @@ private class Entity : StateMachine!SystemState {
 
                     // creating and starting ticker for all frozen ticks
                     foreach(t; this.meta.ticks) {
-                        auto ticker = new Ticker(this, t);
+                        auto ticker = new Ticker(this, t.tick);
                         this.ticker[ticker.id] = ticker;
                         ticker.start();
                     }
@@ -598,15 +613,15 @@ private class Entity : StateMachine!SystemState {
                         t.detaching = false;
                         t.stop();
                         if(t.coming !is null)
-                            this.meta.ticks ~= t.coming;
+                            this.meta.ticks ~= t.coming.meta;
                         this.ticker.remove(t.id);
                         t.destroy();
                     }
 
                     // running onFrozen ticks
                     foreach(e; this.meta.events.filter!(e => e.type == EventType.OnFrozen)) {
-                        auto t = this.meta.createTick(e.tick);
-                        if(t.allowed) {
+                        auto t = this.meta.createTickMeta(e.tick).tick;
+                        if(t.accept) {
                             auto ticker = new Ticker(this, t);
                             ticker.start(false);
                             ticker.join();
@@ -619,7 +634,7 @@ private class Entity : StateMachine!SystemState {
                 synchronized(this.sync.writer) {
                     // running onDisposed ticks
                     foreach(e; this.meta.events.filter!(e => e.type == EventType.OnDisposed)) {
-                        auto ticker = new Ticker(this, this.meta.createTick(e.tick));
+                        auto ticker = new Ticker(this, this.meta.createTickMeta(e.tick).tick);
                         ticker.start(false);
                         ticker.join();
                         ticker.destroy();
@@ -1107,7 +1122,7 @@ version(unittest) {
         auto tc = new TriggeringTestContext;
         tc.target = te;
         e.context = tc;
-        e.ticks ~= e.createTick("flow.base.engine.TriggeringTestTick");
+        e.ticks ~= e.createTickMeta("flow.base.engine.TriggeringTestTick");
 
         return e;
     }
