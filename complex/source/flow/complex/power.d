@@ -75,6 +75,7 @@ class DoData : Data {
 
     mixin field!(double, "req");
     mixin field!(double, "rest");
+    mixin field!(double, "last");
     mixin array!(EntityPtr, "excludes");
     mixin array!(EntityPtr, "done");
 }
@@ -118,9 +119,12 @@ class Do : Tick {
         else // we have to continue at the beginning (can this case even happen?)
             d.done = d.excludes;
 
-        // if there is still something to do, do it
-        if(d.rest > 0.0)
+        /* if there is still something to do,
+        do it as long as there is the chance to get it done */
+        if(d.rest > 0.0 && !d.rest.isIdentical(d.last)) {
+            d.last = d.rest;
             this.next("flow.complex.power.Do", d);
+        }
     }
 }
 

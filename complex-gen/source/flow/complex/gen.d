@@ -1,4 +1,4 @@
-module flow.complex.main;
+module flow.complex.gen;
 
 import std.getopt;
 
@@ -24,7 +24,10 @@ void main(string[] args) {
         "p|param",  "Generation parameter", &opts.params);
 
     SpaceMeta sm;
-    if(args.length > 1 && opts.output != string.init && opts.output.exists && opts.amount > 2)
+    if(args.length > 1 && opts.output != string.init && opts.amount > 2) {
+        if(!opts.output.exists)
+            opts.output.mkdir;
+            
         switch(args[1]) {
             case "power":
                 import flow.complex.power;
@@ -33,15 +36,19 @@ void main(string[] args) {
             default:
                 help(rslt);
         }
+    }
     else help(rslt);
 
     if(sm !is null) {
         import std.path, std.array;
 
         auto outputFile = opts.output.buildPath(opts.space.setExtension(".spc"));
-        if(outputFile.exists && opts.force)
-            outputFile.remove();
-        else Log.msg(LL.Fatal, "output path already contains a space named \""~opts.space~"\" (use -f to overwrite)");
+        if(outputFile.exists) {
+            if(opts.force)
+                outputFile.remove();
+            else
+                Log.msg(LL.Fatal, "output path already contains a space named \""~opts.space~"\" (use -f to overwrite)");
+        }
 
         outputFile.write(sm.json.toPrettyString());
 

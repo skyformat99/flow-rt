@@ -499,16 +499,17 @@ private class Entity : StateMachine!SystemState {
     trigger multiple local strings of causality */
     bool receipt(Signal s) {
         auto ret = false;
-        if(this.state == SystemState.Ticking) {
-            synchronized(this.metaLock.reader) {
-                // looping all registered receptors
-                foreach(r; this.meta.receptors) {
-                    if(s.dataType == r.signal) {
-                        // creating given tick
-                        auto t = this.meta.createTickMeta(r.tick, s.group).tick;
-                        t.meta.trigger = s;
-                        ret = this.start(t) || ret;
-                    }
+        synchronized(this.metaLock.writer) {
+            // looping all registered receptors
+            foreach(r; this.meta.receptors) {
+                if(s.dataType == r.signal) {
+                    // creating given tick
+                    auto tm = this.meta.createTickMeta(r.tick, s.group);
+                    tm.trigger = s;
+                    if(this.state == SystemState.Ticking)
+                        ret = this.start(tm.tick) || ret;
+                    else
+                        this.meta.ticks ~= tm;
                 }
             }
         }

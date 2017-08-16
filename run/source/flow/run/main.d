@@ -116,11 +116,11 @@ void run(string confDir, string libDir) {
     foreach(s; spaces)
         s.tick();
 
-    auto cnt = 0;
+    //auto cnt = 0;
     // watiting for sigint (ctrl+c)
-    while(!stopped && cnt < 100) {
+    while(!stopped/* && cnt < 100*/) {
         Thread.sleep(100.msecs);
-        cnt++;
+        //cnt++;
     }
 
     // stopping spaces
