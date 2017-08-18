@@ -2,8 +2,11 @@
 	"authors": [
 		"Ralph Alexander Bariz"
 	],
-	"lflags": [
+	"lflags-dmd": [
 		"-l:libphobos2.so"
+	],
+	"lflags-ldc": [
+		"-l:libphobos2-ldc.so"
 	],
 	"importPaths": [
 		"source/"

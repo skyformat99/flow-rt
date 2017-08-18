@@ -41,6 +41,7 @@ void main(string[] args) {
 
     if(sm !is null) {
         import std.path, std.array;
+        import core.stdc.stdlib;
 
         auto outputFile = opts.output.buildPath(opts.space.setExtension(".spc"));
         if(outputFile.exists) {
@@ -48,6 +49,7 @@ void main(string[] args) {
                 outputFile.remove();
             else
                 Log.msg(LL.Fatal, "output path already contains a space named \""~opts.space~"\" (use -f to overwrite)");
+                exit(-1);
         }
 
         outputFile.write(sm.json.toPrettyString());

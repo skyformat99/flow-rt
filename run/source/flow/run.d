@@ -4,16 +4,20 @@ bool stopped = false;
 
 extern (C) void stop(int signal) {
     import flow.base.util;
+    import core.stdc.stdlib;
 
     if(!stopped)
         stopped = true;
-    else
+    else {
         Log.msg(LL.Fatal, "requested force exit");
+        exit(-1);
+    }
     Log.msg(LL.Message, "stopping...");
 }
 
 int main(string[] args) {
     import flow.base.util;
+    import core.stdc.stdlib;
     import std.stdio, std.file, std.path, std.process, std.algorithm, std.algorithm.searching;
 
     version(Posix) {
@@ -36,8 +40,8 @@ int main(string[] args) {
         // building configuration directory info
         if(path.absolutePath.isDir)
             confDir = path.absolutePath;
-        else if("FLOW_CONFIG_DIR" in environment && environment["FLOW_CONFIG_DIR"].isDir)
-            confDir = environment["FLOW_CONFIG_DIR"].buildPath(path);
+        else if(environment.get("FLOW_CONFIG_DIR").isDir)
+            confDir = environment.get("FLOW_CONFIG_DIR").buildPath(path);
         else if(thisExePath.dirName.buildPath("etc").isDir)
             confDir = thisExePath.dirName.buildPath("etc").buildPath(path);
         else
@@ -47,12 +51,14 @@ int main(string[] args) {
         if(!confDir.isDir ||
             !confDir.dirEntries(SpanMode.shallow).any!(a => a.baseName == "process.cfg") ||
             !confDir.dirEntries(SpanMode.shallow).any!(a => a.baseName == "libs.lst") ||
-            !confDir.dirEntries(SpanMode.shallow).any!(a => a.extension == ".spc"))
+            !confDir.dirEntries(SpanMode.shallow).any!(a => a.extension == ".spc")) {
             Log.msg(LL.Fatal, "could not find configuration directory -> exiting");
+            exit(-1);
+        }
 
         // building and checking flow library directory info
-        if("FLOW_LIB_DIR" in environment)
-            libDir = environment["FLOW_LIB_DIR"];
+        if(environment.get("FLOW_LIB_DIR") != string.init)
+            libDir = environment.get("FLOW_LIB_DIR");
         else {
             libDir = thisExePath.dirName.buildPath("lib");
             if(!libDir.isDir ||
@@ -64,13 +70,16 @@ int main(string[] args) {
                 libDir = "/etc".buildPath("flow");
         }
         
-        if(!libDir.isDir)
+        if(!libDir.isDir) {
             Log.msg(LL.Fatal, "could not find library directory -> exiting");
+            exit(-1);
+        }
 
         // everything ok so far, run
         run(confDir, libDir);
     } else {
         Log.msg(LL.Fatal, "This software doesn't support operating systems not implementing the posix standard!");
+        exit(-1);
     }
 
     return 0;
@@ -78,7 +87,8 @@ int main(string[] args) {
 
 void run(string confDir, string libDir) {
     import flow.base.util, flow.base.data, flow.base.engine, flow.base.std;
-    import core.sys.posix.dlfcn, core.thread, std.string, std.json, std.array, std.algorithm.iteration, std.file, std.path;
+    import core.stdc.stdlib, core.sys.posix.dlfcn, core.thread;
+    import std.string, std.json, std.array, std.algorithm.iteration, std.file, std.path;
 
     static import core.sys.posix.signal;
     core.sys.posix.signal.sigset(core.sys.posix.signal.SIGINT, &stop);
@@ -93,8 +103,10 @@ void run(string confDir, string libDir) {
 
     Log.msg(LL.Message, "initializing process");
     auto pc = createData(procFile.readText.parseJSON).as!ProcessConfig;
-    if(pc is null)
+    if(pc is null) {
         Log.msg(LL.Fatal, "process configuration is invalid -> exiting");
+        exit(-1);
+    }
     
     auto p = new Process(pc);
     scope(exit) p.destroy;
@@ -105,8 +117,10 @@ void run(string confDir, string libDir) {
         auto spcString = spcFile.readText;
         auto sm = createData(spcString.parseJSON).as!SpaceMeta;
 
-        if(sm is null)
+        if(sm is null) {
             Log.msg(LL.Fatal, "space meta \""~spcFile~"\" is invalid -> exiting");
+            exit(-1);
+        }
 
         spaces ~= p.add(sm);
     }
@@ -132,6 +146,6 @@ void run(string confDir, string libDir) {
     Log.msg(LL.Message, "snapping...");
     foreach(s; spaces) {
         auto sm = s.snap;
-        confDir.buildPath(sm.id).setExtension(".spc").write(sm.json.toString);
+        confDir.buildPath(sm.id).setExtension(".spc").write(sm.json.toPrettyString);
     }
 }

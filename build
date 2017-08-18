@@ -1,7 +1,7 @@
 #!/bin/bash
 
-compiler=dmd
-defBuildParams="--compiler=$compiler" # --debug=data"
+compiler=ldc2
+defBuildParams="--compiler=$compiler --debug=tick" # --debug=data --debug=tick
 if [ $1 ]; then buildType=$1; else buildType=debug; fi
 buildParams=${@:2}
 rootDir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"

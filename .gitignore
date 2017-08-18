@@ -20,6 +20,9 @@ hive
 */lib
 */bin
 
+# tmp/cfg
+tmp/cfg
+
 # DUB
 .dub
 dub.selections.json

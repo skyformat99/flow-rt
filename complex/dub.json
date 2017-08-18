@@ -29,8 +29,12 @@
 			]
 		}
 	},
-	"lflags": [
+	"lflags-dmd": [
 		"-l:libphobos2.so",
+		"-l:libflow-base.so"
+	],
+	"lflags-ldc": [
+		"-l:libphobos2-ldc.so",
 		"-l:libflow-base.so"
 	],
 	"name": "flow-complex",

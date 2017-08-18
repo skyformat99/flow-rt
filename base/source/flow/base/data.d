@@ -217,7 +217,7 @@ mixin template array(T, string name) if (canHandle!T) {
         Properties[name] = TPropertyHelper!(T, name).getArrayInfo(getter, setter, equals).as!(shared(PropertyInfo));
     }
     
-    // field
+    // array
     mixin(T.stringof~"[] "~name~";");
 }
 

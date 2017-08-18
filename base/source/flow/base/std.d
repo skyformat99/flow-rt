@@ -123,6 +123,8 @@ class Multicast : Signal {
 
 class Anycast : Signal {
     mixin data;
+
+    mixin field!(string, "space");
 }
 
 class Ping : Multicast {

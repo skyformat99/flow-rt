@@ -6,15 +6,23 @@ import flow.base.data, flow.base.util, flow.base.engine, flow.base.std;
 class Relation : Data {
     mixin data;
 
+    /// relation with
     mixin field!(EntityPtr, "entity");
-    mixin field!(double, "power");
+
+    /// relation power
+    mixin field!(size_t, "power");
 }
 
 /// describes the actuality of a power driven entity
 class Actuality : Data {
     mixin data;
 
-    mixin field!(double, "power");
+    /** inner power
+    (sum of relation powers and inner power
+    has to be in balance for existance) */
+    mixin field!(size_t, "power");
+
+    /// relations of entity
     mixin array!(Relation, "relations");
 }
 
@@ -22,109 +30,132 @@ class Actuality : Data {
 class Act : Unicast {
     mixin data;
 
-    mixin field!(double, "power");
+    /// power of act
+    mixin field!(size_t, "power");
 }
 
 /// reaction of a power driven entity on an act of power
 class React : Tick {
     override @property bool accept() {
-        import std.math, std.array, std.algorithm.iteration, std.algorithm.sorting;
+        import std.math, std.conv, std.array;
+        import std.algorithm.mutation, std.algorithm.sorting, std.algorithm.iteration;
 
         auto s = this.trigger.as!Act;
         auto c = this.context.as!Actuality;
-
-        // we only accept it, if its power is enough to make a difference
+        
+        debug(tick) this.msg(LL.Debug, "React::accept: s.power="~s.power.to!string);
+        debug(tick) this.msg(LL.Debug, "React::accept: before sync");
         synchronized(this.sync.writer) {
-            auto newPower = c.power - s.power;
-            if(!c.power.isIdentical(newPower)) {
-                // if it makes a difference, we give this piece of power to requester
-                c.power = newPower;
-
-                // we increase the virtual power of requester
-                auto r = c.relations.filter!(a=>a.entity == s.src).front;
-                if(r is null) { // if we do not have a relation we create a new one
-                    r = new Relation;
-                    r.entity = s.src;
-                    c.relations ~= r;
+            if(!c.relations.empty && c.power > s.power) { // it can only give power if it has this power
+                // can the act cut out others so it is consumed completely?
+                auto canAccept = false;
+                Relation found;
+                size_t[] cut;
+                auto rest = s.power;
+                foreach(i, r; c.relations) {
+                    if(r.entity != s.src) { // an entity cannot cut out its own relation
+                        if(rest > r.power) {
+                            cut ~= i;
+                            rest -= r.power;
+                        }
+                        else if(rest == r.power) {
+                            cut ~= i;
+                            rest = 0;
+                            canAccept = true;
+                        } else break;
+                    } else found = r;
                 }
-                r.power += s.power;
 
-                // now we sort the whole relations array for beeing able to iterate correctly
-                c.relations = c.relations.sort!((a, b) => a.power < b.power).array;
-
-                return true;
-            } else return false;
-        }
-    }
-
-    override void run() {
-        import std.math;
-
-        auto s = this.trigger.as!Act;
-        auto d = new DoData;
-        d.req = s.power;
-        d.rest = d.req;
-        d.excludes = [s.src];
-        d.done = d.excludes;
-        this.next("flow.complex.power.Do", d);
-    }
-}
-
-class DoData : Data {
-    mixin data;
-
-    mixin field!(double, "req");
-    mixin field!(double, "rest");
-    mixin field!(double, "last");
-    mixin array!(EntityPtr, "excludes");
-    mixin array!(EntityPtr, "done");
-}
-
-class Do : Tick {
-    override void run() {
-        import std.math, std.algorithm.searching, std.algorithm.mutation;
-
-        auto c = this.context.as!Actuality;
-        auto d = this.data.as!DoData;
-
-        EntityPtr done;
-        synchronized(this.sync.writer) {
-            // creating new act
-            auto act = new Act;
-
-            foreach_reverse(i, r;c.relations) {
-                // do not handle it again
-                if(!d.done.any!(a=>a == r.entity)) {
-                    act.power = r.power * (r.power/d.req);
-                    // if target can deliver power from own pov and its pov
-                    if(act.power <= r.power && act.power <= d.rest && this.send(act, r.entity)) {
-                        d.rest -= act.power;
-
-                        // if from own pov there is power left just decrease
-                        if(act.power < r.power)
-                            r.power -= act.power;
-                        else // if not, relation is delpleted and removed
-                            c.relations.remove(i);
+                if(canAccept) {
+                    debug(tick) this.msg(LL.Debug, "React::accept: can accept");
+                    // remove cut out relations and add power of oct to own power
+                    foreach(i; cut) {
+                        debug(tick) this.msg(LL.Debug, c.relations[i], "React::accept: removing relation");
+                        c.relations = c.relations.remove(i).array;
                     }
 
-                    // however we did something and it has to go into next round
-                    done = r.entity;
-                    break;
+                    // if relation to src is not existing, create it
+                    if(found is null) {
+                        debug(tick) this.msg(LL.Debug, "React::accept: src relation not found, creating");
+                        auto r = new Relation;
+                        r.entity = s.src;
+                        r.power = s.power;
+                        c.relations ~= r;
+                        found = r;
+                    } else {
+                        debug(tick) this.msg(LL.Debug, found, "React::accept: src relation found");
+                    }
+
+                    // now relation with src is strengthened by power amount
+                    debug(tick) this.msg(LL.Debug, "React::accept: found.power="~found.power.to!string);
+                    found.power += s.power;
+                    debug(tick) this.msg(LL.Debug, "React::accept: found.power'="~found.power.to!string);
+
+                    // on the other hand actuality is loosing own power
+                    debug(tick) this.msg(LL.Debug, "React::accept: c.power="~c.power.to!string);
+                    c.power -= s.power;
+                    debug(tick) this.msg(LL.Debug, "React::accept: c.power'="~c.power.to!string);
+
+                    // finally relations are sorted ascending
+                    debug(tick) this.msg(LL.Debug, "React::accept: sorting");
+                    c.relations = c.relations.sort!((a, b) => a.power < b.power).array; // << PROBLEM
+
+                    return true;
+                } else {
+                    debug(tick) this.msg(LL.Debug, "React::accept: can't accept");
+                    return false;
+                }
+            } else {
+                debug(tick) this.msg(LL.Debug, "React::accept: don't have required power");
+                return false;
+            }
+        }
+    }
+}
+
+class Exist : Tick {
+    override void run() {
+        import core.thread;
+        import std.math, std.conv, std.range.primitives, std.algorithm.iteration;
+
+        auto c = this.context.as!Actuality;
+
+        debug(tick) this.msg(LL.Debug, "Exist::run: before sync");
+        synchronized(this.sync.writer) {
+            if(!c.relations.empty) { // this whole things only makes sense if there are relations
+                debug(tick) this.msg(LL.Debug, "Exist::run: !c.relations.empty");
+                // does the actuality has less power than its relations?
+                auto miss = c.relations.map!(a => a.power).reduce!((a, b) => a + b) - c.power;
+                debug(tick) this.msg(LL.Debug, "Exist::run: miss="~miss.to!string);
+
+                // gets what it can for getting back to balance
+                if(miss > 0) {
+                    foreach_reverse(i, r; c.relations) {
+                        if(r.power >= miss) {
+                            auto a = new Act;
+                            a.power = miss;
+                            if(this.send(a, r.entity)) {
+                                c.power += miss;
+                                break;
+                            }
+                        } else {
+                            auto a = new Act;
+                            a.power = r.power;
+                            if(this.send(a, r.entity)) {
+                                c.power += r.power;
+                                miss -= r.power;
+                                if(miss < 1) {
+                                    break;
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
-
-        if(done !is null)
-            d.done ~= done;
-        else // we have to continue at the beginning (can this case even happen?)
-            d.done = d.excludes;
-
-        /* if there is still something to do,
-        do it as long as there is the chance to get it done */
-        if(d.rest > 0.0 && !d.rest.isIdentical(d.last)) {
-            d.last = d.rest;
-            this.next("flow.complex.power.Do", d);
-        }
+        
+        debug(tick) this.msg(LL.Debug, "Exist::run: next");
+        this.next(fqn!(typeof(this)));
     }
 }
 
@@ -138,7 +169,7 @@ SpaceMeta createPower(string id, size_t amount, string[string] params) {
     for(size_t i = 0; i < amount; i++) {
         auto em = new EntityMeta;
         auto c = new Actuality;
-        c.power = 1000;
+        c.power = amount;
         em.ptr = new EntityPtr;
         em.ptr.id = i.to!string;
         em.ptr.space = id;
@@ -150,7 +181,7 @@ SpaceMeta createPower(string id, size_t amount, string[string] params) {
                 r.entity = new EntityPtr;
                 r.entity.id = j.to!string;
                 r.entity.space = id;
-                r.power = "init" in params ? params["init"].to!double : amount.to!double;
+                r.power = 1;
                 c.relations ~= r;
             }
         }
@@ -161,11 +192,7 @@ SpaceMeta createPower(string id, size_t amount, string[string] params) {
         rr.tick = "flow.complex.power.React";
         em.receptors ~= rr;
 
-        auto dt = em.createTickMeta("flow.complex.power.Do");
-        auto d = new DoData;
-        d.req = c.power/amount;
-        d.rest = d.req;
-        dt.data = d;
+        auto dt = em.createTickMeta("flow.complex.power.Exist");
         em.ticks ~= dt;
 
         sm.entities ~= em;

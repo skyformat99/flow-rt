@@ -265,7 +265,7 @@ enum LL : uint {
 
 class Log {
     public static immutable sep = newline~"--------------------------------------------------"~newline;
-    public static LL logLevel = LL.Message | LL.Fatal | LL.Error | LL.Warning;
+    public static LL logLevel = LL.Message | LL.Fatal | LL.Error | LL.Warning | LL.Info | LL.Debug;
     public static void msg(LL level, string msg) {
         if(level & logLevel) {
             auto t = "["~level.to!string~"] ";
@@ -275,12 +275,6 @@ class Log {
                 writeln(t);
                 //flush();
             }
-        }
-
-        // a fatal causes an exit
-        if(level & LL.Fatal) {
-            import core.stdc.stdlib;
-            exit(-666);
         }
     }
 
@@ -306,12 +300,12 @@ class Log {
     }
 
     public static void msg(LL level, Data d, string msg = string.init) {
-        //if(level & logLevel) {
+        if(level & logLevel) {
             auto t = msg;
             t ~= Log.sep;
             t ~= d !is null ? d.json.toString : "NULL";
             Log.msg(level, t);
-        //}
+        }
     }
 }
 
