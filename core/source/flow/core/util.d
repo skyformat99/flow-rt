@@ -278,19 +278,25 @@ class Log {
         }
     }
 
-    public static void msg(LL level, Exception ex, string msg=string.init) {
+    public static void msg(LL level, Throwable thr, string msg=string.init) {
         if(level & logLevel) {
             string t;
             
             if(msg != string.init)
                 t ~= msg~newline~"    ";
-            
-            if(ex !is null && ex.msg != string.init)
-                t ~= ex.msg~newline;
 
-            if(cast(FlowException)ex !is null && (cast(FlowException)ex).data !is null) {
+            if(thr !is null) {
+                t ~= thr.file~":"~thr.line.to!string;
+
+                if(thr.msg != string.init)
+                    t ~= "("~thr.msg~newline~")";
+
+                t ~= newline~thr.info.to!string;
+            }
+
+            if(cast(FlowException)thr !is null && (cast(FlowException)thr).data !is null) {
                 t ~= sep;
-                t ~= (cast(FlowException)ex).data.json.toString~newline;
+                t ~= (cast(FlowException)thr).data.json.toString~newline;
                 t ~= sep;
                 t ~= sep;
             }

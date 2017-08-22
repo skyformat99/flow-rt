@@ -15,6 +15,11 @@ extern (C) void stop(int signal) {
     Log.msg(LL.Message, "stopping...");
 }
 
+extern (C) void die(int signal) {
+    import core.stdc.stdlib;
+    exit(-999);
+}
+
 int main(string[] args) {
     import flow.core.util;
     import core.stdc.stdlib;
@@ -93,6 +98,15 @@ void run(string confDir, string libDir) {
     static import core.sys.posix.signal;
     core.sys.posix.signal.sigset(core.sys.posix.signal.SIGINT, &stop);
 
+    // registering segv handling
+    version (MemoryErrorSupported) {
+        import etc.linux.memoryerror;
+        registerMemoryErrorHandler();
+    } else {
+        static import core.stdc.signal, core.sys.posix.signal;
+        core.sys.posix.signal.sigset(core.stdc.signal.SIGSEGV, &die);
+    }
+
     auto procFile = confDir.buildPath("process.cfg");
     auto libsFile = confDir.buildPath("libs.lst");
     auto spcFiles = confDir.dirEntries(SpanMode.shallow).filter!(a => a.extension == ".spc");
@@ -148,4 +162,7 @@ void run(string confDir, string libDir) {
         auto sm = s.snap;
         confDir.buildPath(sm.id).setExtension(".spc").write(sm.json.toPrettyString);
     }
+
+    version (MemoryErrorSupported)
+        deregisterMemoryErrorHandler();
 }

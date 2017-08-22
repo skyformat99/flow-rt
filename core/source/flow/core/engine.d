@@ -50,7 +50,7 @@ abstract class Tick {
     public void run() {}
 
     /// exception handling implementation of tick
-    public void error(Exception ex) {}
+    public void error(Throwable thr) {}
 
     /// set next tick in causal string
     protected bool next(string tick, Data data = null) {
@@ -179,8 +179,8 @@ void msg(Tick t, LL level, string msg) {
 }
 
 /// writes a log message
-void msg(Tick t, LL level, Exception ex, string msg = string.init) {
-    Log.msg(level, ex, "tick@entity("~t.entity.meta.ptr.addr~"): "~msg);
+void msg(Tick t, LL level, Throwable thr, string msg = string.init) {
+    Log.msg(level, thr, "tick@entity("~t.entity.meta.ptr.addr~"): "~msg);
 }
 
 /// writes a log message
@@ -356,25 +356,26 @@ private class Ticker : StateMachine!SystemState {
             this.actual = null;        
             this.tick();
         }
-        catch(Exception ex) {
-            // handle thrown exception and notify
-            this.actual.msg(LL.Warning, ex, "run failed");
-            try {
-                this.actual.msg(LL.Info, this.actual.meta, "handling run error");
-                this.actual.error(ex);
-                this.actual.msg(LL.Info, this.actual.meta, "run error handled");
-                
-                this.actual = null;        
-                this.tick();
-            }
-            catch(Exception ex2) {
-                // if even handling exception failes notify that an error occured
-                this.actual.msg(LL.Error, ex2, "handling error failed");
-                this.actual = null;
-                if(this.state != SystemState.Disposed) this.dispose;
-            }
-        } catch(Throwable thr) {
-            this.actual.die("unexcpected failure occured at 'engine.d: void Ticker::tick()'");
+        catch(Throwable thr) {
+            this.handleError(thr);
+        }
+    }
+
+    void handleError(Throwable thr) {
+        this.actual.msg(LL.Warning, thr, "run failed");
+        try {
+            this.actual.msg(LL.Info, this.actual.meta, "handling run error");
+            this.actual.error(thr);
+            this.actual.msg(LL.Info, this.actual.meta, "run error handled");
+            
+            this.actual = null;        
+            this.tick();
+        }
+        catch(Throwable thr2) {
+            // if even handling exception failes notify that an error occured
+            this.actual.msg(LL.Error, thr2, "handling error failed");
+            this.actual = null;
+            if(this.state != SystemState.Disposed) this.dispose;
         }
     }
 }
@@ -383,8 +384,8 @@ private void msg(Ticker t, LL level, string msg) {
     Log.msg(level, "ticker@entity("~t.entity.meta.ptr.addr~"): "~msg);
 }
 
-private void msg(Ticker t, LL level, Exception ex, string msg = string.init) {
-    Log.msg(level, ex, "ticker@entity("~t.entity.meta.ptr.addr~"): "~msg);
+private void msg(Ticker t, LL level, Throwable thr, string msg = string.init) {
+    Log.msg(level, thr, "ticker@entity("~t.entity.meta.ptr.addr~"): "~msg);
 }
 
 private void msg(Ticker t, LL level, Data d, string msg = string.init) {
@@ -1117,11 +1118,11 @@ version(unittest) {
             }
         }
 
-        override void error(Exception ex) {
-            if(ex.as!TestTickException !is null) {
+        override void error(Throwable thr) {
+            if(thr.as!TestTickException !is null) {
                 auto c = this.context.as!TestTickContext;
                 synchronized(this.sync.writer)
-                    c.error = ex.as!FlowException.type;
+                    c.error = thr.as!FlowException.type;
             }
         }
     }
