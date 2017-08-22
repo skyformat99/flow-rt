@@ -1,9 +1,9 @@
-module flow.base.engine;
+module flow.core.engine;
 
-import flow.base.util, flow.base.data;
-import flow.base.std;
+import flow.core.util, flow.core.data;
+import flow.std;
 
-import core.thread, core.sync.rwmutex;
+import core.thread, flow.core.sync.rwmutex;
 import std.uuid, std.string;
 
 private enum SystemState {
@@ -1087,13 +1087,13 @@ version(unittest) {
     }
     
     class TestTick : Tick {
-        import flow.base.util;
+        import flow.core.util;
 
         override void run() {
             auto c = this.context.as!TestTickContext;
             auto d = this.data.as!TestTickData !is null ?
                 this.data.as!TestTickData :
-                "flow.base.engine.TestTickData".createData().as!TestTickData;
+                "flow.core.engine.TestTickData".createData().as!TestTickData;
             auto t = this.trigger.as!TestSignal;
 
             c.info = this.info;
@@ -1113,7 +1113,7 @@ version(unittest) {
                 synchronized(this.sync.writer)
                     c.cnt += d.cnt;
 
-                this.next("flow.base.engine.TestTick", d);
+                this.next("flow.core.engine.TestTick", d);
             }
         }
 
@@ -1178,20 +1178,20 @@ version(unittest) {
 
         auto onc = new Event;
         onc.type = EventType.OnCreated;
-        onc.tick = "flow.base.engine.TestOnCreatedTick";
+        onc.tick = "flow.core.engine.TestOnCreatedTick";
         e.events ~= onc;
         auto ont = new Event;
         ont.type = EventType.OnTicking;
-        ont.tick = "flow.base.engine.TestOnTickingTick";
+        ont.tick = "flow.core.engine.TestOnTickingTick";
         e.events ~= ont;
         auto onf = new Event;
         onf.type = EventType.OnFrozen;
-        onf.tick = "flow.base.engine.TestOnFrozenTick";
+        onf.tick = "flow.core.engine.TestOnFrozenTick";
         e.events ~= onf;
 
         auto r = new Receptor;
-        r.signal = "flow.base.engine.TestSignal";
-        r.tick = "flow.base.engine.TestTick";
+        r.signal = "flow.core.engine.TestSignal";
+        r.tick = "flow.core.engine.TestTick";
         e.receptors ~= r;
         e.context = new TestTickContext;
 
@@ -1205,7 +1205,7 @@ version(unittest) {
         auto tc = new TriggeringTestContext;
         tc.target = te;
         e.context = tc;
-        e.ticks ~= e.createTickMeta("flow.base.engine.TriggeringTestTick");
+        e.ticks ~= e.createTickMeta("flow.core.engine.TriggeringTestTick");
 
         return e;
     }
@@ -1245,6 +1245,6 @@ unittest {
     assert(sm.entities[0].context.as!TestTickContext.trigger.group == g, "group was not passed correctly to signal");
     assert(sm.entities[0].context.as!TestTickContext.info.group == g, "group was not passed correctly to tick");
     assert(sm.entities[0].context.as!TestTickContext.data !is null, "data was not set correctly");
-    assert(sm.entities[0].context.as!TestTickContext.error == "flow.base.engine.TestTickException", "error was not handled");
+    assert(sm.entities[0].context.as!TestTickContext.error == "flow.core.engine.TestTickException", "error was not handled");
     assert(sm.entities[0].context.as!TestTickContext.forked, "didn't fork as expected");
 }

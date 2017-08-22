@@ -1,18 +1,18 @@
 #!/bin/bash
 
-compiler=ldc2
-defBuildParams="--compiler=$compiler --debug=tick" # --debug=data --debug=tick
+compiler=dmd
+defBuildParams="--compiler=$compiler --force" # --debug=data --debug=tick
 if [ $1 ]; then buildType=$1; else buildType=debug; fi
 buildParams=${@:2}
 rootDir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-function buildBase {
-    cd $rootDir/base &&
+function buildCore {
+    cd $rootDir/core &&
     dub build $defBuildParams $buildParams &&
     dub test $defBuildParams $buildParams &&
 
-    export LIBRARY_PATH=$LIBRARY_PATH:$rootDir/base/lib &&
-    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$rootDir/base/lib
+    export LIBRARY_PATH=$LIBRARY_PATH:$rootDir/core/lib &&
+    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$rootDir/core/lib
 }
 
 function buildLib {
@@ -38,7 +38,7 @@ function buildBin {
     dub build --build $buildType $defBuildParams $buildParams
 }
 
-buildBase &&
+buildCore &&
 buildRun &&
 
 buildLib complex &&

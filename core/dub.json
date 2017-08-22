@@ -34,10 +34,10 @@
 			]
 		}
 	},
-	"name": "flow-base",
+	"name": "flow-core",
 	"version": "0.2.0",
 	"license": "GPL-3.0",
-	"targetName": "flow-base",
+	"targetName": "flow-core",
 	"targetType": "dynamicLibrary",
 	"targetPath": "lib",
 	"description": "FLOW runtime",

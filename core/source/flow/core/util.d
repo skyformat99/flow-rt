@@ -1,6 +1,6 @@
-module flow.base.util;
+module flow.core.util;
 
-import flow.base.data;
+import flow.core.data;
 
 import std.traits, std.range, std.uuid, std.datetime, std.stdio, std.ascii, std.conv, std.json;
 
@@ -62,7 +62,7 @@ package class StateRefusedException : FlowException {mixin exception;}
 
 /// state machine mixin template
 package abstract class StateMachine(T) if (isScalarType!T) {
-    import core.sync.rwmutex;
+    import flow.core.sync.rwmutex;
 
     private ReadWriteMutex _lock;
     protected @property ReadWriteMutex lock(){return this._lock;}

@@ -3,7 +3,7 @@
 
     "configurations": [
         {
-            "name": "flow-base",
+            "name": "flow-core",
             "type": "gdb",
             "request": "launch",
             "autorun": [
@@ -11,15 +11,15 @@
                 "handle SIGUSR2 nostop noprint",
                 "break onInvalidMemoryOperationError"
             ],
-            "target": "flow-base-test-library",
-            "cwd": "${workspaceRoot}/base/lib"
+            "target": "flow-core-test-library",
+            "cwd": "${workspaceRoot}/core/lib"
         },
         {
             "name": "flow-complex-gen",
             "type": "gdb",
             "request": "launch",
             "autorun": [
-                "set environment LD_LIBRARY_PATH ${workspaceRoot}/base/lib:${workspaceRoot}/run/bin/lib",
+                "set environment LD_LIBRARY_PATH ${workspaceRoot}/core/lib:${workspaceRoot}/run/bin/lib",
                 "handle SIGUSR1 nostop noprint",
                 "handle SIGUSR2 nostop noprint",
                 "break onInvalidMemoryOperationError"
@@ -33,7 +33,7 @@
             "type": "gdb",
             "request": "launch",
             "autorun": [
-                "set environment LD_LIBRARY_PATH ${workspaceRoot}/base/lib",
+                "set environment LD_LIBRARY_PATH ${workspaceRoot}/core/lib",
                 "handle SIGUSR1 nostop noprint",
                 "handle SIGUSR2 nostop noprint",
                 "break onInvalidMemoryOperationError"

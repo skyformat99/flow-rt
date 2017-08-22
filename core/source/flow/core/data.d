@@ -1,6 +1,6 @@
-module flow.base.data;
+module flow.core.data;
 
-import flow.base.util;
+import flow.core.util;
 
 import std.traits;
 import std.variant;
@@ -126,7 +126,7 @@ abstract class Data {
 }
 
 mixin template data() {
-    static import __flowutil = flow.base.util, __flowdata = flow.base.data;
+    static import __flowutil = flow.core.util, __flowdata = flow.core.data;
     debug(data) pragma(msg, "\tdata "~__flowutil.fqn!(typeof(this)));
 
     shared static __flowdata.PropertyInfo[string] Properties;
@@ -137,7 +137,7 @@ mixin template data() {
     override @property string dataType() {return __flowutil.fqn!(typeof(this));}
     
     shared static this() {
-		static if(__flowutil.fqn!(typeof(super)) != "flow.base.data.Data")
+		static if(__flowutil.fqn!(typeof(super)) != "flow.core.data.Data")
             foreach(n, i; super.Properties)
                 Properties[n] = i;
     }
@@ -151,7 +151,7 @@ mixin template field(T, string name) if (canHandle!T) {
     debug(data) pragma(msg, "\t\t"~T.stringof~" "~name);
 
     shared static this() {
-        import flow.base.util, flow.base.data;
+        import flow.core.util, flow.core.data;
 
         import std.variant, std.traits;
 
@@ -187,7 +187,7 @@ mixin template array(T, string name) if (canHandle!T) {
     debug(data) pragma(msg, "\t\t"~T.stringof~"[] "~name);
 
     shared static this() {
-        import flow.base.util, flow.base.data;
+        import flow.core.util, flow.core.data;
 
         import std.variant, std.traits;
 
@@ -413,7 +413,7 @@ unittest {
     import std.range;
     writeln("testing dynamic data usage");
 
-    auto d = "flow.base.data.InheritedTestData".createData().as!InheritedTestData;
+    auto d = "flow.core.data.InheritedTestData".createData().as!InheritedTestData;
     assert(d !is null, "could not dynamically create instance of data");
     assert(d.integer is long.init && d.integerA.empty, "data is not initialized correctly at dynamic creation");
 
@@ -837,16 +837,16 @@ unittest {
     assert(dStr == "{"~
         "\"additional\":\"ble\","~
         "\"boolean\":true,"~
-        "\"dataType\":\"flow.base.data.InheritedTestData\","~
+        "\"dataType\":\"flow.core.data.InheritedTestData\","~
         "\"enumeration\":1,"~
         "\"enumerationA\":[1,0],"~
         "\"inner\":{"~
-            "\"dataType\":\"flow.base.data.TestData\","~
+            "\"dataType\":\"flow.core.data.TestData\","~
             "\"integer\":3"~
         "},"~
         "\"innerA\":["~
-            "{\"dataType\":\"flow.base.data.TestData\"},"~
-            "{\"dataType\":\"flow.base.data.TestData\"}"~
+            "{\"dataType\":\"flow.core.data.TestData\"},"~
+            "{\"dataType\":\"flow.core.data.TestData\"}"~
         "],"~
         "\"text\":\"foo\","~
         "\"textA\":[\"foo\",\"bar\"],"~

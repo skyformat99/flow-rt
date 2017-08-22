@@ -1,6 +1,6 @@
-module flow.base.std;
+module flow.std;
 
-import flow.base.data;
+import flow.core.data;
 
 import core.time;
 import std.uuid;

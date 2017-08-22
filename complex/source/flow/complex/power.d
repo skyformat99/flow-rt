@@ -1,6 +1,6 @@
 module flow.complex.power;
 
-import flow.base.data, flow.base.util, flow.base.engine, flow.base.std;
+import flow.core.data, flow.core.util, flow.core.engine, flow.std;
 
 /// describes a powerdriven relation
 class Relation : Data {

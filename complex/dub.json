@@ -3,7 +3,7 @@
 		"Ralph Alexander Bariz"
 	],
 	"importPaths": [
-		"../base/iface/source/",
+		"../core/iface/source/",
 		"source/"
 	],
 	"buildTypes": {
@@ -31,11 +31,11 @@
 	},
 	"lflags-dmd": [
 		"-l:libphobos2.so",
-		"-l:libflow-base.so"
+		"-l:libflow-core.so"
 	],
 	"lflags-ldc": [
 		"-l:libphobos2-ldc.so",
-		"-l:libflow-base.so"
+		"-l:libflow-core.so"
 	],
 	"name": "flow-complex",
 	"version": "0.2.0",
