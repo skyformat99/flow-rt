@@ -16,7 +16,10 @@ extern (C) void stop(int signal) {
 }
 
 extern (C) void die(int signal) {
+    import flow.core.util;
     import core.stdc.stdlib;
+
+    Log.msg(LL.Fatal, "Memory access error (SIGSEGV) occured -> exiting");
     exit(-999);
 }
 
@@ -98,14 +101,8 @@ void run(string confDir, string libDir) {
     static import core.sys.posix.signal;
     core.sys.posix.signal.sigset(core.sys.posix.signal.SIGINT, &stop);
 
-    // registering segv handling
-    version (MemoryErrorSupported) {
-        import etc.linux.memoryerror;
-        registerMemoryErrorHandler();
-    } else {
-        static import core.stdc.signal, core.sys.posix.signal;
-        core.sys.posix.signal.sigset(core.stdc.signal.SIGSEGV, &die);
-    }
+    static import core.stdc.signal, core.sys.posix.signal;
+    core.sys.posix.signal.sigset(core.stdc.signal.SIGSEGV, &die);
 
     auto procFile = confDir.buildPath("process.cfg");
     auto libsFile = confDir.buildPath("libs.lst");

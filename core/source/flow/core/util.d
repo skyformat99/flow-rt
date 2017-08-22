@@ -346,8 +346,10 @@ package class Tasker : StateMachine!TaskerState {
                 this.tp = new TaskPool(this.worker);
                 break;
             case TaskerState.Stopped:
-                if(this.tp !is null)
+                if(this.tp !is null) {
                     this.tp.finish(true); // we need to block until there are no tasks running anymore
+                    this.tp = null;
+                }
                 break;
             default: break;
         }

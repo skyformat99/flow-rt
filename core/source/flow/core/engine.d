@@ -166,8 +166,8 @@ abstract class Tick {
 private bool checkAccept(Tick t) {
     try {
         return t.accept;
-    } catch(Exception ex) {
-        t.msg(LL.Warning, ex, "accept failed");
+    } catch(Throwable thr) {
+        t.msg(LL.Error, thr, "accept failed");
     }
 
     return false;
@@ -353,29 +353,23 @@ private class Ticker : StateMachine!SystemState {
             this.actual.run();
             this.msg(LL.FDebug, this.actual.meta, "finished tick");
             
-            this.actual = null;        
-            this.tick();
-        }
-        catch(Throwable thr) {
-            this.handleError(thr);
-        }
-    }
-
-    void handleError(Throwable thr) {
-        this.actual.msg(LL.Warning, thr, "run failed");
-        try {
-            this.actual.msg(LL.Info, this.actual.meta, "handling run error");
-            this.actual.error(thr);
-            this.actual.msg(LL.Info, this.actual.meta, "run error handled");
-            
-            this.actual = null;        
-            this.tick();
-        }
-        catch(Throwable thr2) {
-            // if even handling exception failes notify that an error occured
-            this.actual.msg(LL.Error, thr2, "handling error failed");
             this.actual = null;
-            if(this.state != SystemState.Disposed) this.dispose;
+            this.tick();
+        } catch(Throwable thr) {
+            this.actual.msg(LL.Error, thr, "run failed");
+            try {
+                this.actual.msg(LL.Info, this.actual.meta, "handling run error");
+                this.actual.error(thr);
+                this.actual.msg(LL.Info, this.actual.meta, "run error handled");
+                
+                this.actual = null;        
+                this.tick();
+            } catch(Throwable thr2) {
+                // if even handling exception failes notify that an error occured
+                this.actual.msg(LL.Fatal, thr2, "handling error failed");
+                this.actual = null;
+                if(this.state != SystemState.Disposed) this.dispose;
+            }
         }
     }
 }
@@ -928,12 +922,12 @@ class Space : StateMachine!SystemState {
     override protected void onStateChanged(SystemState o, SystemState n) {
         switch(n) {
             case SystemState.Ticking:
-                synchronized(this.lock.writer)
+                synchronized(this.lock.reader)
                     foreach(e; this.entities)
                         e.tick();
                 break;
             case SystemState.Frozen:
-                synchronized(this.lock.writer)
+                synchronized(this.lock.reader)
                     foreach(e; this.entities.values)
                         e.freeze();
                 break;

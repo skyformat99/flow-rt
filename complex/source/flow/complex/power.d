@@ -55,10 +55,12 @@ class React : Tick {
                 foreach(i, r; c.relations) {
                     if(r.entity != s.src) { // an entity cannot cut out its own relation
                         if(rest > r.power) {
+                            r.power = 0;
                             cut ~= i;
                             rest -= r.power;
                         }
                         else if(rest == r.power) {
+                            r.power = 0;
                             cut ~= i;
                             rest = 0;
                             canAccept = true;
@@ -69,7 +71,7 @@ class React : Tick {
                 if(canAccept) {
                     debug(tick) this.msg(LL.Debug, "React::accept: can accept");
                     // remove cut out relations and add power of oct to own power
-                    foreach(i; cut) {
+                    foreach_reverse(i; cut) {
                         debug(tick) this.msg(LL.Debug, c.relations[i], "React::accept: removing relation");
                         c.relations = c.relations.remove(i).array;
                     }
@@ -121,32 +123,41 @@ class Exist : Tick {
         auto c = this.context.as!Actuality;
 
         debug(tick) this.msg(LL.Debug, "Exist::run: before sync");
-        synchronized(this.sync.writer) {
-            if(!c.relations.empty) { // this whole things only makes sense if there are relations
-                debug(tick) this.msg(LL.Debug, "Exist::run: !c.relations.empty");
-                // does the actuality has less power than its relations?
-                auto miss = c.relations.map!(a => a.power).reduce!((a, b) => a + b) - c.power;
-                debug(tick) this.msg(LL.Debug, "Exist::run: miss="~miss.to!string);
+        Relation[] relations;
+        synchronized(this.sync.reader)
+            relations = c.relations.dup;
+        if(!relations.empty) { // this whole things only makes sense if there are relations
+            debug(tick) this.msg(LL.Debug, "Exist::run: !c.relations.empty");
+            // does the actuality has less power than its relations?
+            size_t miss;
+            synchronized(this.sync.reader)
+                miss = relations.map!(a => a.power).reduce!((a, b) => a + b) - c.power;
+            debug(tick) this.msg(LL.Debug, "Exist::run: miss="~miss.to!string);
 
-                // gets what it can for getting back to balance
-                if(miss > 0) {
-                    foreach_reverse(i, r; c.relations) {
-                        if(r.power >= miss) {
-                            auto a = new Act;
-                            a.power = miss;
-                            if(this.send(a, r.entity)) {
+            // gets what it can for getting back to balance
+            if(miss > 0) {
+                foreach_reverse(i, r; relations) {
+                    size_t rpower;
+                    synchronized(this.sync.reader)
+                        rpower = r.power;
+
+                    if(rpower >= miss) {
+                        auto a = new Act;
+                        a.power = miss;
+                        if(this.send(a, r.entity)) {
+                            synchronized(this.sync.writer)
                                 c.power += miss;
+                            break;
+                        }
+                    } else {
+                        auto a = new Act;
+                        a.power = rpower;
+                        if(this.send(a, r.entity)) {
+                            synchronized(this.sync.writer)
+                                c.power += rpower;
+                            miss -= rpower;
+                            if(miss < 1) {
                                 break;
-                            }
-                        } else {
-                            auto a = new Act;
-                            a.power = r.power;
-                            if(this.send(a, r.entity)) {
-                                c.power += r.power;
-                                miss -= r.power;
-                                if(miss < 1) {
-                                    break;
-                                }
                             }
                         }
                     }

@@ -47,9 +47,10 @@ void main(string[] args) {
         if(outputFile.exists) {
             if(opts.force)
                 outputFile.remove();
-            else
+            else {
                 Log.msg(LL.Fatal, "output path already contains a space named \""~opts.space~"\" (use -f to overwrite)");
                 exit(-1);
+            }
         }
 
         outputFile.write(sm.json.toPrettyString());

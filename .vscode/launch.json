@@ -26,7 +26,7 @@
             ],
             "target": "flow-complex-gen",
             "cwd": "${workspaceRoot}/complex-gen/bin",
-            "arguments": "power -o ${workspaceRoot}/tmp/cfg/complex/power/1 -s 1 -a 1000"
+            "arguments": "power -o ${workspaceRoot}/tmp/cfg/complex/power/1 -s 1 -a 200 -f"
         },
         {
             "name": "flow-run",
