@@ -3,7 +3,7 @@ module flow.core.engine;
 import flow.core.util, flow.core.data;
 import flow.std;
 
-import core.thread, flow.core.sync.rwmutex;
+import core.thread, core.sync.rwmutex;
 import std.uuid, std.string;
 
 private enum SystemState {

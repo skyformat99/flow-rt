@@ -62,7 +62,7 @@ package class StateRefusedException : FlowException {mixin exception;}
 
 /// state machine mixin template
 package abstract class StateMachine(T) if (isScalarType!T) {
-    import flow.core.sync.rwmutex;
+    import core.sync.rwmutex;
 
     private ReadWriteMutex _lock;
     protected @property ReadWriteMutex lock(){return this._lock;}
