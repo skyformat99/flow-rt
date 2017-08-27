@@ -96,7 +96,7 @@ int main(string[] args) {
 void run(string confDir, string libDir) {
     import flow.core.util, flow.core.data, flow.core.engine, flow.std;
     import core.stdc.stdlib, core.sys.posix.dlfcn, core.thread;
-    import std.string, std.json, std.array, std.algorithm.iteration, std.file, std.path;
+    import std.string, std.array, std.algorithm.iteration, std.file, std.path;
 
     static import core.sys.posix.signal;
     core.sys.posix.signal.sigset(core.sys.posix.signal.SIGINT, &stop);
@@ -113,7 +113,7 @@ void run(string confDir, string libDir) {
         dlopen(libDir.buildPath(lib).toStringz, RTLD_NOW|RTLD_GLOBAL);
 
     Log.msg(LL.Message, "initializing process");
-    auto pc = createData(procFile.readText.parseJSON).as!ProcessConfig;
+    auto pc = createDataFromJson(procFile.readText).as!ProcessConfig;
     if(pc is null) {
         Log.msg(LL.Fatal, "process configuration is invalid -> exiting");
         exit(-1);
@@ -126,7 +126,7 @@ void run(string confDir, string libDir) {
     Space[] spaces;
     foreach(spcFile; spcFiles) {
         auto spcString = spcFile.readText;
-        auto sm = createData(spcString.parseJSON).as!SpaceMeta;
+        auto sm = createDataFromJson(spcString).as!SpaceMeta;
 
         if(sm is null) {
             Log.msg(LL.Fatal, "space meta \""~spcFile~"\" is invalid -> exiting");
@@ -157,7 +157,7 @@ void run(string confDir, string libDir) {
     Log.msg(LL.Message, "snapping...");
     foreach(s; spaces) {
         auto sm = s.snap;
-        confDir.buildPath(sm.id).setExtension(".spc").write(sm.json.toPrettyString);
+        confDir.buildPath(sm.id).setExtension(".spc").write(sm.json(true));
     }
 
     version (MemoryErrorSupported)

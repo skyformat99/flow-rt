@@ -558,109 +558,109 @@ unittest {
     assert(d == d2, "clones don't ==");
 }
 
-private JSONValue json(Variant t, PropertyInfo p) {
+private JSONValue jsonValue(Variant t, PropertyInfo p) {
     import std.stdio;
     if(p.array) {
         if(p.desc == TypeDesc.Scalar && p.info == typeid(bool))
-            return t.get!(bool[]).json;
+            return t.get!(bool[]).jsonValue;
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(byte))
-            return t.get!(byte[]).json;
+            return t.get!(byte[]).jsonValue;
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(ubyte))
-            return t.get!(ubyte[]).json;
+            return t.get!(ubyte[]).jsonValue;
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(short))
-            return t.get!(short[]).json;
+            return t.get!(short[]).jsonValue;
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(ushort))
-            return t.get!(ushort[]).json;
+            return t.get!(ushort[]).jsonValue;
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(int))
-            return t.get!(int[]).json;
+            return t.get!(int[]).jsonValue;
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(uint))
-            return t.get!(uint[]).json;
+            return t.get!(uint[]).jsonValue;
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(long))
-            return t.get!(long[]).json;
+            return t.get!(long[]).jsonValue;
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(ulong))
-            return t.get!(ulong[]).json;
+            return t.get!(ulong[]).jsonValue;
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(float))
-            return t.get!(float[]).json;
+            return t.get!(float[]).jsonValue;
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(double))
-            return t.get!(double[]).json;
+            return t.get!(double[]).jsonValue;
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(char))
-            return t.get!(char[]).json;
+            return t.get!(char[]).jsonValue;
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(wchar))
-            return t.get!(wchar[]).json;
+            return t.get!(wchar[]).jsonValue;
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(dchar))
-            return t.get!(dchar[]).json;
+            return t.get!(dchar[]).jsonValue;
         else if(p.desc == TypeDesc.UUID)
-            return t.get!(UUID[]).json;
+            return t.get!(UUID[]).jsonValue;
         else if(p.desc == TypeDesc.SysTime)
-            return t.get!(SysTime[]).json;
+            return t.get!(SysTime[]).jsonValue;
         else if(p.desc == TypeDesc.DateTime)
-            return t.get!(DateTime[]).json;
+            return t.get!(DateTime[]).jsonValue;
         else if(p.desc == TypeDesc.Date)
-            return t.get!(Date[]).json;
+            return t.get!(Date[]).jsonValue;
         else if(p.desc == TypeDesc.Duration)
-            return t.get!(Duration[]).json;
+            return t.get!(Duration[]).jsonValue;
         else if(p.desc == TypeDesc.String)
-            return t.get!(string[]).json;
+            return t.get!(string[]).jsonValue;
         else if(p.desc == TypeDesc.Data)
-            return t.get!(Data[]).json;
+            return t.get!(Data[]).jsonValue;
         else assert(false, "this is an impossible situation");
     } else {
         if(p.desc == TypeDesc.Scalar && p.info == typeid(bool))
-            return t.get!(bool).json;
+            return t.get!(bool).jsonValue;
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(byte))
-            return t.get!(byte).json;
+            return t.get!(byte).jsonValue;
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(ubyte))
-            return t.get!(ubyte).json;
+            return t.get!(ubyte).jsonValue;
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(short))
-            return t.get!(short).json;
+            return t.get!(short).jsonValue;
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(ushort))
-            return t.get!(ushort).json;
+            return t.get!(ushort).jsonValue;
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(int))
-            return t.get!(int).json;
+            return t.get!(int).jsonValue;
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(uint))
-            return t.get!(uint).json;
+            return t.get!(uint).jsonValue;
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(long))
-            return t.get!(long).json;
+            return t.get!(long).jsonValue;
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(ulong))
-            return t.get!(ulong).json;
+            return t.get!(ulong).jsonValue;
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(float))
-            return t.get!(float).json;
+            return t.get!(float).jsonValue;
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(double))
-            return t.get!(double).json;
+            return t.get!(double).jsonValue;
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(char))
-            return t.get!(char).json;
+            return t.get!(char).jsonValue;
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(wchar))
-            return t.get!(wchar).json;
+            return t.get!(wchar).jsonValue;
         else if(p.desc == TypeDesc.Scalar && p.info == typeid(dchar))
-            return t.get!(dchar).json;
+            return t.get!(dchar).jsonValue;
         else if(p.desc == TypeDesc.UUID)
-            return t.get!(UUID).json;
+            return t.get!(UUID).jsonValue;
         else if(p.desc == TypeDesc.SysTime)
-            return t.get!(SysTime).json;
+            return t.get!(SysTime).jsonValue;
         else if(p.desc == TypeDesc.DateTime)
-            return t.get!(DateTime).json;
+            return t.get!(DateTime).jsonValue;
         else if(p.desc == TypeDesc.Date)
-            return t.get!(Date).json;
+            return t.get!(Date).jsonValue;
         else if(p.desc == TypeDesc.Duration)
-            return t.get!(Duration).json;
+            return t.get!(Duration).jsonValue;
         else if(p.desc == TypeDesc.String)
-            return t.get!(string).json;
+            return t.get!(string).jsonValue;
         else if(p.desc == TypeDesc.Data)
-            return t.get!(Data).json;
+            return t.get!(Data).jsonValue;
         else assert(false, "this is an impossible situation");
     }
 }
 
-private JSONValue json(T)(T arr) if(isArray!T && (is(ElementType!T : Data) || is(ElementType!T == UUID) || is(ElementType!T == SysTime) || is(ElementType!T == DateTime) || is(ElementType!T == Date) || is(ElementType!T == Duration))) {
+private JSONValue jsonValue(T)(T arr) if(isArray!T && (is(ElementType!T : Data) || is(ElementType!T == UUID) || is(ElementType!T == SysTime) || is(ElementType!T == DateTime) || is(ElementType!T == Date) || is(ElementType!T == Duration))) {
     if(!arr.empty) {
         JSONValue[] cArr;
-        foreach(e; arr) cArr ~= e.json;
+        foreach(e; arr) cArr ~= e.jsonValue;
 
         return JSONValue(cArr);
     } else return JSONValue(null);
 }
 
-private JSONValue json(T)(T arr) if(isArray!T && canHandle!(ElementType!T) && !is(T == string) && !is(ElementType!T : Data) && !is(ElementType!T == UUID) && !is(ElementType!T == SysTime) && !is(ElementType!T == DateTime) && !is(ElementType!T == Date) && !is(ElementType!T == Duration)) {
+private JSONValue jsonValue(T)(T arr) if(isArray!T && canHandle!(ElementType!T) && !is(T == string) && !is(ElementType!T : Data) && !is(ElementType!T == UUID) && !is(ElementType!T == SysTime) && !is(ElementType!T == DateTime) && !is(ElementType!T == Date) && !is(ElementType!T == Duration)) {
     if(!arr.empty) {
         JSONValue[] cArr;
         foreach(e; arr) cArr ~= JSONValue(e);
@@ -669,36 +669,36 @@ private JSONValue json(T)(T arr) if(isArray!T && canHandle!(ElementType!T) && !i
     } else return JSONValue(null);
 }
 
-private JSONValue json(T)(T val) if(canHandle!T && !is(T : Data) && !is(T == float) && !is(T == double) && !is(T == UUID) && !is(T == SysTime) && !is(T == DateTime) && !is(T == Date) && !is(T == Duration)) {
+private JSONValue jsonValue(T)(T val) if(canHandle!T && !is(T : Data) && !is(T == float) && !is(T == double) && !is(T == UUID) && !is(T == SysTime) && !is(T == DateTime) && !is(T == Date) && !is(T == Duration)) {
     return val is T.init ? JSONValue(null) : JSONValue(val);
 }
 
-private JSONValue json(T)(T val) if(is(T == float) || is(T == double)) {
+private JSONValue jsonValue(T)(T val) if(is(T == float) || is(T == double)) {
     import std.math;
     return val is T.init || isNaN(val) ? JSONValue(null) : JSONValue(val);
 }
 
-private JSONValue json(T)(T val) if(is(T == UUID)) {
+private JSONValue jsonValue(T)(T val) if(is(T == UUID)) {
     return val is T.init ? JSONValue(null) : JSONValue(val.toString());
 }
 
-private JSONValue json(T)(T val) if(is(T == SysTime) || is(T == DateTime) || is(T == Date)) {
+private JSONValue jsonValue(T)(T val) if(is(T == SysTime) || is(T == DateTime) || is(T == Date)) {
     return val is T.init ? JSONValue(null) : JSONValue(val.toISOExtString());
 }
 
-private JSONValue json(T)(T val) if(is(T == Duration)) {
+private JSONValue jsonValue(T)(T val) if(is(T == Duration)) {
     return val is T.init ? JSONValue(null) : JSONValue(val.total!"hnsecs");
 }
 
-JSONValue json(T)(T t) if(is(T : Data)) {
+private JSONValue jsonValue(T)(T data) if(is(T : Data)) {
     JSONValue c;
-    if(t !is null) {
-        c = JSONValue(["dataType" : JSONValue(t.dataType)]);
+    if(data !is null) {
+        c = JSONValue(["dataType" : JSONValue(data.dataType)]);
 
-        foreach(prop; t.properties) {
+        foreach(prop; data.properties) {
             auto p = prop.as!PropertyInfo;
-            auto val = p.get(t);
-            auto j = val.json(p);
+            auto val = p.get(data);
+            auto j = val.jsonValue(p);
             if(!j.isNull) c.object[p.name] = j;
         }
     }
@@ -706,8 +706,30 @@ JSONValue json(T)(T t) if(is(T : Data)) {
     return c;
 }
 
+enum JsonSerializer {
+    StdJson
+}
+
+string json(T)(T data, bool pretty = false, JsonSerializer serializer = JsonSerializer.StdJson) {
+    switch(serializer) {
+        case JsonSerializer.StdJson:
+            return pretty ? data.jsonValue.toPrettyString : data.jsonValue.toString;
+        default:
+            throw new NotImplementedError;
+    }
+}
+
 class InvalidJsonException : Exception {this(string msg){super(msg);}}
-Data createData(JSONValue j) {
+Data createDataFromJson(string str, JsonSerializer serializer = JsonSerializer.StdJson) {
+    switch(serializer) {
+        case JsonSerializer.StdJson:
+            return str.parseJSON.createData;
+        default:
+            throw new NotImplementedError;
+    }
+}
+
+private Data createData(JSONValue j) {
     auto dt = j["dataType"].str;
     if(dt == string.init)
         throw new InvalidJsonException("json object has no dataType");
@@ -832,7 +854,7 @@ unittest {
     d.enumerationA = [TestEnum.Bar, TestEnum.Foo];
     d.additional = "ble";
 
-    auto dStr = d.json.toString();
+    auto dStr = d.json;
     debug(data) writeln(dStr);
     assert(dStr == "{"~
         "\"additional\":\"ble\","~

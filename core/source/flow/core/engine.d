@@ -883,8 +883,11 @@ class Space : StateMachine!SystemState {
             synchronized(this.lock.reader) {
                 foreach(e; this.entities.values)
                 if(intern || e.meta.access == EntityAccess.Global)
-                    r = e.receipt(s) || r;
+                    e.receipt(s);
             }
+
+            // a multicast is true if a space it could be delivered to was found
+            r = true;
         }
 
         return r;
@@ -971,7 +974,7 @@ class Process {
         this.tasker.destroy;
     }
 
-    /// shifting multicast signal from space to space also across nets
+    /// shifting unicast signal from space to space also across nets
     private bool shift(Unicast s) {
         if(s !is null) {
             foreach(spc; this.spaces.values)
@@ -985,7 +988,7 @@ class Process {
         return false;
     }
 
-    /// shifting multicast signal from space to space also across nets
+    /// shifting anycast signal from space to space also across nets
     private bool shift(Anycast s) {
         if(s !is null) {
             foreach(spc; this.spaces.values)
@@ -1010,9 +1013,9 @@ class Process {
 
         // signal might target other spaces hosted by remote processes too, so shift it to all processes hosting spaces matching pattern
         // not blocking, just (is proccess with matching space known) || r
-        /* that means multicasts are returning true if local accepted or adequate remote process is known,
+        /* that means multicasts are returning true if an adequate space is known local or remote,
         this is neccessary due to the requirement for flow to support systems interconnected by
-        huge latency lines. the most extreme case would be the connection between flows sparated by lightyears. */
+        huge latency lines. the most extreme case would be the connection between spaces sparated by lightyears. */
         
         return r;
     }

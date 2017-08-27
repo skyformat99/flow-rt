@@ -53,12 +53,12 @@ void main(string[] args) {
             }
         }
 
-        outputFile.write(sm.json.toPrettyString());
+        outputFile.write(sm.json(true));
 
         auto pcFile = opts.output.buildPath("process.cfg");
         if(!pcFile.exists) {
             auto pc = new ProcessConfig;
-            pcFile.write(pc.json.toString);
+            pcFile.write(pc.json(true));
         }
 
         auto libsFile = opts.output.buildPath("libs.lst");

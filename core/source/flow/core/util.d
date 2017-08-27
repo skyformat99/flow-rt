@@ -2,7 +2,7 @@ module flow.core.util;
 
 import flow.core.data;
 
-import std.traits, std.range, std.uuid, std.datetime, std.stdio, std.ascii, std.conv, std.json;
+import std.traits, std.range, std.uuid, std.datetime, std.stdio, std.ascii, std.conv;
 
 /// Returns: full qualified name of type
 template fqn(T) {
@@ -296,7 +296,7 @@ class Log {
 
             if(cast(FlowException)thr !is null && (cast(FlowException)thr).data !is null) {
                 t ~= sep;
-                t ~= (cast(FlowException)thr).data.json.toString~newline;
+                t ~= (cast(FlowException)thr).data.json(true)~newline;
                 t ~= sep;
                 t ~= sep;
             }
@@ -309,7 +309,7 @@ class Log {
         if(level & logLevel) {
             auto t = msg;
             t ~= Log.sep;
-            t ~= d !is null ? d.json.toString : "NULL";
+            t ~= d !is null ? d.json(true) : "NULL";
             Log.msg(level, t);
         }
     }
