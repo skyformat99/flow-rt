@@ -11,15 +11,15 @@
                 "handle SIGUSR2 nostop noprint",
                 "break onInvalidMemoryOperationError"
             ],
-            "target": "flow-core-test-library",
-            "cwd": "${workspaceRoot}/core/lib"
+            "target": "test-libflow-core",
+            "cwd": "${workspaceRoot}/tst"
         },
         {
             "name": "flow-complex-gen",
             "type": "gdb",
             "request": "launch",
             "autorun": [
-                "set environment LD_LIBRARY_PATH ${workspaceRoot}/core/lib:${workspaceRoot}/run/bin/lib",
+                "set environment LD_LIBRARY_PATH ${workspaceRoot}/lib:${workspaceRoot}/ext",
                 "handle SIGUSR1 nostop noprint",
                 "handle SIGUSR2 nostop noprint",
                 "break onInvalidMemoryOperationError"
