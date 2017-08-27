@@ -122,24 +122,6 @@ function testBin {
     $rootDir/tst/test-flow-$1
 }
 
-#function buildExt {
-#    cd $rootDir/$1 &&
-#    dub build $defBuildParams $buildParams &&
-#    dub test $defBuildParams $buildParams &&
-
-#    export LIBRARY_PATH=$LIBRARY_PATH:$rootDir/$1/lib &&
-#    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$rootDir/$1/lib &&
-
-#    mkdir -p ../run/bin/lib &&
-#    cp -fr lib/libflow-$1.so ../run/bin/lib
-#}
-
-#function buildBin {
-#    cd $rootDir/$1 &&
-#    dub build --build $buildType $defBuildParams $buildParams
-#}
-
-buildLib msgpack-d src &&
 buildCore &&
 buildBin run &&
 
@@ -147,7 +129,6 @@ buildExt complex &&
 buildBin complex-gen -L-l:libflow-complex.so &&
 
 
-testLib msgpack-d src &&
 testCore &&
 testBin run &&
 
