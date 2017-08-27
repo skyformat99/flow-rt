@@ -16,9 +16,14 @@ hive
 
 # Executables
 *.exe
-*/iface
-*/lib
-*/bin
+
+# Build
+*/build
+
+/bin
+/lib
+/ext
+/tst
 
 # tmp/cfg
 tmp/cfg

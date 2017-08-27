@@ -1,47 +1,155 @@
 #!/bin/bash
 
-compiler=dmd
-defBuildParams="--compiler=$compiler --force" # --debug=data --debug=tick
+dc=dmd
+defaultlib="libphobos2.so" # libphobos2-ldc
+
+#params for debug
+defBuildParams="-debug -g" # --debug=data --debug=tick
+defLinkParams="-g"
+
+#params for release
+#defBuildParams="-release"
+#defLinkParams=""
+
 if [ $1 ]; then buildType=$1; else buildType=debug; fi
 buildParams=${@:2}
 rootDir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-function buildCore {
-    cd $rootDir/core &&
-    dub build $defBuildParams $buildParams &&
-    dub test $defBuildParams $buildParams &&
+# prepare build
+rm -fr $rootDir/bin $rootDir/tst $rootDir/ifc $rootDir/lib $rootDir/ext
+mkdir -p $rootDir/bin
+mkdir -p $rootDir/tst
+mkdir -p $rootDir/ifc
+mkdir -p $rootDir/lib
+mkdir -p $rootDir/ext
 
-    export LIBRARY_PATH=$LIBRARY_PATH:$rootDir/core/lib &&
-    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$rootDir/core/lib
-}
+export LIBRARY_PATH=$LIBRARY_PATH:$rootDir/lib:$rootDir/ext
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$rootDir/lib:$rootDir/ext
 
 function buildLib {
-    cd $rootDir/$1 &&
-    dub build $defBuildParams $buildParams &&
-    dub test $defBuildParams $buildParams &&
+    cd $rootDir/src/lib/$1/$2
+    mkdir -p build
 
-    export LIBRARY_PATH=$LIBRARY_PATH:$rootDir/$1/lib &&
-    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$rootDir/$1/lib &&
+    echo "BUILDING lib/lib$1..."
+    $dc -Hd=$rootDir/ifc -op -c -ofbuild/lib$1.o $defBuildParams -w -I$rootDir/ifc/ $(find ./ -name "*.d") -fPIC -vcolumns
 
-    mkdir -p ../run/bin/lib &&
-    cp -fr lib/libflow-$1.so ../run/bin/lib
+    echo "LINKING lib/lib$1..."
+    $dc -of$rootDir/lib/lib$1.so build/lib$1.o -L-l:libphobos2.so -shared -defaultlib=$defaultlib $defLinkParams
 }
 
-function buildRun {
-    cd $rootDir/run &&
-    dub build --build $buildType $defBuildParams $buildParams &&
-    mkdir -p $rootDir/run/bin/cfg
+function testLib {
+    cd $rootDir/src/lib/$1/$2
+    mkdir -p build
+
+    echo "BUILDING tst/$1-test..."
+    $dc -c -ofbuild/lib$1-test.o $defBuildParams -w -I$rootDir/ifc/ $(find ./ -name "*.d") -fPIC -vcolumns -main -unittest
+
+    echo "LINKING tst/$1-test..."
+    $dc -of$rootDir/tst/test-lib$1 build/lib$1-test.o -unittest -L-l:libphobos2.so -defaultlib=$defaultlib $defLinkParams
+
+    $rootDir/tst/test-lib$1
+}
+
+function buildCore {
+    cd $rootDir/src/core
+    mkdir -p build
+
+    echo "BUILDING lib/libflow-core..."
+    $dc -Hd=$rootDir/ifc -op -c -ofbuild/libflow-core.o $defBuildParams -w -I$rootDir/ifc/ $(find ./ -name "*.d") -fPIC -vcolumns
+
+    echo "LINKING lib/libflow-core..."
+    $dc -of$rootDir/lib/libflow-core.so build/libflow-core.o -L-l:libphobos2.so -shared -defaultlib=$defaultlib $defLinkParams
+}
+
+function testCore {
+    cd $rootDir/src/core
+    mkdir -p build
+
+    echo "BUILDING tst/libflow-core-test..."
+    $dc -c -ofbuild/libflow-core-test.o $defBuildParams -w -I$rootDir/ifc/ $(find ./ -name "*.d") -fPIC -vcolumns -main -unittest
+
+    echo "LINKING tst/libflow-core-test..."
+    $dc -of$rootDir/tst/test-libflow-core build/libflow-core-test.o -unittest -L-l:libphobos2.so -defaultlib=$defaultlib $defLinkParams
+
+    $rootDir/tst/test-libflow-core
+}
+
+function buildExt {
+    cd $rootDir/src/ext/$1
+    mkdir -p build
+
+    echo "BUILDING ext/libflow-$1..."
+    $dc -Hd=$rootDir/ifc -op -c -ofbuild/libflow-$1.o $defBuildParams -w -I$rootDir/ifc/ $(find ./ -name "*.d") -fPIC -vcolumns
+
+    echo "LINKING ext/libflow-$1..."
+    $dc -of$rootDir/ext/libflow-$1.so build/libflow-$1.o -L-l:libphobos2.so -L-l:libflow-core.so -shared -defaultlib=$defaultlib $defLinkParams
+}
+
+function testExt {
+    cd $rootDir/src/ext/$1
+    mkdir -p build
+
+    echo "BUILDING tst/test-libflow-$1..."
+    $dc -c -ofbuild/libflow-$1-test.o $defBuildParams -w -I$rootDir/ifc/ $(find ./ -name "*.d") -fPIC -vcolumns -main -unittest
+
+    echo "LINKING tst/test-libflow-$1..."
+    $dc -of$rootDir/tst/test-libflow-$1 build/libflow-$1-test.o -unittest -L-l:libphobos2.so -L-l:libflow-core.so -defaultlib=$defaultlib $defLinkParams
+
+    $rootDir/tst/test-libflow-$1
 }
 
 function buildBin {
-    cd $rootDir/$1 &&
-    dub build --build $buildType $defBuildParams $buildParams
+    cd $rootDir/src/bin/$1
+    mkdir -p build
+
+    echo "BUILDING $1..."
+    $dc -c -ofbuild/flow-$1.o $defBuildParams -w -I$rootDir/ifc/ $(find ./ -name "*.d") -vcolumns
+
+    echo "LINKING $1..."
+    $dc -of$rootDir/bin/flow-$1 build/flow-$1.o -L-l:libphobos2.so -L-l:libflow-core.so ${@:2} -defaultlib=$defaultlib $defLinkParams
 }
 
+function testBin {
+    cd $rootDir/src/bin/$1
+    mkdir -p build
+
+    echo "BUILDING $1-test..."
+    $dc -c -ofbuild/flow-$1-test.o $defBuildParams -w -I$rootDir/ifc/ $(find ./ -name "*.d") -vcolumns -unittest
+
+    echo "LINKING $1-test..."
+    $dc -of$rootDir/tst/test-flow-$1 build/flow-$1-test.o -L-l:libphobos2.so -L-l:libflow-core.so ${@:2} -defaultlib=$defaultlib $defLinkParams
+
+    $rootDir/tst/test-flow-$1
+}
+
+#function buildExt {
+#    cd $rootDir/$1 &&
+#    dub build $defBuildParams $buildParams &&
+#    dub test $defBuildParams $buildParams &&
+
+#    export LIBRARY_PATH=$LIBRARY_PATH:$rootDir/$1/lib &&
+#    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$rootDir/$1/lib &&
+
+#    mkdir -p ../run/bin/lib &&
+#    cp -fr lib/libflow-$1.so ../run/bin/lib
+#}
+
+#function buildBin {
+#    cd $rootDir/$1 &&
+#    dub build --build $buildType $defBuildParams $buildParams
+#}
+
+buildLib msgpack-d src &&
 buildCore &&
-buildRun &&
+buildBin run &&
 
-buildLib complex &&
+buildExt complex &&
+buildBin complex-gen -L-l:libflow-complex.so &&
 
-buildBin complex-gen
 
+testLib msgpack-d src &&
+testCore &&
+testBin run &&
+
+testExt complex &&
+testBin complex-gen -L-l:libflow-complex.so
