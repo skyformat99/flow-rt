@@ -24,6 +24,7 @@ hive
 /lib
 /ext
 /tst
+/ifc
 
 # tmp/cfg
 tmp/cfg
