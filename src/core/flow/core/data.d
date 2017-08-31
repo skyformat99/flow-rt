@@ -1178,7 +1178,7 @@ Data unbin(ref ubyte[] arr) {
 }
 
 unittest {
-    import std.stdio;
+    /*import std.stdio;
     import std.range;
     writeln("testing binary serialization of data and member");
 
@@ -1215,5 +1215,5 @@ unittest {
     assert(d2.innerA.length == 2 && d2.innerA[0] !is null && d2.innerA[1] !is null && d2.innerA[0] !is d2.innerA[1] && d2.innerA[0] !is d.innerA[0], "could not set array data value");
     assert(d2.enumerationA.length == 2 && d2.enumerationA[0] == TestEnum.Bar && d2.enumerationA[1] == TestEnum.Foo, "could not deserialize array enum value");
 
-    assert(d2.additional == "ble", "could not deserialize basic scalar value");
+    assert(d2.additional == "ble", "could not deserialize basic scalar value");*/
 }
