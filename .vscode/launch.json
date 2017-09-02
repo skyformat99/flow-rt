@@ -7,6 +7,7 @@
             "type": "gdb",
             "request": "launch",
             "autorun": [
+                "set environment LD_LIBRARY_PATH ${workspaceRoot}/util/dmd2/linux/lib64:${workspaceRoot}/lib",
                 "handle SIGUSR1 nostop noprint",
                 "handle SIGUSR2 nostop noprint",
                 "break onInvalidMemoryOperationError"
@@ -19,7 +20,7 @@
             "type": "gdb",
             "request": "launch",
             "autorun": [
-                "set environment LD_LIBRARY_PATH ${workspaceRoot}/lib:${workspaceRoot}/ext",
+                "set environment LD_LIBRARY_PATH ${workspaceRoot}/util/dmd2/linux/lib64:${workspaceRoot}/lib:${workspaceRoot}/ext",
                 "handle SIGUSR1 nostop noprint",
                 "handle SIGUSR2 nostop noprint",
                 "break onInvalidMemoryOperationError"
@@ -33,7 +34,7 @@
             "type": "gdb",
             "request": "launch",
             "autorun": [
-                "set environment LD_LIBRARY_PATH ${workspaceRoot}/core/lib",
+                "set environment LD_LIBRARY_PATH ${workspaceRoot}/util/dmd2/linux/lib64:${workspaceRoot}/lib",
                 "handle SIGUSR1 nostop noprint",
                 "handle SIGUSR2 nostop noprint",
                 "break onInvalidMemoryOperationError"
