@@ -8,6 +8,7 @@ import std.range;
 import std.uuid;
 import std.datetime;
 import std.json;
+import std.base64;
 
 //import msgpack;
 
@@ -149,8 +150,8 @@ mixin template data() {
     }
 }
 
-mixin template field(T, string name) if (canHandle!T) {
-    debug(data) pragma(msg, "\t\t"~T.stringof~" "~name);
+mixin template field(T, string __name) if (canHandle!T) {
+    debug(data) pragma(msg, "\t\t"~T.stringof~" "~__name);
 
     shared static this() {
         import flow.core.util, flow.core.data;
@@ -159,13 +160,13 @@ mixin template field(T, string name) if (canHandle!T) {
 
         mixin("Variant function(Data) getter = (d) {
             auto t = d.as!(typeof(this));
-            return Variant("~(is(T : Data) ? "t."~name~".as!Data" : "cast("~OriginalType!(T).stringof~")t."~name)~");
+            return Variant("~(is(T : Data) ? "t."~__name~".as!Data" : "cast("~OriginalType!(T).stringof~")t."~__name)~");
         };");
 
         mixin("bool function(Data, Variant) setter = (d, v) {
             auto t = d.as!(typeof(this));
             if(v.convertsTo!("~(is(T : Data) ? "Data" : OriginalType!(T).stringof)~")) {
-                t."~name~" = cast("~T.stringof~")"~(is(T : Data) ? "v.get!Data().as!"~T.stringof : "v.get!("~OriginalType!(T).stringof~")")~";
+                t."~__name~" = cast("~T.stringof~")"~(is(T : Data) ? "v.get!Data().as!"~T.stringof : "v.get!("~OriginalType!(T).stringof~")")~";
                 return true;
             } else return false;
         };");
@@ -173,20 +174,20 @@ mixin template field(T, string name) if (canHandle!T) {
         mixin("bool function(Data, Data) equals = (a, b) {
             static if(is(T == float) || is(T == double)) {
                 import std.math;
-                return a.as!(typeof(this))."~name~".isIdentical(b.as!(typeof(this))."~name~");
+                return a.as!(typeof(this))."~__name~".isIdentical(b.as!(typeof(this))."~__name~");
             } else
-                return a.as!(typeof(this))."~name~" == b.as!(typeof(this))."~name~";
+                return a.as!(typeof(this))."~__name~" == b.as!(typeof(this))."~__name~";
         };");
 
-        Properties[name] = TPropertyHelper!(T, name).getFieldInfo(getter, setter, equals).as!(shared(PropertyInfo));
+        Properties[__name] = TPropertyHelper!(T, __name).getFieldInfo(getter, setter, equals).as!(shared(PropertyInfo));
     }
 
     // field
-    mixin(T.stringof~" "~name~";");
+    mixin(T.stringof~" "~__name~";");
 }
 
-mixin template array(T, string name) if (canHandle!T) {
-    debug(data) pragma(msg, "\t\t"~T.stringof~"[] "~name);
+mixin template array(T, string __name) if (canHandle!T) {
+    debug(data) pragma(msg, "\t\t"~T.stringof~"[] "~__name);
 
     shared static this() {
         import flow.core.util, flow.core.data;
@@ -195,13 +196,13 @@ mixin template array(T, string name) if (canHandle!T) {
 
         mixin("Variant function(Data) getter = (d) {
             auto t = d.as!(typeof(this));
-            return Variant("~(is(T : Data) ? "t."~name~".as!(Data[])" : "cast("~OriginalType!(T).stringof~"[])t."~name)~");
+            return Variant("~(is(T : Data) ? "t."~__name~".as!(Data[])" : "cast("~OriginalType!(T).stringof~"[])t."~__name)~");
         };");
 
         mixin("bool function(Data, Variant) setter = (d, v) {
             auto t = d.as!(typeof(this));
             if(v.convertsTo!("~(is(T : Data) ? "Data" : OriginalType!(T).stringof)~"[])) {
-                t."~name~" = cast("~T.stringof~"[])"~(is(T : Data) ? "v.get!(Data[])().as!("~T.stringof~"[])" : "v.get!("~OriginalType!(T).stringof~"[])")~";
+                t."~__name~" = cast("~T.stringof~"[])"~(is(T : Data) ? "v.get!(Data[])().as!("~T.stringof~"[])" : "v.get!("~OriginalType!(T).stringof~"[])")~";
                 return true;
             } else return false;
         };");
@@ -210,17 +211,17 @@ mixin template array(T, string name) if (canHandle!T) {
             import std.algorithm.comparison;
             static if(is(T == float) || is(T == double)) {
                 import std.math;
-                return a.as!(typeof(this))."~name~".equal!((x, y) => x.isIdentical(y))(b.as!(typeof(this))."~name~");
+                return a.as!(typeof(this))."~__name~".equal!((x, y) => x.isIdentical(y))(b.as!(typeof(this))."~__name~");
             } else {
-                return a.as!(typeof(this))."~name~".equal(b.as!(typeof(this))."~name~");
+                return a.as!(typeof(this))."~__name~".equal(b.as!(typeof(this))."~__name~");
             }
         };");
 
-        Properties[name] = TPropertyHelper!(T, name).getArrayInfo(getter, setter, equals).as!(shared(PropertyInfo));
+        Properties[__name] = TPropertyHelper!(T, __name).getArrayInfo(getter, setter, equals).as!(shared(PropertyInfo));
     }
     
     // array
-    mixin(T.stringof~"[] "~name~";");
+    mixin(T.stringof~"[] "~__name~";");
 }
 
 template TPropertyHelper(T, string name) {
@@ -318,6 +319,7 @@ version (unittest) class TestData : Data {
     mixin array!(string, "textA");
 
     // testing for module name conflicts
+    mixin field!(string, "name");
     mixin field!(string, "flow");
 
     // nan != nan
@@ -671,6 +673,13 @@ private JSONValue jsonValue(T)(T arr) if(isArray!T && canHandle!(ElementType!T) 
     } else return JSONValue(null);
 }
 
+private JSONValue jsonValue(T)(T arr) if(isArray!T && canHandle!(ElementType!T) && is(T == ubyte)) {
+    if(!arr.empty) {
+        string b64 = Base64.encode(arr);
+        return JSONValue(b64);
+    } else return JSONValue(null);
+}
+
 private JSONValue jsonValue(T)(T val) if(canHandle!T && !is(T : Data) && !is(T == float) && !is(T == double) && !is(T == UUID) && !is(T == SysTime) && !is(T == DateTime) && !is(T == Date) && !is(T == Duration)) {
     return val is T.init ? JSONValue(null) : JSONValue(val);
 }
@@ -786,6 +795,14 @@ private Variant get(T)(JSONValue j, Data d, PropertyInfo pi) if(canHandle!T && !
             case JSON_TYPE.STRING:
                 static if(is(T == string))
                     return Variant(j.str);
+                else static if(is(T == ubyte)) {
+                    if(pi.array) {
+                        ubyte[] arr;
+                        if(j.str != string.init)
+                            arr = Base64.decode(j.str);
+                        return Variant(arr);
+                    } else throw new InvalidJsonException("\""~d.dataType~"\" property \""~pi.name~"\" type mismatching");
+                }
                 else static if(is(T == SysTime) || is(T == DateTime) || is(T == Date))
                     return Variant(T.fromISOString(j.str));
                 else static if(is(T == Duration))
@@ -1204,7 +1221,7 @@ unittest {
 
     auto arr = d.bin;    
     debug(data) writeln(arr);
-    ubyte[] cArr = [255, 0, 0, 0, 0, 0, 0, 0, 32, 102, 108, 111, 119, 46, 99, 111, 114, 101, 46, 100, 97, 116, 97, 46, 73, 110, 104, 101, 114, 105, 116, 101, 100, 84, 101, 115, 116, 68, 97, 116, 97, 255, 255, 255, 241, 136, 110, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 0, 0, 0, 0, 0, 0, 0, 23, 102, 108, 111, 119, 46, 99, 111, 114, 101, 46, 100, 97, 116, 97, 46, 84, 101, 115, 116, 68, 97, 116, 97, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 241, 136, 110, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 48, 48, 48, 49, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 0, 0, 0, 0, 0, 0, 0, 0, 127, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 4, 1, 0, 0, 0, 0, 0, 0, 0, 2, 255, 0, 0, 0, 0, 0, 0, 0, 23, 102, 108, 111, 119, 46, 99, 111, 114, 101, 46, 100, 97, 116, 97, 46, 84, 101, 115, 116, 68, 97, 116, 97, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 241, 136, 110, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 48, 48, 48, 49, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 0, 0, 0, 0, 0, 0, 0, 0, 127, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 0, 0, 0, 0, 0, 0, 0, 23, 102, 108, 111, 119, 46, 99, 111, 114, 101, 46, 100, 97, 116, 97, 46, 84, 101, 115, 116, 68, 97, 116, 97, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 241, 136, 110, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 48, 48, 48, 49, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 0, 0, 0, 0, 0, 0, 0, 0, 127, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 3, 102, 111, 111, 0, 0, 0, 0, 0, 0, 0, 3, 98, 97, 114, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 98, 108, 101, 0, 0, 0, 0, 0, 0, 0, 0, 27, 248, 234, 199, 100, 238, 76, 222, 170, 158, 136, 119, 172, 45, 81, 29, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 102, 111, 111, 127, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 48, 48, 48, 49, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 0, 0, 0, 0, 0, 0, 0, 0, 127, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    ubyte[] cArr = [255, 0, 0, 0, 0, 0, 0, 0, 32, 102, 108, 111, 119, 46, 99, 111, 114, 101, 46, 100, 97, 116, 97, 46, 73, 110, 104, 101, 114, 105, 116, 101, 100, 84, 101, 115, 116, 68, 97, 116, 97, 255, 255, 255, 241, 136, 110, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 0, 0, 0, 0, 0, 0, 0, 23, 102, 108, 111, 119, 46, 99, 111, 114, 101, 46, 100, 97, 116, 97, 46, 84, 101, 115, 116, 68, 97, 116, 97, 255, 255, 255, 241, 136, 110, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 48, 48, 48, 49, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 0, 0, 0, 0, 0, 0, 0, 0, 127, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 4, 1, 0, 0, 0, 0, 0, 0, 0, 2, 255, 0, 0, 0, 0, 0, 0, 0, 23, 102, 108, 111, 119, 46, 99, 111, 114, 101, 46, 100, 97, 116, 97, 46, 84, 101, 115, 116, 68, 97, 116, 97, 255, 255, 255, 241, 136, 110, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 48, 48, 48, 49, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 0, 0, 0, 0, 0, 0, 0, 0, 127, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 0, 0, 0, 0, 0, 0, 0, 23, 102, 108, 111, 119, 46, 99, 111, 114, 101, 46, 100, 97, 116, 97, 46, 84, 101, 115, 116, 68, 97, 116, 97, 255, 255, 255, 241, 136, 110, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 48, 48, 48, 49, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 0, 0, 0, 0, 0, 0, 0, 0, 127, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 3, 102, 111, 111, 0, 0, 0, 0, 0, 0, 0, 3, 98, 97, 114, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 98, 108, 101, 0, 0, 0, 0, 0, 0, 0, 0, 27, 248, 234, 199, 100, 238, 76, 222, 170, 158, 136, 119, 172, 45, 81, 29, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 102, 111, 111, 127, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 48, 48, 48, 49, 48, 49, 48, 49, 84, 48, 48, 48, 48, 48, 48, 0, 0, 0, 0, 0, 0, 0, 0, 127, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
     assert(arr == cArr, "could not serialize data");
     
     auto d2 = arr.unbin.as!InheritedTestData;

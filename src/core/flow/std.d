@@ -3,7 +3,7 @@ module flow.std;
 import flow.core.data;
 
 import core.time;
-import std.uuid;
+import std.uuid, std.socket;
 
 /// identifyable data
 class IdData : Data {
@@ -19,43 +19,65 @@ class Damage : Data {
     mixin field!(Data, "recovery");
 }
 
+enum SocketRole {
+    Master,
+    Slave
+}
+
+class SocketMeta : Data {
+    mixin data;
+
+    /// address familiy (see std.socket)
+    mixin field!(AddressFamily, "family");
+
+    /// socket type (see std.socket)
+    mixin field!(SocketType, "type");
+
+    /// listening (master) or connecting (slave)
+    mixin field!(SocketRole, "role");
+
+    /// address of listener
+    mixin field!(string, "addr");
+}
+
 class NetMeta : Data {
     mixin data;
 
-    /// listener should listen to
-    mixin field!(string, "addr");
-}
+    /// stores runtime informations about spaces available for shifting via this net
+    string[] spaces;
 
-/** central nets are relying on a
-space lookup service to find certain spaces */
-class CentralNetMeta : NetMeta {
-    mixin data;
-
-    mixin array!(string, "lookups");
-}
-
-/** decentral nets are creating a cluod graph of
-related nodes to examine optimal routes to certain spaces */
-class DecentralNetMeta : NetMeta {
-    mixin data;
+    /// socket information
+    mixin field!(SocketMeta, "socket");
     
-    mixin array!(NodeInfo, "nodes");
+    /// own private key
+    mixin array!(ubyte, "ownCert");
+
+    /// public key of the peer or empty for authority validation
+    mixin array!(ubyte, "peerCert");
 }
 
-class NodeInfo : Data {
+class Authority : Data {
     mixin data;
 
-    mixin field!(string, "addr");
-    
-    // TODO local part of cloud graph
+    /// name of the authority
+    mixin field!(string, "name");
+
+    /// certificate of the authority
+    mixin array!(ubyte, "cert");
 }
 
 /// configuration object of a process
 class ProcessConfig : Data {
     mixin data;
 
+    /// amount of worker threads for executing ticks
     mixin field!(size_t, "worker");
+
+    /// is process harking to space wildcards?
     mixin field!(bool, "hark");
+
+    /// authorities used to validate peers
+    mixin array!(Authority, "authorities");
     mixin array!(NetMeta, "nets");
 }
 
