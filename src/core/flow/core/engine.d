@@ -734,7 +734,7 @@ private bool matches(Space space, string pattern) {
     auto p = matchAll(pattern, regex("[A-Za-z\\*]*")).array;
     foreach(i, m; s) {
         if(p.length > i) {
-            if(space.process.config.hark && m.hit == "*")
+            if(space.meta.hark && m.hit == "*")
                 hit = true;
             else if(m.hit != p[i].hit)
                 break;
@@ -747,7 +747,13 @@ private bool matches(Space space, string pattern) {
 class SpaceMeta : Data {
     mixin data;
 
+    /// identifier of the space
     mixin field!(string, "id");
+
+    /// is space harking to wildcard
+    mixin field!(bool, "hark");
+
+    /// entities of space
     mixin array!(EntityMeta, "entities");
 }
 
@@ -844,8 +850,8 @@ class Space : StateMachine!SystemState {
         }
     }
     
-    /// routes an unicast signal to receipting entities if its in this space
-    private bool route(Unicast s) {
+    /// ships an unicast signal to receipting entities if its in this space
+    private bool ship(Unicast s) {
         // if its a perfect match assuming process only accepted a signal for itself
         if(this.state == SystemState.Ticking && s.dst.space == this.meta.id) {
             synchronized(this.lock.reader) {
@@ -860,8 +866,8 @@ class Space : StateMachine!SystemState {
     }
 
    
-    /// routes an anycast signal to one receipting entity
-    private bool route(Anycast s) {
+    /// ships an anycast signal to one receipting entity
+    private bool ship(Anycast s) {
         // if its adressed to own space or parent using * wildcard or even none
         // in each case we do not want to regex search when ==
         if(this.state == SystemState.Ticking && (s.space == this.meta.id || this.matches(s.space))) {
@@ -874,8 +880,8 @@ class Space : StateMachine!SystemState {
         return false;
     }
     
-    /// routes a multicast signal to receipting entities if its addressed to space
-    private bool route(Multicast s, bool intern = false) {
+    /// ships a multicast signal to receipting entities if its addressed to space
+    private bool ship(Multicast s, bool intern = false) {
         auto r = false;
         // if its adressed to own space or parent using * wildcard or even none
         // in each case we do not want to regex search when ==
@@ -894,11 +900,11 @@ class Space : StateMachine!SystemState {
     }
 
     private bool send(Unicast s) {
-        return this.route(s) || this.process.shift(s.clone);
+        return this.ship(s) || this.process.route(s.clone);
     }
 
     private bool send(Anycast s) {
-        return this.route(s) || this.process.shift(s.clone);
+        return this.ship(s) || this.process.route(s.clone);
     }
 
     private bool send(Multicast s) {
@@ -906,8 +912,8 @@ class Space : StateMachine!SystemState {
         s.src.space = this.meta.id;
 
         /* Only inside own space memory is shared,
-        as soon as a signal is getting shifted to another space it is deep cloned */
-        return this.route(s, true) || this.process.shift(s.clone);
+        as soon as a signal is getting routed to another space it is deep cloned */
+        return this.ship(s, true) || this.process.route(s.clone);
     }
 
     override protected bool onStateChanging(SystemState o, SystemState n) {
@@ -947,12 +953,19 @@ class Space : StateMachine!SystemState {
 /** hosts one or more spaces and allows to controll them
 whatever happens on this level, it has to happen in main thread or an exception occurs */
 class Process {
+    ReadWriteMutex spacesLock;
+    ReadWriteMutex peersLock;
     private ProcessConfig config;
     private Tasker tasker;
     private Space[string] spaces;
+    //private Peer[string] nets;
 
     this(ProcessConfig c = null) {
         import core.cpuid;
+
+        this.spacesLock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
+        this.peersLock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
+
         // if no config given generate default one
         if(c is null)
             c = new ProcessConfig;
@@ -964,6 +977,14 @@ class Process {
         this.config = c;
         this.tasker = new Tasker(c.worker);
         this.tasker.start();
+
+        /*foreach(nm; this.config.nets) {
+            try {
+                this.add(nm);
+            } catch(Throwable thr) {
+                Log.msg(LL.Error, thr, "initialization of a net at process startup failed");
+            }
+        }*/
     }
 
     ~this() {
@@ -974,48 +995,96 @@ class Process {
         this.tasker.destroy;
     }
 
-    /// shifting unicast signal from space to space also across nets
-    private bool shift(Unicast s) {
+    @property string[] acceptedSpaces() {
+        import std.algorithm.iteration, std.array;
+
+        synchronized(this.spacesLock.reader)
+            return this.spaces.values
+                .filter!(s=>s !is null && s.meta !is null && s.meta.hark)
+                .map!(s=>s.meta.id).array;
+    }
+
+    /// adds a net to process
+    /*void add(PeerMeta m) {
+        this.ensureThread();
+        
+        if(m is null || m.addr is null || m.addr.toString == string.init)
+            throw new ProcessException("invalid net metadata", m);
+
+        Log.msg(LL.Info, "initializing net with address \""~m.addr.addr~"\"");
+
+        if(m.addr.addr in this.nets)
+            throw new ProcessException("a net with address \""~m.addr.addr~"\" already exists", m);
+
+        if(m.addr.as!InetAddress !is null)
+            synchronized(this.peersLock.writer)
+                this.nets[m.addr.addr] = new InetPeer(this, m);
+        else {
+            Log.msg(LL.Error, m, "not supporting address type of net");
+            throw new NotImplementedError;
+        }
+    }*/
+
+    /// removes a net from process
+    /*void remove(PeerAddress addr) {
+        this.ensureThread();
+        
+        synchronized(this.peersLock.writer)
+            if(addr.addr in this.nets) {
+                Peer n = this.nets[addr.addr];
+                this.nets.remove(addr.addr);
+                n.destroy;
+            } else throw new ProcessException("no net with address \""~addr.addr~"\" found for removal", addr);
+    }*/
+
+    /// routing unicast signal from space to space also across nets
+    private bool route(Unicast s) {
         if(s !is null) {
             foreach(spc; this.spaces.values)
                 if(s.src.space != spc.meta.id && s.dst.space == spc.meta.id)
-                    return spc.route(s);
+                    return spc.ship(s);
 
-            // when here, its not hosted in local process so shift it to process hosting its space if known
-            // block until acceptance is confirmed by remote process
+            synchronized(this.peersLock.reader) {
+                // when here, its not hosted in local process so route it to process hosting its space if known
+                // block until acceptance is confirmed by remote process
+            }
         }
         
         return false;
     }
 
-    /// shifting anycast signal from space to space also across nets
-    private bool shift(Anycast s) {
+    /// routing anycast signal from space to space also across nets
+    private bool route(Anycast s) {
         if(s !is null) {
             foreach(spc; this.spaces.values)
-                if(s.src.space != spc.meta.id && spc.route(s))
+                if(s.src.space != spc.meta.id && spc.ship(s))
                     return true;
 
-            // when here, no local space matches space pattern so shift it to processes hosting spaces matching
-            // block until acceptance is confirmed by remote process
+            synchronized(this.peersLock.reader) {
+                // when here, no local space matches space pattern so route it to processes hosting spaces matching
+                // block until acceptance is confirmed by remote process
+            }
         }
         
         return false;
     }
 
-    /// shifting multicast signal from space to space also across nets
-    private bool shift(Multicast s) {
+    /// routing multicast signal from space to space also across nets
+    private bool route(Multicast s) {
         auto r = false;
         if(s !is null) {
             foreach(spc; this.spaces.values)
                 if(s.src.space != spc.meta.id)
-                    r = spc.route(s) || r;
+                    r = spc.ship(s) || r;
         }
 
-        // signal might target other spaces hosted by remote processes too, so shift it to all processes hosting spaces matching pattern
-        // not blocking, just (is proccess with matching space known) || r
-        /* that means multicasts are returning true if an adequate space is known local or remote,
-        this is neccessary due to the requirement for flow to support systems interconnected by
-        huge latency lines. the most extreme case would be the connection between spaces sparated by lightyears. */
+        synchronized(this.peersLock.reader) {
+            // signal might target other spaces hosted by remote processes too, so route it to all processes hosting spaces matching pattern
+            // not blocking, just (is proccess with matching space known) || r
+            /* that means multicasts are returning true if an adequate space is known local or remote,
+            this is neccessary due to the requirement for flow to support systems interconnected by
+            huge latency lines. an extreme case could be the connection between spaces sparated by lightyears. */
+        }
         
         return r;
     }
@@ -1034,7 +1103,8 @@ class Process {
             throw new ProcessException("space with id \""~s.id~"\" is already existing");
         else {
             auto space = new Space(this, s);
-            this.spaces[s.id] = space;
+            synchronized(this.spacesLock.writer)
+                this.spaces[s.id] = space;
             return space;
         }
     }
@@ -1042,20 +1112,98 @@ class Process {
     /// get an existing space or null
     Space get(string s) {
         this.ensureThread();
-        return (s in this.spaces).as!bool ? this.spaces[s] : null;
+        
+        synchronized(this.spacesLock.reader)
+            return (s in this.spaces).as!bool ? this.spaces[s] : null;
     }
 
     /// removes an existing space
     void remove(string s) {
         this.ensureThread();
-
-        if(s in this.spaces) {
-            this.spaces[s].destroy;
-            this.spaces.remove(s);
-        } else
-            throw new ProcessException("space with id \""~s~"\" is not existing");
+        
+        synchronized(this.spacesLock.writer)
+            if(s in this.spaces) {
+                this.spaces[s].destroy;
+                this.spaces.remove(s);
+            } else
+                throw new ProcessException("space with id \""~s~"\" is not existing");
     }
 }
+
+/*struct SpaceHop {
+    Duration latency;
+    ubyte[] cert;
+}
+
+struct SpaceRoute {
+    string id;
+    SpaceHop[] hops;
+}
+
+private abstract class Peer {
+    import core.thread;
+
+    Process process;
+    PeerMeta meta;
+    PeerInfo other;
+    Thread receivingThread;
+
+    bool connected;
+
+    @property PeerInfo self() {
+        auto i = new PeerInfo;
+        i.forward = this.meta.forward;
+        i.spaces = this.process.acceptedSpaces;
+
+        return i;
+    }
+
+    protected this() {
+        receivingThread = new Thread(&this.receiving);
+        receivingThread.start();
+    }
+
+    void receiving() {
+        this.connected = true;
+
+        Data d;
+        do {
+            d = this.receive();
+        } while(this.connected);
+    }
+
+    this(Process p, PeerMeta m) {
+        this.process = p;
+        this.meta = m;
+
+        this.connect;
+    }
+
+    ~this() {
+        this.disconnect;
+    }    
+
+    abstract Data receive();
+    abstract void connect();
+    abstract void disconnect();
+}
+
+private class InetPeer : Peer {
+    Socket sock;
+
+    this(Process p, PeerMeta m) {super(p, m);}
+    this(Socket s) {
+        super();
+    }
+
+    override void connect() {
+
+    }
+
+    override void disconnect() {
+
+    }
+}*/
 
 version(unittest) {
     class TestTickException : FlowException {mixin exception;}

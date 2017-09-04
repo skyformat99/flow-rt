@@ -54,6 +54,7 @@ class TickException : FlowException {mixin exception;}
 class EntityException : FlowException {mixin exception;}
 class SpaceException : FlowException {mixin exception;}
 class ProcessException : FlowException {mixin exception;}
+class PeerException : FlowException {mixin exception;}
 
 class NotImplementedError : FlowError {mixin error;}
 

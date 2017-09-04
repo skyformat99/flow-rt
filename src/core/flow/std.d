@@ -19,35 +19,43 @@ class Damage : Data {
     mixin field!(Data, "recovery");
 }
 
-enum SocketRole {
-    Master,
-    Slave
-}
-
-class SocketMeta : Data {
+abstract class PeerAddress : Data {
     mixin data;
 
-    /// address familiy (see std.socket)
-    mixin field!(AddressFamily, "family");
+    abstract string addr();
+}
 
-    /// socket type (see std.socket)
-    mixin field!(SocketType, "type");
+class InetAddress : PeerAddress {
+    mixin data;
 
-    /// listening (master) or connecting (slave)
-    mixin field!(SocketRole, "role");
+    mixin field!(string, "ip");
+    mixin field!(ushort, "port");
+
+    override string addr() {
+        import std.conv;
+
+        return ip~":"~port.to!string;
+    }
+}
+
+class PeerInfo : Data {
+    mixin data;
+    
+    /// forwarding signals coming over this net to other nets?
+    mixin field!(bool, "forward");
+
+    /// local spaces of peer
+    mixin array!(string, "spaces");
+}
+
+class PeerMeta : Data {
+    mixin data;
 
     /// address of listener
-    mixin field!(string, "addr");
-}
+    mixin field!(PeerAddress, "addr");
 
-class NetMeta : Data {
-    mixin data;
-
-    /// stores runtime informations about spaces available for shifting via this net
-    string[] spaces;
-
-    /// socket information
-    mixin field!(SocketMeta, "socket");
+    /// forwarding signals coming from this peer to other peers?
+    mixin field!(bool, "forward");
     
     /// own private key
     mixin array!(ubyte, "ownCert");
@@ -73,12 +81,9 @@ class ProcessConfig : Data {
     /// amount of worker threads for executing ticks
     mixin field!(size_t, "worker");
 
-    /// is process harking to space wildcards?
-    mixin field!(bool, "hark");
-
     /// authorities used to validate peers
     mixin array!(Authority, "authorities");
-    mixin array!(NetMeta, "nets");
+    mixin array!(PeerMeta, "peers");
 }
 
 class TickInfo : IdData {

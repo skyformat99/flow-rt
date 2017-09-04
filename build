@@ -7,7 +7,7 @@ dc=$rootDir/util/dmd2/linux/bin64/dmd
 defaultlib="libphobos2.so" # libphobos2-ldc
 
 #params for debug
-defBuildParams="-debug -g -debug=data" # -debug=data -debug=tick
+defBuildParams="-debug -g" # -debug=data -debug=tick
 defLinkParams="-g"
 
 #params for release
