@@ -38,6 +38,10 @@ class InetAddress : PeerAddress {
     }
 }
 
+class JunctionMeta : Data {
+    mixin data;
+}
+
 class PeerInfo : Data {
     mixin data;
     
@@ -78,33 +82,51 @@ class Authority : Data {
 class ProcessConfig : Data {
     mixin data;
 
-    /// amount of worker threads for executing ticks
-    mixin field!(size_t, "worker");
-
     /// authorities used to validate peers
     mixin array!(Authority, "authorities");
     mixin array!(PeerMeta, "peers");
 }
 
-class TickInfo : IdData {
+class SpaceMeta : Data {
     mixin data;
 
-    mixin field!(EntityPtr, "entity");
-    mixin field!(string, "type");
-    mixin field!(UUID, "group");
+    /// identifier of the space
+    mixin field!(string, "id");
+
+    /// is space harking to wildcard
+    mixin field!(bool, "hark");
+    
+    /// amount of worker threads for executing ticks
+    mixin field!(size_t, "worker");
+
+    /// entities of space
+    mixin array!(EntityMeta, "entities");
+}
+
+class EntityMeta : Data {
+    mixin data;
+
+    mixin field!(EntityPtr, "ptr");
+    mixin field!(EntityAccess, "access");
+    mixin field!(Data, "context");
+    mixin array!(Event, "events");
+    mixin array!(Receptor, "receptors");
+
+    mixin array!(TickMeta, "ticks");
+}
+
+/// referencing a specific entity 
+class EntityPtr : Data {
+    mixin data;
+
+    mixin field!(string, "id");
+    mixin field!(string, "space");
 }
 
 /// scopes an entity can have
 enum EntityAccess {
     Local,
     Global
-}
-
-class Receptor : Data {
-    mixin data;
-
-    mixin field!(string, "signal");
-    mixin field!(string, "tick");
 }
 
 enum EventType {
@@ -121,12 +143,28 @@ class Event : Data {
     mixin field!(string, "tick");
 }
 
-/// referencing a specific entity 
-class EntityPtr : Data {
+public class TickMeta : Data {
     mixin data;
 
-    mixin field!(string, "id");
-    mixin field!(string, "space");
+    mixin field!(TickInfo, "info");
+    mixin field!(Signal, "trigger");
+    mixin field!(TickInfo, "previous");
+    mixin field!(Data, "data");
+}
+
+class TickInfo : IdData {
+    mixin data;
+
+    mixin field!(EntityPtr, "entity");
+    mixin field!(string, "type");
+    mixin field!(UUID, "group");
+}
+
+class Receptor : Data {
+    mixin data;
+
+    mixin field!(string, "signal");
+    mixin field!(string, "tick");
 }
 
 class Signal : IdData {

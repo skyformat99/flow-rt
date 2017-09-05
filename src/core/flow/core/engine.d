@@ -13,15 +13,6 @@ private enum SystemState {
     Disposed
 }
 
-public class TickMeta : Data {
-    mixin data;
-
-    mixin field!(TickInfo, "info");
-    mixin field!(Signal, "trigger");
-    mixin field!(TickInfo, "previous");
-    mixin field!(Data, "data");
-}
-
 abstract class Tick {    
     private TickMeta meta;
     private Entity entity;
@@ -331,7 +322,7 @@ private class Ticker : StateMachine!SystemState {
                         // check if entity is still running after getting the sync
                         this.actual = this.coming;
                         this.coming = null;
-                        this.entity.space.process.tasker.run(this.entity.meta.ptr.addr, this.actual.costs, &this.runTick);
+                        this.entity.space.tasker.run(this.entity.meta.ptr.addr, this.actual.costs, &this.runTick);
                     } else {
                         this.msg(LL.Error, "could not create tick -> ending");
                         if(this.state != SystemState.Disposed) this.dispose;
@@ -384,18 +375,6 @@ private void msg(Ticker t, LL level, Throwable thr, string msg = string.init) {
 
 private void msg(Ticker t, LL level, Data d, string msg = string.init) {
     Log.msg(level, d, "ticker@entity("~t.entity.meta.ptr.addr~"): "~msg);
-}
-
-class EntityMeta : Data {
-    mixin data;
-
-    mixin field!(EntityPtr, "ptr");
-    mixin field!(EntityAccess, "access");
-    mixin field!(Data, "context");
-    mixin array!(Event, "events");
-    mixin array!(Receptor, "receptors");
-
-    mixin array!(TickMeta, "ticks");
 }
 
 /// hosts an entity construct
@@ -744,23 +723,11 @@ private bool matches(Space space, string pattern) {
     return hit;
 }
 
-class SpaceMeta : Data {
-    mixin data;
-
-    /// identifier of the space
-    mixin field!(string, "id");
-
-    /// is space harking to wildcard
-    mixin field!(bool, "hark");
-
-    /// entities of space
-    mixin array!(EntityMeta, "entities");
-}
-
 /// hosts a space construct
 class Space : StateMachine!SystemState {
     private SpaceMeta meta;
     private Process process;
+    private Tasker tasker;
 
     private Entity[string] entities;
 
@@ -780,6 +747,15 @@ class Space : StateMachine!SystemState {
 
     /// initializes space
     private void init() {
+        // creating tasker;
+        import core.cpuid;
+        // if worker amount == size_t.init (0) use default (vcores - 2) but min 2
+        if(this.meta.worker < 1)
+            this.meta.worker = threadsPerCPU > 3 ? threadsPerCPU-2 : 2;
+        this.tasker = new Tasker(this.meta.worker);
+        this.tasker.start();
+
+        // creating entities
         foreach(em; this.meta.entities) {
             if(em.ptr.id in this.entities)
                 throw new SpaceException("entity with addr \""~em.ptr.addr~"\" already exists");
@@ -850,8 +826,8 @@ class Space : StateMachine!SystemState {
         }
     }
     
-    /// ships an unicast signal to receipting entities if its in this space
-    private bool ship(Unicast s) {
+    /// routes an unicast signal to receipting entities if its in this space
+    private bool route(Unicast s) {
         // if its a perfect match assuming process only accepted a signal for itself
         if(this.state == SystemState.Ticking && s.dst.space == this.meta.id) {
             synchronized(this.lock.reader) {
@@ -866,8 +842,8 @@ class Space : StateMachine!SystemState {
     }
 
    
-    /// ships an anycast signal to one receipting entity
-    private bool ship(Anycast s) {
+    /// routes an anycast signal to one receipting entity
+    private bool route(Anycast s) {
         // if its adressed to own space or parent using * wildcard or even none
         // in each case we do not want to regex search when ==
         if(this.state == SystemState.Ticking && (s.space == this.meta.id || this.matches(s.space))) {
@@ -880,8 +856,8 @@ class Space : StateMachine!SystemState {
         return false;
     }
     
-    /// ships a multicast signal to receipting entities if its addressed to space
-    private bool ship(Multicast s, bool intern = false) {
+    /// routes a multicast signal to receipting entities if its addressed to space
+    private bool route(Multicast s, bool intern = false) {
         auto r = false;
         // if its adressed to own space or parent using * wildcard or even none
         // in each case we do not want to regex search when ==
@@ -900,11 +876,11 @@ class Space : StateMachine!SystemState {
     }
 
     private bool send(Unicast s) {
-        return this.ship(s) || this.process.route(s.clone);
+        return this.route(s) || this.process.ship(s.clone);
     }
 
     private bool send(Anycast s) {
-        return this.ship(s) || this.process.route(s.clone);
+        return this.route(s) || this.process.ship(s.clone);
     }
 
     private bool send(Multicast s) {
@@ -912,8 +888,8 @@ class Space : StateMachine!SystemState {
         s.src.space = this.meta.id;
 
         /* Only inside own space memory is shared,
-        as soon as a signal is getting routed to another space it is deep cloned */
-        return this.ship(s, true) || this.process.route(s.clone);
+        as soon as a signal is getting shipd to another space it is deep cloned */
+        return this.route(s, true) || this.process.ship(s.clone);
     }
 
     override protected bool onStateChanging(SystemState o, SystemState n) {
@@ -944,6 +920,9 @@ class Space : StateMachine!SystemState {
                 synchronized(this.lock.writer)
                     foreach(e; this.entities.keys)
                         this.entities[e].destroy;
+
+                this.tasker.stop();
+                this.tasker.destroy;
                 break;
             default: break;
         }
@@ -956,13 +935,10 @@ class Process {
     ReadWriteMutex spacesLock;
     ReadWriteMutex peersLock;
     private ProcessConfig config;
-    private Tasker tasker;
     private Space[string] spaces;
     //private Peer[string] nets;
 
     this(ProcessConfig c = null) {
-        import core.cpuid;
-
         this.spacesLock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
         this.peersLock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
 
@@ -970,13 +946,7 @@ class Process {
         if(c is null)
             c = new ProcessConfig;
 
-        // if worker amount lesser 1 use default (vcores - 1)
-        if(c.worker < 1)
-            c.worker = threadsPerCPU > 1 ? threadsPerCPU-1 : 1;
-
         this.config = c;
-        this.tasker = new Tasker(c.worker);
-        this.tasker.start();
 
         /*foreach(nm; this.config.nets) {
             try {
@@ -990,9 +960,6 @@ class Process {
     ~this() {
         foreach(s; this.spaces.keys)
             this.spaces[s].destroy;
-
-        this.tasker.stop();
-        this.tasker.destroy;
     }
 
     @property string[] acceptedSpaces() {
@@ -1038,14 +1005,14 @@ class Process {
     }*/
 
     /// routing unicast signal from space to space also across nets
-    private bool route(Unicast s) {
+    private bool ship(Unicast s) {
         if(s !is null) {
             foreach(spc; this.spaces.values)
                 if(s.src.space != spc.meta.id && s.dst.space == spc.meta.id)
-                    return spc.ship(s);
+                    return spc.route(s);
 
             synchronized(this.peersLock.reader) {
-                // when here, its not hosted in local process so route it to process hosting its space if known
+                // when here, its not hosted in local process so ship it to process hosting its space if known
                 // block until acceptance is confirmed by remote process
             }
         }
@@ -1054,14 +1021,14 @@ class Process {
     }
 
     /// routing anycast signal from space to space also across nets
-    private bool route(Anycast s) {
+    private bool ship(Anycast s) {
         if(s !is null) {
             foreach(spc; this.spaces.values)
-                if(s.src.space != spc.meta.id && spc.ship(s))
+                if(s.src.space != spc.meta.id && spc.route(s))
                     return true;
 
             synchronized(this.peersLock.reader) {
-                // when here, no local space matches space pattern so route it to processes hosting spaces matching
+                // when here, no local space matches space pattern so ship it to processes hosting spaces matching
                 // block until acceptance is confirmed by remote process
             }
         }
@@ -1070,16 +1037,16 @@ class Process {
     }
 
     /// routing multicast signal from space to space also across nets
-    private bool route(Multicast s) {
+    private bool ship(Multicast s) {
         auto r = false;
         if(s !is null) {
             foreach(spc; this.spaces.values)
                 if(s.src.space != spc.meta.id)
-                    r = spc.ship(s) || r;
+                    r = spc.route(s) || r;
         }
 
         synchronized(this.peersLock.reader) {
-            // signal might target other spaces hosted by remote processes too, so route it to all processes hosting spaces matching pattern
+            // signal might target other spaces hosted by remote processes too, so ship it to all processes hosting spaces matching pattern
             // not blocking, just (is proccess with matching space known) || r
             /* that means multicasts are returning true if an adequate space is known local or remote,
             this is neccessary due to the requirement for flow to support systems interconnected by
@@ -1308,6 +1275,7 @@ version(unittest) {
 
     SpaceMeta createTestSpace() {
         auto s = new SpaceMeta;
+        s.worker = 1;
         s.id = "s";
         auto te = createTestEntity();
         s.entities ~= te;
@@ -1364,7 +1332,6 @@ unittest {
     auto pc = new ProcessConfig;
     /* when there is one worker in taskpool, it has
     to be perfectly deterministic using limited complexity */
-    pc.worker = 1;
     auto p = new Process(pc);
     scope(exit) p.destroy;
     auto s = p.add(createTestSpace());
