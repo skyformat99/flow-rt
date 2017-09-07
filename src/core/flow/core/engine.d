@@ -933,14 +933,14 @@ class Space : StateMachine!SystemState {
 whatever happens on this level, it has to happen in main thread or an exception occurs */
 class Process {
     ReadWriteMutex spacesLock;
-    ReadWriteMutex peersLock;
+    ReadWriteMutex junctionsLock;
     private ProcessConfig config;
     private Space[string] spaces;
-    //private Peer[string] nets;
+    private Junction[UUID] junctions;
 
     this(ProcessConfig c = null) {
         this.spacesLock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
-        this.peersLock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
+        this.junctionsLock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
 
         // if no config given generate default one
         if(c is null)
@@ -948,13 +948,13 @@ class Process {
 
         this.config = c;
 
-        /*foreach(nm; this.config.nets) {
+        foreach(nm; this.config.junctions) {
             try {
                 this.add(nm);
             } catch(Throwable thr) {
                 Log.msg(LL.Error, thr, "initialization of a net at process startup failed");
             }
-        }*/
+        }
     }
 
     ~this() {
@@ -971,38 +971,45 @@ class Process {
                 .map!(s=>s.meta.id).array;
     }
 
-    /// adds a net to process
-    /*void add(PeerMeta m) {
+    /// adds a junction to process
+    void add(JunctionMeta m) {
+        import std.conv;
+
         this.ensureThread();
         
-        if(m is null || m.addr is null || m.addr.toString == string.init)
+        if(m is null || m.info is null || m.info.id == UUID.init)
             throw new ProcessException("invalid net metadata", m);
 
-        Log.msg(LL.Info, "initializing net with address \""~m.addr.addr~"\"");
+        Log.msg(LL.Info, "initializing junction with id \""~m.info.id.to!string~"\"");
 
-        if(m.addr.addr in this.nets)
-            throw new ProcessException("a net with address \""~m.addr.addr~"\" already exists", m);
+        if(m.info.id in this.junctions)
+            throw new ProcessException("a junction with id \""~m.info.id.to!string~"\" already exists", m);
 
-        if(m.addr.as!InetAddress !is null)
-            synchronized(this.peersLock.writer)
-                this.nets[m.addr.addr] = new InetPeer(this, m);
+        if(m.as!StaticJunction !is null)
+            synchronized(this.junctionsLock.writer)
+                this.junctions[m.info.id] = new StaticJunction(this, m.as!StaticJunctionMeta);
+        //else if(m.as!DynamicJunction !is null)
+        //    synchronized(this.junctionsLock.writer)
+        //        this.junctions[m.info.id] = new DynamicJunction(this, m);
         else {
-            Log.msg(LL.Error, m, "not supporting address type of net");
+            Log.msg(LL.Error, m, "not supporting junction type");
             throw new NotImplementedError;
         }
-    }*/
+    }
 
-    /// removes a net from process
-    /*void remove(PeerAddress addr) {
+    /// removes a junction from process
+    void remove(UUID id) {
+        import std.conv;
+
         this.ensureThread();
         
-        synchronized(this.peersLock.writer)
-            if(addr.addr in this.nets) {
-                Peer n = this.nets[addr.addr];
-                this.nets.remove(addr.addr);
-                n.destroy;
-            } else throw new ProcessException("no net with address \""~addr.addr~"\" found for removal", addr);
-    }*/
+        synchronized(this.junctionsLock.writer)
+            if(id in this.junctions) {
+                Junction j = this.junctions[id];
+                this.junctions.remove(id);
+                j.destroy;
+            } else throw new ProcessException("no junction with id \""~id.to!string~"\" found for removal");
+    }
 
     /// routing unicast signal from space to space also across nets
     private bool ship(Unicast s) {
@@ -1011,7 +1018,7 @@ class Process {
                 if(s.src.space != spc.meta.id && s.dst.space == spc.meta.id)
                     return spc.route(s);
 
-            synchronized(this.peersLock.reader) {
+            synchronized(this.junctionsLock.reader) {
                 // when here, its not hosted in local process so ship it to process hosting its space if known
                 // block until acceptance is confirmed by remote process
             }
@@ -1027,7 +1034,7 @@ class Process {
                 if(s.src.space != spc.meta.id && spc.route(s))
                     return true;
 
-            synchronized(this.peersLock.reader) {
+            synchronized(this.junctionsLock.reader) {
                 // when here, no local space matches space pattern so ship it to processes hosting spaces matching
                 // block until acceptance is confirmed by remote process
             }
@@ -1045,7 +1052,7 @@ class Process {
                     r = spc.route(s) || r;
         }
 
-        synchronized(this.peersLock.reader) {
+        synchronized(this.junctionsLock.reader) {
             // signal might target other spaces hosted by remote processes too, so ship it to all processes hosting spaces matching pattern
             // not blocking, just (is proccess with matching space known) || r
             /* that means multicasts are returning true if an adequate space is known local or remote,
@@ -1096,6 +1103,22 @@ class Process {
                 throw new ProcessException("space with id \""~s~"\" is not existing");
     }
 }
+
+abstract class Junction {
+    Process process;
+    JunctionMeta meta;
+
+    this(Process p, JunctionMeta m) {
+        this.process = p;
+        this.meta = m;
+    }
+}
+
+class StaticJunction : Junction {
+    this(Process p, StaticJunctionMeta m) {super(p, m);}
+}
+
+//abstract Listener
 
 /*struct SpaceHop {
     Duration latency;

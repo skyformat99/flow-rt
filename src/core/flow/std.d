@@ -19,44 +19,57 @@ class Damage : Data {
     mixin field!(Data, "recovery");
 }
 
-abstract class PeerAddress : Data {
+class JunctionInfo : IdData {
     mixin data;
 
-    abstract string addr();
-}
-
-class InetAddress : PeerAddress {
-    mixin data;
-
-    mixin field!(string, "ip");
-    mixin field!(ushort, "port");
-
-    override string addr() {
-        import std.conv;
-
-        return ip~":"~port.to!string;
-    }
-}
-
-class JunctionMeta : Data {
-    mixin data;
-}
-
-class PeerInfo : Data {
-    mixin data;
-    
-    /// forwarding signals coming over this net to other nets?
     mixin field!(bool, "forward");
+}
 
-    /// local spaces of peer
-    mixin array!(string, "spaces");
+abstract class JunctionMeta : Data {
+    mixin data;
+
+    mixin field!(JunctionInfo, "info");
+    mixin field!(ListenerMeta, "listener");
+
+    mixin array!(PeerMeta, "peers");
+}
+
+class StaticJunctionMeta : JunctionMeta {
+    mixin data;
+}
+
+//class DynamicJunctionMeta : JunctionMeta {
+//    mixin data;
+//}
+
+abstract class ListenerInfo : Data {
+    mixin data;
+
+    mixin array!(ubyte, "cert");
+}
+
+class InetListenerInfo : Data {
+    mixin data;
+
+    mixin array!(ubyte, "ver");
+    mixin array!(ubyte, "addr");
+    mixin array!(ushort, "port");
+}
+
+abstract class ListenerMeta : Data {
+    mixin data;
+
+    mixin field!(ListenerInfo, "info");
+}
+
+class InetListenerMeta : ListenerMeta {
+    mixin data;
+
+    mixin field!(InetListenerInfo, "info");
 }
 
 class PeerMeta : Data {
     mixin data;
-
-    /// address of listener
-    mixin field!(PeerAddress, "addr");
 
     /// forwarding signals coming from this peer to other peers?
     mixin field!(bool, "forward");
@@ -84,7 +97,7 @@ class ProcessConfig : Data {
 
     /// authorities used to validate peers
     mixin array!(Authority, "authorities");
-    mixin array!(PeerMeta, "peers");
+    mixin array!(JunctionMeta, "junctions");
 }
 
 class SpaceMeta : Data {
