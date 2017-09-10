@@ -12,17 +12,19 @@ class IdData : Data {
     mixin field!(UUID, "id");
 }
 
-class Damage : Data {
+/*class Damage : Data {
     mixin data;
 
     mixin field!(string, "msg");
     mixin field!(Data, "recovery");
-}
+}*/
 
 class JunctionInfo : IdData {
     mixin data;
 
     mixin field!(bool, "forward");
+    mixin array!(string, "spacePattern");
+    mixin field!(bool, "validation");
 }
 
 abstract class JunctionMeta : Data {
@@ -31,20 +33,18 @@ abstract class JunctionMeta : Data {
     mixin field!(JunctionInfo, "info");
     mixin field!(ListenerMeta, "listener");
 
-    mixin array!(PeerMeta, "peers");
+    /// junction connects to
+    mixin array!(ListenerInfo, "connections");
 }
 
-class StaticJunctionMeta : JunctionMeta {
+class DynamicJunctionMeta : JunctionMeta {
     mixin data;
 }
-
-//class DynamicJunctionMeta : JunctionMeta {
-//    mixin data;
-//}
 
 abstract class ListenerInfo : Data {
     mixin data;
 
+    /// public RSA key
     mixin array!(ubyte, "cert");
 }
 
@@ -60,6 +60,9 @@ abstract class ListenerMeta : Data {
     mixin data;
 
     mixin field!(ListenerInfo, "info");
+
+    /// private RSA key
+    mixin array!(ubyte, "key");
 }
 
 class InetListenerMeta : ListenerMeta {
@@ -68,17 +71,17 @@ class InetListenerMeta : ListenerMeta {
     mixin field!(InetListenerInfo, "info");
 }
 
-class PeerMeta : Data {
+class PeerInfo : Data {
     mixin data;
 
-    /// forwarding signals coming from this peer to other peers?
-    mixin field!(bool, "forward");
-    
-    /// own private key
-    mixin array!(ubyte, "ownCert");
+    mixin field!(JunctionInfo, "junction");
+    mixin field!(ListenerInfo, "listener");
+}
 
-    /// public key of the peer or empty for authority validation
-    mixin array!(ubyte, "peerCert");
+class ForwardRequest : Signal {
+    mixin data;
+
+    mixin array!(ubyte, "data");
 }
 
 class Authority : Data {
@@ -180,7 +183,7 @@ class Receptor : Data {
     mixin field!(string, "tick");
 }
 
-class Signal : IdData {
+abstract class Signal : IdData {
     mixin data;
 
     mixin field!(UUID, "group");

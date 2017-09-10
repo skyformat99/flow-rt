@@ -158,46 +158,21 @@ private bool checkAccept(Tick t) {
     try {
         return t.accept;
     } catch(Throwable thr) {
-        t.msg(LL.Error, thr, "accept failed");
+        Log.msg(LL.Error, t.logPrefix~"accept failed", thr);
     }
 
     return false;
 }
 
-/// writes a log message
-void msg(Tick t, LL level, string msg) {
-    Log.msg(level, "tick@entity("~t.entity.meta.ptr.addr~"): "~msg);
-}
+string logPrefix(T)(T t) if(is(T==Tick) || is(T==Ticker) || is(T:Junction)) {
+    import std.conv;
 
-/// writes a log message
-void msg(Tick t, LL level, Throwable thr, string msg = string.init) {
-    Log.msg(level, thr, "tick@entity("~t.entity.meta.ptr.addr~"): "~msg);
-}
-
-/// writes a log message
-void msg(Tick t, LL level, Data d, string msg = string.init) {
-    Log.msg(level, d, "tick@entity("~t.entity.meta.ptr.addr~"): "~msg);
-}
-
-private void die(Tick t, string msg) {
-    t.msg(LL.Fatal, msg);
-    
-    import core.stdc.stdlib;
-    exit(-1);
-}
-
-private void die(Tick t, Exception ex, string msg = string.init) {
-    t.msg(LL.Fatal, ex, msg);
-    
-    import core.stdc.stdlib;
-    exit(-1);
-}
-
-private void die(Tick t, Data d, string msg = string.init) {
-    t.msg(LL.Fatal, d, msg);
-    
-    import core.stdc.stdlib;
-    exit(-1);
+    static if(is(T==Tick))
+        return "tick@entity("~t.entity.meta.ptr.addr~"): ";
+    else static if(is(T==Ticker))
+        return "ticker@entity("~t.entity.meta.ptr.addr~"): ";
+    else static if(is(T:Junction))
+        return "junction("~t.meta.info.id.to!string~"): ";
 }
 
 TickMeta createTickMeta(EntityMeta entity, string type, UUID group = randomUUID) {
@@ -324,14 +299,14 @@ private class Ticker : StateMachine!SystemState {
                         this.coming = null;
                         this.entity.space.tasker.run(this.entity.meta.ptr.addr, this.actual.costs, &this.runTick);
                     } else {
-                        this.msg(LL.Error, "could not create tick -> ending");
+                        Log.msg(LL.Error, this.logPrefix~"could not create tick -> ending");
                         if(this.state != SystemState.Disposed) this.dispose;
                     }
                 } else {
-                    this.msg(LL.FDebug, "ticker is not ticking");
+                    Log.msg(LL.FDebug, this.logPrefix~"ticker is not ticking");
                 }
             } else {
-                this.msg(LL.FDebug, "nothing to do, ticker is ending");
+                Log.msg(LL.FDebug, this.logPrefix~"nothing to do, ticker is ending");
                 if(this.state != SystemState.Disposed) this.dispose;
             }
     }
@@ -340,41 +315,28 @@ private class Ticker : StateMachine!SystemState {
     void runTick() {
         try {
             // run tick
-            this.msg(LL.FDebug, this.actual.meta, "running tick");
+            Log.msg(LL.FDebug, this.logPrefix~"running tick", this.actual.meta);
             this.actual.run();
-            this.msg(LL.FDebug, this.actual.meta, "finished tick");
+            Log.msg(LL.FDebug, this.logPrefix~"finished tick", this.actual.meta);
             
             this.actual = null;
             this.tick();
         } catch(Throwable thr) {
-            this.actual.msg(LL.Error, thr, "run failed");
+            Log.msg(LL.Error, this.actual.logPrefix~"run failed", thr);
             try {
-                this.actual.msg(LL.Info, this.actual.meta, "handling run error");
+                Log.msg(LL.Info, this.logPrefix~"handling run error", thr, this.actual.meta);
                 this.actual.error(thr);
-                this.actual.msg(LL.Info, this.actual.meta, "run error handled");
                 
                 this.actual = null;        
                 this.tick();
             } catch(Throwable thr2) {
                 // if even handling exception failes notify that an error occured
-                this.actual.msg(LL.Fatal, thr2, "handling error failed");
+                Log.msg(LL.Fatal, this.actual.logPrefix~"handling error failed", thr2);
                 this.actual = null;
                 if(this.state != SystemState.Disposed) this.dispose;
             }
         }
     }
-}
-
-private void msg(Ticker t, LL level, string msg) {
-    Log.msg(level, "ticker@entity("~t.entity.meta.ptr.addr~"): "~msg);
-}
-
-private void msg(Ticker t, LL level, Throwable thr, string msg = string.init) {
-    Log.msg(level, thr, "ticker@entity("~t.entity.meta.ptr.addr~"): "~msg);
-}
-
-private void msg(Ticker t, LL level, Data d, string msg = string.init) {
-    Log.msg(level, d, "ticker@entity("~t.entity.meta.ptr.addr~"): "~msg);
 }
 
 /// hosts an entity construct
@@ -426,7 +388,7 @@ private class Entity : StateMachine!SystemState {
 
     void dispose() {
         if(this.state == SystemState.Ticking)
-            this.freeze();
+            this.freeze;
 
         this.state = SystemState.Disposed;
     }
@@ -736,34 +698,11 @@ class Space : StateMachine!SystemState {
         this.process = p;
 
         super();
-
-        this.init();
     }
 
     ~this() {
         if(this.state != SystemState.Disposed)
             this.state = SystemState.Disposed;
-    }
-
-    /// initializes space
-    private void init() {
-        // creating tasker;
-        import core.cpuid;
-        // if worker amount == size_t.init (0) use default (vcores - 2) but min 2
-        if(this.meta.worker < 1)
-            this.meta.worker = threadsPerCPU > 3 ? threadsPerCPU-2 : 2;
-        this.tasker = new Tasker(this.meta.worker);
-        this.tasker.start();
-
-        // creating entities
-        foreach(em; this.meta.entities) {
-            if(em.ptr.id in this.entities)
-                throw new SpaceException("entity with addr \""~em.ptr.addr~"\" already exists");
-            else {
-                Entity e = new Entity(this, em);
-                this.entities[em.ptr.id] = e;
-            }
-        }
     }
 
     /// makes space and all of its content freezing
@@ -906,6 +845,25 @@ class Space : StateMachine!SystemState {
 
     override protected void onStateChanged(SystemState o, SystemState n) {
         switch(n) {
+            case SystemState.Created:
+                // creating tasker;
+                import core.cpuid;
+                // if worker amount == size_t.init (0) use default (vcores - 2) but min 2
+                if(this.meta.worker < 1)
+                    this.meta.worker = threadsPerCPU > 3 ? threadsPerCPU-2 : 2;
+                this.tasker = new Tasker(this.meta.worker);
+                this.tasker.start();
+
+                // creating entities
+                foreach(em; this.meta.entities) {
+                    if(em.ptr.id in this.entities)
+                        throw new SpaceException("entity with addr \""~em.ptr.addr~"\" already exists");
+                    else {
+                        Entity e = new Entity(this, em);
+                        this.entities[em.ptr.id] = e;
+                    }
+                }
+                break;
             case SystemState.Ticking:
                 synchronized(this.lock.reader)
                     foreach(e; this.entities)
@@ -952,7 +910,7 @@ class Process {
             try {
                 this.add(nm);
             } catch(Throwable thr) {
-                Log.msg(LL.Error, thr, "initialization of a net at process startup failed");
+                Log.msg(LL.Error, "initialization of a net at process startup failed", thr);
             }
         }
     }
@@ -985,14 +943,11 @@ class Process {
         if(m.info.id in this.junctions)
             throw new ProcessException("a junction with id \""~m.info.id.to!string~"\" already exists", m);
 
-        if(m.as!StaticJunction !is null)
+        if(m.as!DynamicJunctionMeta !is null)
             synchronized(this.junctionsLock.writer)
-                this.junctions[m.info.id] = new StaticJunction(this, m.as!StaticJunctionMeta);
-        //else if(m.as!DynamicJunction !is null)
-        //    synchronized(this.junctionsLock.writer)
-        //        this.junctions[m.info.id] = new DynamicJunction(this, m);
+                this.junctions[m.info.id] = new DynamicJunction(this, m.as!DynamicJunctionMeta);
         else {
-            Log.msg(LL.Error, m, "not supporting junction type");
+            Log.msg(LL.Error, "not supporting junction type", m);
             throw new NotImplementedError;
         }
     }
@@ -1104,21 +1059,280 @@ class Process {
     }
 }
 
-abstract class Junction {
+private enum JunctionState {
+    Created = 0,
+    Up,
+    Down,
+    Disposed
+}
+
+private abstract class Junction : StateMachine!JunctionState {
+    ReadWriteMutex connectionsLock;
     Process process;
     JunctionMeta meta;
+    Listener listener;
+    Connection[] connections;
 
     this(Process p, JunctionMeta m) {
+        this.connectionsLock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
         this.process = p;
         this.meta = m;
+
+        super();
+    }
+
+    void up() {
+        this.state = JunctionState.Up;
+    }
+
+    void down() {
+        this.state = JunctionState.Down;
+    }
+
+    void dispose() {
+        if(this.state == JunctionState.Up)
+            this.down;
+        
+        this.state = JunctionState.Disposed;
+    }
+
+    override protected bool onStateChanging(JunctionState o, JunctionState n) {
+        switch(n) {
+            case JunctionState.Up:
+                return o == JunctionState.Created || o == JunctionState.Down;
+            case JunctionState.Down:
+                return o == JunctionState.Up;
+            case JunctionState.Disposed:
+                return o == JunctionState.Created || o == JunctionState.Down;
+            default: return false;
+        }
+    }
+
+    override protected void onStateChanged(JunctionState o, JunctionState n) {
+        switch(n) {
+            case JunctionState.Created:
+                if(this.meta.listener.as!InetListenerMeta)
+                    this.listener = new InetListener(this.meta.listener.as!InetListenerMeta);
+                else if(this.meta.listener !is null)
+                    Log.msg(LL.Error, this.logPrefix~"unknown listener type, won't create any for this junction", this.meta.listener);
+                break;
+            case JunctionState.Up:
+                if(this.listener !is null)
+                    this.listener.start;
+
+                // establish outbound connections
+                synchronized(this.connectionsLock.writer)
+                    foreach(ci; this.meta.connections) {
+                        // only if its an outbound connection
+                        if(ci != this.listener.meta.info) {
+                            if(ci.as!InetListenerInfo) {
+                                auto c = ci.as!InetListenerInfo.connect;
+                                if(c !is null) {
+                                    this.connections ~= c;
+                                    c.start;
+                                }
+                            }
+                        }
+                    }
+                break;
+            case JunctionState.Down:
+                if(this.listener !is null)
+                    this.listener.stop;
+
+                // disconnect existing connections and add outbound to meta
+                synchronized(this.connectionsLock.writer) {
+                    this.meta.connections = [];
+                    foreach(c; this.connections) {
+                        c.stop;
+                        if(!c.incoming)
+                            this.meta.connections ~= c.peer.listener;
+                        c.destroy;
+                    }
+                }
+                break;
+            case JunctionState.Disposed:
+                this.listener.destroy;
+                break;
+            default: break;
+        }
+    }
+
+    void route(T)(T s) if(is(T : Signal)) {
+        static if(is(T == ForwardRequest)) {
+            // TODO has to execute a task in junction taskpool
+            // TODO check if can and want to forward (FIREWALL HOOK)
+        } else static if(is(T : Unicast) || is(T : Anycast) || is(T : Multicast)) {
+            this.process.ship(s);
+        } else {
+            Log.msg(LL.Warning, this.logPrefix~"unknown signal type", s);
+        }
     }
 }
 
-class StaticJunction : Junction {
-    this(Process p, StaticJunctionMeta m) {super(p, m);}
+private class DynamicJunction : Junction {
+    this(Process p, DynamicJunctionMeta m) {super(p, m);}
 }
 
-//abstract Listener
+private abstract class Listener {
+    ListenerMeta meta;
+
+    this(ListenerMeta m) {
+        this.meta = m;
+    }
+
+    abstract void start();
+    abstract void stop();
+}
+
+private class InetListener : Listener {
+    this(InetListenerMeta m) {super(m);}
+
+    override void start() {
+
+    }
+
+    override void stop() {
+
+    }
+}
+
+private class Connection : Thread {
+    import std.socket;
+    import core.sync.rwmutex;
+
+    Junction junction;
+    PeerInfo peer;
+    ReadWriteMutex lock;
+    bool alive;
+    bool incoming;
+
+    Socket inbound;
+    Socket outbound;
+
+    @property PeerInfo info() {
+        auto pi = new PeerInfo;
+        pi.junction = this.junction.meta.info;
+        pi.listener = this.junction.listener.meta.info;
+        return pi;
+    }
+
+    this(Junction j, Socket i, Socket o, bool inc) {
+        this.lock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
+        this.junction = j;
+        this.inbound = i;
+        this.outbound = o;
+        this.incoming = inc;
+
+        super(&this.loop);
+    }
+
+    ~this() {
+        this.stop;
+    }
+
+    void loop() {
+        ubyte[] arr;
+        size_t act;
+        size_t received;
+        ubyte[4096] buffer;
+
+        synchronized(this.lock.reader) {
+            // setting beeing alive
+            this.alive = true;
+
+            // authenticating with peer
+            this.send(this.info);
+        }
+
+        while(true) {
+            synchronized(this.lock.reader)
+                if(this.alive && this.inbound.isAlive) {
+                    try {
+                        import std.range.primitives;
+                        import std.bitmanip;
+                        auto c = this.inbound.receive(buffer);
+
+                        // if something received, append it to inbound array
+                        if(c > 0) {
+                            arr ~= buffer[0..c];
+                            received += c;
+                        }
+
+                        if(act == 0 && received > 0) { // beginning new packet
+                            act = arr[0..size_t.sizeof].bigEndianToNative!size_t;
+                            arr.popFrontN(size_t.sizeof);
+                        } else if(act > 0 && act < received) { // if packet is complete
+                            auto b = arr[0..act];
+                            auto d = b.unbin!Data;
+                            arr.popFrontN(act);
+
+                            if(d.as!PeerInfo !is null) { // peer authentications or updates
+                                if(!this.authenticate(d.as!PeerInfo))
+                                    break;
+                            } else if(d.as!Signal) // peer signals through junction
+                                this.junction.route(d.as!Signal);
+                            else
+                                Log.msg(LL.Warning, this.junction.logPrefix~"received unknown information", d);
+
+                            act = 0;
+                        } // else wait for data so loop
+                    } catch(Throwable thr) {
+                        Log.msg(LL.Error, this.junction.logPrefix~"error occured at listening to inbound data", thr, this.info);
+                        break;
+                    }
+                } else break;
+        }
+
+        // if not died because of this.alive (stop) then clean up
+        this.stop;
+    }
+
+    bool authenticate(PeerInfo pi) {
+        if(!this.junction.meta.info.validation || this.validate(pi)) {
+            this.peer = pi;
+            return true;
+        } else return false;
+    }
+
+    bool validate(PeerInfo pi) {
+        /* TODO check certificate
+        ((is it the same || if unknown yet does it validate with a known authority) &&
+        does it validate its own signature?)
+        * this has to happen also on update to prevent connection highjacking
+        * all packages sent have to be signed to prevent connection highjacking*/
+
+        return true;
+    }
+
+    void stop() {
+        synchronized(this.lock.writer) 
+            if(this.alive) {
+                this.alive = false;
+                this.peer = null;
+                
+                this.inbound.close;
+                this.inbound = null;
+
+                this.outbound.close;
+                this.outbound = null;
+            }
+    }
+
+    void send(Data d) {
+        import std.bitmanip;
+        synchronized(this.lock.reader)
+            if(this.alive && this.outbound.isAlive) {
+                auto b = d.bin;
+                this.outbound.send(b.length.nativeToBigEndian[]);
+                this.outbound.send(b);
+            }
+    }
+}
+
+private Connection connect(T)(T li) if(is(T == InetListenerInfo)) {
+    // TODO
+    return null;
+}
 
 /*struct SpaceHop {
     Duration latency;

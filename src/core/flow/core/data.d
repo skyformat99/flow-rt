@@ -1054,7 +1054,7 @@ ubyte[] bin(T)(T data) if(is(T: Data)) {
 }
 
 class InvalidBinException : Exception {this(string msg){super(msg);}}
-private T unbin(T)(ref ubyte[] arr) if(isArray!T && canHandle!(ElementType!T) && !is(T == string)) {
+T unbin(T)(ref ubyte[] arr) if(isArray!T && canHandle!(ElementType!T) && !is(T == string)) {
     T uArr;
     auto length = arr.unbin!size_t;
     for(size_t i = 0; i < length; i++)
@@ -1063,7 +1063,7 @@ private T unbin(T)(ref ubyte[] arr) if(isArray!T && canHandle!(ElementType!T) &&
     return uArr;
 }
 
-private T unbin(T)(ref ubyte[] arr) if(canHandle!T) {
+T unbin(T)(ref ubyte[] arr) if(canHandle!T) {
     static if(is(T == string)) {
         auto length = arr.unbin!size_t;
         auto val = cast(string)arr[0..length];
@@ -1099,7 +1099,7 @@ private T unbin(T)(ref ubyte[] arr) if(canHandle!T) {
                     arr.unbin(val, pi.as!PropertyInfo);
                 }
                 
-                return val;
+                return val.as!T;
             } else throw new InvalidBinException("unsupported data type \""~dataType~"\"");
         } else return null;
     }
@@ -1203,10 +1203,6 @@ private void unbin(ref ubyte[] arr, Data d, PropertyInfo pi) {
     }
 }
 
-Data unbin(ref ubyte[] arr) {
-    return arr.unbin!Data;
-}
-
 unittest {
     import std.stdio;
     import std.range;
@@ -1233,7 +1229,7 @@ unittest {
     debug(data) writeln(arr);
     assert(arr == cArr, "could not serialize data to bin");
     
-    auto d2 = arr.unbin.as!InheritedTestData;
+    auto d2 = arr.unbin!InheritedTestData;
     assert(d2 !is null, "could not deserialize data");
     assert(d2.boolean, "could not deserialize basic scalar value");
     assert(d2.uinteger == 5, "could not deserialize basic scalar value");

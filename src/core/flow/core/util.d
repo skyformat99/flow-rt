@@ -54,7 +54,7 @@ class TickException : FlowException {mixin exception;}
 class EntityException : FlowException {mixin exception;}
 class SpaceException : FlowException {mixin exception;}
 class ProcessException : FlowException {mixin exception;}
-class PeerException : FlowException {mixin exception;}
+class JunctionException : FlowException {mixin exception;}
 
 class NotImplementedError : FlowError {mixin error;}
 
@@ -267,51 +267,82 @@ enum LL : uint {
 class Log {
     public static immutable sep = newline~"--------------------------------------------------"~newline;
     public static LL logLevel = LL.Message | LL.Fatal | LL.Error | LL.Warning | LL.Info | LL.Debug;
+
+    private static string get(string str) {
+        if(str != string.init)
+            return str~newline~"    ";
+        else return string.init;
+    }
+
+    private static string get(Throwable thr) {
+        string str;
+
+        if(thr !is null) {
+            str ~= thr.file~":"~thr.line.to!string;
+
+            if(thr.msg != string.init)
+                str ~= "("~thr.msg~newline~")";
+
+            str ~= newline~thr.info.to!string;
+        }
+
+        if(thr.as!FlowException !is null && thr.as!FlowException.data !is null) {
+            str ~= sep;
+            str ~= thr.as!FlowException.data.json(true)~newline;
+            str ~= sep;
+            str ~= sep;
+        }
+
+        return str;
+    }
+
+    private static string get(Data d) {
+        return Log.sep~(d !is null ? d.json(true) : "NULL");
+    }
+
     public static void msg(LL level, string msg) {
-        if(level & logLevel) {
-            auto t = "["~level.to!string~"] ";
-            t ~= msg;
+        Log.msg(level, msg, null, null.as!Data);
+    }
 
-            synchronized {
-                writeln(t);
-                //flush();
-            }
+    public static void msg(LL level, string msg, Throwable thr) {
+        Log.msg(level, msg, thr, null.as!Data);
+    }
+    
+    public static void msg(DT)(LL level, string msg, DT dIn) if(is(DT : Data) || (isArray!DT && is(ElementType!DT:Data))) {
+        Log.msg(level, msg, null, dIn);
+    }
+
+    public static void msg(LL level, Throwable thr) {
+        Log.msg(level, string.init, thr, null.as!Data);
+    }
+
+    public static void msg(DT)(LL level, Throwable thr, DT dIn) if(is(DT : Data) || (isArray!DT && is(ElementType!DT:Data))) {
+        Log.msg(level, string.init, thr, dIn);
+    }
+
+    public static void msg(DT)(LL level, DT dIn) if(is(DT : Data) || (isArray!DT && is(ElementType!DT:Data))) {
+        Log.msg(level, string.init, null, dIn);
+    }
+
+    public static void msg(DT)(LL level, string msg, Throwable thr, DT dIn) if(is(DT : Data) || (isArray!DT && is(ElementType!DT:Data))) {
+        if(level & logLevel) {
+            string str = Log.get(msg);
+            str ~= Log.get(thr);
+            static if(isArray!DT) {
+                foreach(d; dIn)
+                    str ~= Log.get(d);
+            } else str ~= Log.get(dIn);
+            Log.print(level, str);
         }
     }
 
-    public static void msg(LL level, Throwable thr, string msg=string.init) {
-        if(level & logLevel) {
-            string t;
-            
-            if(msg != string.init)
-                t ~= msg~newline~"    ";
+    private static void print(LL level, string msg) {
+        auto str = "["~level.to!string~"] ";
+        str ~= msg;
 
-            if(thr !is null) {
-                t ~= thr.file~":"~thr.line.to!string;
-
-                if(thr.msg != string.init)
-                    t ~= "("~thr.msg~newline~")";
-
-                t ~= newline~thr.info.to!string;
-            }
-
-            if(cast(FlowException)thr !is null && (cast(FlowException)thr).data !is null) {
-                t ~= sep;
-                t ~= (cast(FlowException)thr).data.json(true)~newline;
-                t ~= sep;
-                t ~= sep;
-            }
-
-            Log.msg(level, t);
-        }
-    }
-
-    public static void msg(LL level, Data d, string msg = string.init) {
-        if(level & logLevel) {
-            auto t = msg;
-            t ~= Log.sep;
-            t ~= d !is null ? d.json(true) : "NULL";
-            Log.msg(level, t);
+        synchronized {
+            writeln(str);
+            //flush();
         }
     }
 }
