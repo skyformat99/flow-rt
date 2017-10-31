@@ -348,18 +348,109 @@ class Log {
 }
 
 import core.time;
-import std.parallelism;
+import core.atomic;
+import core.thread;
+import core.sync.mutex;
+import core.sync.condition;
+
 package enum TaskerState {
     Stopped = 0,
     Started
 }
 
-package class Tasker : StateMachine!TaskerState {
-    private size_t worker;
-    private TaskPool tp;
+private enum TaskStatus : ubyte
+{
+    NotStarted,
+    InProgress,
+    Done
+}
 
-    this(size_t worker) {
-        this.worker = worker;
+private struct Task {
+    this(void delegate() j) {
+        job = j;
+    }
+
+    Task* prev;
+    Task* next;
+
+    Throwable exception;
+    ubyte taskStatus = TaskStatus.NotStarted;
+
+    @property bool done()
+    {
+        if (atomicReadUbyte(taskStatus) == TaskStatus.Done)
+        {
+            if (exception)
+            {
+                throw exception;
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    void delegate() job;
+}
+
+private final class TaskerThread : Thread
+{
+    this(void delegate() dg)
+    {
+        super(dg);
+    }
+
+    Tasker pool;
+}
+
+package final class Tasker : StateMachine!TaskerState {
+    private TaskerThread[] pool;
+
+    private Task* head;
+    private Task* tail;
+    private PoolState status = PoolState.running;
+    private Condition workerCondition;
+    private Condition waiterCondition;
+    private Mutex queueMutex;
+    private Mutex waiterMutex; // For waiterCondition
+
+    // The instanceStartIndex of the next instance that will be created.
+    __gshared static size_t nextInstanceIndex = 1;
+
+    // The index of the current thread.
+    private static size_t threadIndex;
+
+    // The index of the first thread in this instance.
+    immutable size_t instanceStartIndex;
+    
+    // The index that the next thread to be initialized in this pool will have.
+    private size_t nextThreadIndex;
+
+    private enum PoolState : ubyte {
+        running,
+        finishing,
+        stopNow
+    }
+
+    this(size_t nWorkers = 1) {
+        synchronized(typeid(Tasker))
+        {
+            instanceStartIndex = nextInstanceIndex;
+
+            // The first worker thread to be initialized will have this index,
+            // and will increment it.  The second worker to be initialized will
+            // have this index plus 1.
+            nextThreadIndex = instanceStartIndex;
+            nextInstanceIndex += nWorkers;
+        }
+
+        this.queueMutex = new Mutex(this);
+        this.waiterMutex = new Mutex();
+        workerCondition = new Condition(queueMutex);
+        waiterCondition = new Condition(waiterMutex);
+        
+        this.pool = new TaskerThread[nWorkers];
     }
 
     override protected bool onStateChanging(TaskerState o, TaskerState n) {
@@ -375,15 +466,30 @@ package class Tasker : StateMachine!TaskerState {
     override protected void onStateChanged(TaskerState o, TaskerState n) {
         switch(n) {
             case TaskerState.Started:
-                this.tp = new TaskPool(this.worker);
-                break;
-            case TaskerState.Stopped:
-                if(this.tp !is null) {
-                    this.tp.finish(true); // we need to block until there are no tasks running anymore
-                    this.tp = null;
+                // creating worker threads
+                foreach (ref poolThread; this.pool) {
+                    poolThread = new TaskerThread(&startWorkLoop);
+                    poolThread.pool = this;
+                    poolThread.start();
                 }
                 break;
-            default: break;
+            case TaskerState.Stopped:
+                if(o == TaskerState.Started) { // stop only if it is started
+                    {
+                        this.queueLock();
+                        scope(exit) this.queueUnlock();
+                        atomicCasUbyte(this.status, PoolState.running, PoolState.finishing);
+                        this.notifyAll();
+                    }
+                    // Use this thread as a worker until everything is finished.
+                    this.executeWorkLoop();
+
+                    foreach (t; this.pool)
+                        t.join();
+                }
+                break;
+            default:
+                break;
         }
     }
 
@@ -395,11 +501,147 @@ package class Tasker : StateMachine!TaskerState {
         this.state = TaskerState.Stopped;
     }
 
-    void run(string id, size_t costs, void delegate() t, Duration d = Duration.init) {
+    // This function performs initialization for each thread that affects
+    // thread local storage and therefore must be done from within the
+    // worker thread.  It then calls executeWorkLoop().
+    private void startWorkLoop() {
+        // Initialize thread index.
+        {
+            this.queueLock();
+            scope(exit) this.queueUnlock();
+            this.threadIndex = this.nextThreadIndex;
+            this.nextThreadIndex++;
+        }
+
+        this.executeWorkLoop();
+    }
+
+    // This is the main work loop that worker threads spend their time in
+    // until they terminate.  It's also entered by non-worker threads when
+    // finish() is called with the blocking variable set to true.
+    private void executeWorkLoop() {
+        while (atomicReadUbyte(this.status) != PoolState.stopNow) {
+            Task* task = pop();
+            if (task is null) {
+                if (atomicReadUbyte(this.status) == PoolState.finishing) {
+                    atomicSetUbyte(this.status, PoolState.stopNow);
+                    return;
+                }
+            } else {
+                this.doJob(task);
+            }
+        }
+    }
+
+    private void wait() {
+        this.workerCondition.wait();
+    }
+
+    private void notify() {
+        this.workerCondition.notify();
+    }
+
+    private void notifyAll() {
+        this.workerCondition.notifyAll();
+    }
+
+    private void notifyWaiters()
+    {
+        waiterCondition.notifyAll();
+    }
+
+    private void queueLock() {
+        assert(this.queueMutex);
+        this.queueMutex.lock();
+    }
+
+    private void queueUnlock() {
+        assert(this.queueMutex);
+        this.queueMutex.unlock();
+    }
+
+    private void waiterLock() {
+        this.waiterMutex.lock();
+    }
+
+    private void waiterUnlock() {
+        this.waiterMutex.unlock();
+    }
+
+    // Pop a task off the queue.
+    private Task* pop()
+    {
+        this.queueLock();
+        scope(exit) this.queueUnlock();
+        auto ret = this.popNoSync();
+        while (ret is null && this.status == PoolState.running)
+        {
+            this.wait();
+            ret = this.popNoSync();
+        }
+        return ret;
+    }
+
+    private Task* popNoSync()
+    out(returned)
+    {
+        /* If task.prev and task.next aren't null, then another thread
+         * can try to delete this task from the pool after it's
+         * alreadly been deleted/popped.
+         */
+        if (returned !is null)
+        {
+            assert(returned.next is null);
+            assert(returned.prev is null);
+        }
+    }
+    body
+    {
+        Task* returned = this.head;
+        if (this.head !is null)
+        {
+            this.head = this.head.next;
+            returned.prev = null;
+            returned.next = null;
+            returned.taskStatus = TaskStatus.InProgress;
+        }
+        if (this.head !is null)
+        {
+            this.head.prev = null;
+        }
+
+        return returned;
+    }
+
+    private void doJob(Task* job) {
+        assert(job.taskStatus == TaskStatus.InProgress);
+        assert(job.next is null);
+        assert(job.prev is null);
+
+        scope(exit) {
+            this.waiterLock();
+            scope(exit) this.waiterUnlock();
+            this.notifyWaiters();
+        }
+
+        try {
+            job.job();
+        } catch (Throwable thr) {
+            job.exception = thr;
+            Log.msg(LL.Fatal, "tasker failed to execute delegate", thr);
+        }
+
+        atomicSetUbyte(job.taskStatus, TaskStatus.Done);
+    }
+
+
+    void run(string id, size_t costs, void delegate() func, Duration d = Duration.init) {
         this.ensureState(TaskerState.Started);
 
-        if(d == Duration.init)
-            this.tp.put(task(t));
+        if(d == Duration.init) {
+            auto tsk = new Task(func);
+            this.abstractPut(tsk);
+        }
         else {
             throw new NotImplementedError;
             /*synchronized(this.delayedLock) {
@@ -408,6 +650,88 @@ package class Tasker : StateMachine!TaskerState {
             }*/
         }
     }
+    
+    // Push a task onto the queue.
+    private void abstractPut(Task* task)
+    {
+        queueLock();
+        scope(exit) queueUnlock();
+        abstractPutNoSync(task);
+    }
+
+    private void abstractPutNoSync(Task* task)
+    in
+    {
+        assert(task);
+    }
+    out
+    {
+        import std.conv : text;
+
+        assert(tail.prev !is tail);
+        assert(tail.next is null, text(tail.prev, '\t', tail.next));
+        if (tail.prev !is null)
+        {
+            assert(tail.prev.next is tail, text(tail.prev, '\t', tail.next));
+        }
+    }
+    body
+    {
+        // Not using enforce() to save on function call overhead since this
+        // is a performance critical function.
+        if (status != PoolState.running)
+        {
+            throw new Error(
+                "Cannot submit a new task to a pool after calling " ~
+                "finish() or stop()."
+            );
+        }
+
+        task.next = null;
+        if (head is null)   //Queue is empty.
+        {
+            head = task;
+            tail = task;
+            tail.prev = null;
+        }
+        else
+        {
+            assert(tail);
+            task.prev = tail;
+            tail.next = task;
+            tail = task;
+        }
+        notify();
+    }
+}
+
+/* Atomics code.  These forward to core.atomic, but are written like this
+   for two reasons:
+   1.  They used to actually contain ASM code and I don' want to have to change
+       to directly calling core.atomic in a zillion different places.
+   2.  core.atomic has some misc. issues that make my use cases difficult
+       without wrapping it.  If I didn't wrap it, casts would be required
+       basically everywhere.
+*/
+private void atomicSetUbyte(T)(ref T stuff, T newVal)
+if (__traits(isIntegral, T) && is(T : ubyte))
+{
+    //core.atomic.cas(cast(shared) &stuff, stuff, newVal);
+    atomicStore(*(cast(shared) &stuff), newVal);
+}
+
+private ubyte atomicReadUbyte(T)(ref T val)
+if (__traits(isIntegral, T) && is(T : ubyte))
+{
+    return atomicLoad(*(cast(shared) &val));
+}
+
+// This gets rid of the need for a lot of annoying casts in other parts of the
+// code, when enums are involved.
+private bool atomicCasUbyte(T)(ref T stuff, T testVal, T newVal)
+if (__traits(isIntegral, T) && is(T : ubyte))
+{
+    return core.atomic.cas(cast(shared) &stuff, testVal, newVal);
 }
 
 version(unittest) class TaskerTest {
