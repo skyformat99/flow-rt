@@ -13,6 +13,366 @@ private enum SystemState {
     Disposed
 }
 
+import core.time;
+import core.thread;
+import core.sync.mutex;
+import core.sync.condition;
+
+package enum ProcessorState {
+    Stopped = 0,
+    Started
+}
+
+private enum TaskStatus : ubyte
+{
+    NotStarted,
+    InProgress,
+    Done
+}
+
+private struct Task {
+    this(void delegate() j) {
+        job = j;
+    }
+
+    Task* prev;
+    Task* next;
+
+    Throwable exception;
+    ubyte taskStatus = TaskStatus.NotStarted;
+
+    @property bool done()
+    {
+        if (atomicReadUbyte(taskStatus) == TaskStatus.Done)
+        {
+            if (exception)
+            {
+                throw exception;
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    void delegate() job;
+}
+
+private final class ProcessorPipe : Thread
+{
+    this(void delegate() dg)
+    {
+        super(dg);
+    }
+
+    Processor processor;
+}
+
+package final class Processor : StateMachine!ProcessorState {
+    private ProcessorPipe[] pipes;
+    private Space space;
+
+    private Task* head;
+    private Task* tail;
+    private PoolState status = PoolState.running;
+    private Condition workerCondition;
+    private Condition waiterCondition;
+    private Mutex queueMutex;
+    private Mutex waiterMutex; // For waiterCondition
+
+    // The instanceStartIndex of the next instance that will be created.
+    __gshared static size_t nextInstanceIndex = 1;
+
+    // The index of the current thread.
+    private static size_t threadIndex;
+
+    // The index of the first thread in this instance.
+    immutable size_t instanceStartIndex;
+    
+    // The index that the next thread to be initialized in this pool will have.
+    private size_t nextThreadIndex;
+
+    private enum PoolState : ubyte {
+        running,
+        finishing,
+        stopNow
+    }
+
+    this(Space spc, size_t nWorkers = 1) {
+        this.space = spc;
+
+        synchronized(typeid(Processor))
+        {
+            instanceStartIndex = nextInstanceIndex;
+
+            // The first worker thread to be initialized will have this index,
+            // and will increment it.  The second worker to be initialized will
+            // have this index plus 1.
+            nextThreadIndex = instanceStartIndex;
+            nextInstanceIndex += nWorkers;
+        }
+
+        this.queueMutex = new Mutex(this);
+        this.waiterMutex = new Mutex();
+        workerCondition = new Condition(queueMutex);
+        waiterCondition = new Condition(waiterMutex);
+        
+        this.pipes = new ProcessorPipe[nWorkers];
+    }
+
+    override protected bool onStateChanging(ProcessorState o, ProcessorState n) {
+        switch(n) {
+            case ProcessorState.Started:
+                return o == ProcessorState.Stopped;
+            case ProcessorState.Stopped:
+                return o == ProcessorState.Started;
+            default: return false;
+        }
+    }
+
+    override protected void onStateChanged(ProcessorState o, ProcessorState n) {
+        switch(n) {
+            case ProcessorState.Started:
+                // creating worker threads
+                foreach (ref poolThread; this.pipes) {
+                    poolThread = new ProcessorPipe(&startWorkLoop);
+                    poolThread.processor = this;
+                    poolThread.start();
+                }
+                break;
+            case ProcessorState.Stopped:
+                if(o == ProcessorState.Started) { // stop only if it is started
+                    {
+                        this.queueLock();
+                        scope(exit) this.queueUnlock();
+                        atomicCasUbyte(this.status, PoolState.running, PoolState.finishing);
+                        this.notifyAll();
+                    }
+                    // Use this thread as a worker until everything is finished.
+                    this.executeWorkLoop();
+
+                    foreach (t; this.pipes)
+                        t.join();
+                }
+                break;
+            default:
+                break;
+        }
+    }
+
+    void start() {
+        this.state = ProcessorState.Started;
+    }
+
+    void stop() {
+        this.state = ProcessorState.Stopped;
+    }
+
+    // This function performs initialization for each thread that affects
+    // thread local storage and therefore must be done from within the
+    // worker thread.  It then calls executeWorkLoop().
+    private void startWorkLoop() {
+        // Initialize thread index.
+        {
+            this.queueLock();
+            scope(exit) this.queueUnlock();
+            this.threadIndex = this.nextThreadIndex;
+            this.nextThreadIndex++;
+        }
+
+        this.executeWorkLoop();
+    }
+
+    // This is the main work loop that worker threads spend their time in
+    // until they terminate.  It's also entered by non-worker threads when
+    // finish() is called with the blocking variable set to true.
+    private void executeWorkLoop() {
+        while (atomicReadUbyte(this.status) != PoolState.stopNow) {
+            Task* task = pop();
+            if (task is null) {
+                if (atomicReadUbyte(this.status) == PoolState.finishing) {
+                    atomicSetUbyte(this.status, PoolState.stopNow);
+                    return;
+                }
+            } else {
+                this.doJob(task);
+            }
+        }
+    }
+
+    private void wait() {
+        this.workerCondition.wait();
+    }
+
+    private void notify() {
+        this.workerCondition.notify();
+    }
+
+    private void notifyAll() {
+        this.workerCondition.notifyAll();
+    }
+
+    private void notifyWaiters()
+    {
+        waiterCondition.notifyAll();
+    }
+
+    private void queueLock() {
+        assert(this.queueMutex);
+        this.queueMutex.lock();
+    }
+
+    private void queueUnlock() {
+        assert(this.queueMutex);
+        this.queueMutex.unlock();
+    }
+
+    private void waiterLock() {
+        this.waiterMutex.lock();
+    }
+
+    private void waiterUnlock() {
+        this.waiterMutex.unlock();
+    }
+
+    // Pop a task off the queue.
+    private Task* pop()
+    {
+        this.queueLock();
+        scope(exit) this.queueUnlock();
+        auto ret = this.popNoSync();
+        while (ret is null && this.status == PoolState.running)
+        {
+            this.wait();
+            ret = this.popNoSync();
+        }
+        return ret;
+    }
+
+    private Task* popNoSync()
+    out(returned)
+    {
+        /* If task.prev and task.next aren't null, then another thread
+         * can try to delete this task from the pool after it's
+         * alreadly been deleted/popped.
+         */
+        if (returned !is null)
+        {
+            assert(returned.next is null);
+            assert(returned.prev is null);
+        }
+    }
+    body
+    {
+        Task* returned = this.head;
+        if (this.head !is null)
+        {
+            this.head = this.head.next;
+            returned.prev = null;
+            returned.next = null;
+            returned.taskStatus = TaskStatus.InProgress;
+        }
+        if (this.head !is null)
+        {
+            this.head.prev = null;
+        }
+
+        return returned;
+    }
+
+    private void doJob(Task* job) {
+        assert(job.taskStatus == TaskStatus.InProgress);
+        assert(job.next is null);
+        assert(job.prev is null);
+
+        scope(exit) {
+            this.waiterLock();
+            scope(exit) this.waiterUnlock();
+            this.notifyWaiters();
+        }
+
+        try {
+            job.job();
+        } catch (Throwable thr) {
+            job.exception = thr;
+            Log.msg(LL.Fatal, "tasker failed to execute delegate", thr);
+        }
+
+        atomicSetUbyte(job.taskStatus, TaskStatus.Done);
+    }
+
+
+    void run(string id, size_t costs, void delegate() func, Duration d = Duration.init) {
+        this.ensureState(ProcessorState.Started);
+
+        if(d == Duration.init) {
+            auto tsk = new Task(func);
+            this.abstractPut(tsk);
+        }
+        else {
+            throw new NotImplementedError;
+            /*synchronized(this.delayedLock) {
+                auto target = MonoTime.currTime + d;
+                this.delayed[target] ~= t;
+            }*/
+        }
+    }
+    
+    // Push a task onto the queue.
+    private void abstractPut(Task* task)
+    {
+        queueLock();
+        scope(exit) queueUnlock();
+        abstractPutNoSync(task);
+    }
+
+    private void abstractPutNoSync(Task* task)
+    in
+    {
+        assert(task);
+    }
+    out
+    {
+        import std.conv : text;
+
+        assert(tail.prev !is tail);
+        assert(tail.next is null, text(tail.prev, '\t', tail.next));
+        if (tail.prev !is null)
+        {
+            assert(tail.prev.next is tail, text(tail.prev, '\t', tail.next));
+        }
+    }
+    body
+    {
+        // Not using enforce() to save on function call overhead since this
+        // is a performance critical function.
+        if (status != PoolState.running)
+        {
+            throw new Error(
+                "Cannot submit a new task to a pool after calling " ~
+                "finish() or stop()."
+            );
+        }
+
+        task.next = null;
+        if (head is null)   //Queue is empty.
+        {
+            head = task;
+            tail = task;
+            tail.prev = null;
+        }
+        else
+        {
+            assert(tail);
+            task.prev = tail;
+            tail.next = task;
+            tail = task;
+        }
+        notify();
+    }
+}
+
 abstract class Tick {    
     private TickMeta meta;
     private Entity entity;
@@ -689,7 +1049,7 @@ private bool matches(Space space, string pattern) {
 class Space : StateMachine!SystemState {
     private SpaceMeta meta;
     private Process process;
-    private Tasker tasker;
+    private Processor tasker;
 
     private Entity[string] entities;
 
@@ -851,7 +1211,7 @@ class Space : StateMachine!SystemState {
                 // if worker amount == size_t.init (0) use default (vcores - 2) but min 2
                 if(this.meta.worker < 1)
                     this.meta.worker = threadsPerCPU > 3 ? threadsPerCPU-2 : 2;
-                this.tasker = new Tasker(this.meta.worker);
+                this.tasker = new Processor(this, this.meta.worker);
                 this.tasker.start();
 
                 // creating entities
