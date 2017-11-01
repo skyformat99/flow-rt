@@ -23,27 +23,27 @@ package enum ProcessorState {
     Started
 }
 
-private enum TaskStatus : ubyte
+private enum JobStatus : ubyte
 {
     NotStarted,
     InProgress,
     Done
 }
 
-private struct Task {
-    this(void delegate() j) {
-        job = j;
+private struct Job {
+    this(Tick t) {
+        tick = t;
     }
 
-    Task* prev;
-    Task* next;
+    Job* prev;
+    Job* next;
 
     Throwable exception;
-    ubyte taskStatus = TaskStatus.NotStarted;
+    ubyte taskStatus = JobStatus.NotStarted;
 
     @property bool done()
     {
-        if (atomicReadUbyte(taskStatus) == TaskStatus.Done)
+        if (atomicReadUbyte(taskStatus) == JobStatus.Done)
         {
             if (exception)
             {
@@ -56,10 +56,10 @@ private struct Task {
         return false;
     }
 
-    void delegate() job;
+    Tick tick;
 }
 
-private final class ProcessorPipe : Thread
+private final class Pipe : Thread
 {
     this(void delegate() dg)
     {
@@ -70,12 +70,12 @@ private final class ProcessorPipe : Thread
 }
 
 package final class Processor : StateMachine!ProcessorState {
-    private ProcessorPipe[] pipes;
-    private Space space;
+    private Pipe[] pipes;
 
-    private Task* head;
-    private Task* tail;
+    private Job* head;
+    private Job* tail;
     private PoolState status = PoolState.running;
+    private long nextTime;
     private Condition workerCondition;
     private Condition waiterCondition;
     private Mutex queueMutex;
@@ -99,8 +99,7 @@ package final class Processor : StateMachine!ProcessorState {
         stopNow
     }
 
-    this(Space spc, size_t nWorkers = 1) {
-        this.space = spc;
+    this(size_t nWorkers = 1) {
 
         synchronized(typeid(Processor))
         {
@@ -118,7 +117,7 @@ package final class Processor : StateMachine!ProcessorState {
         workerCondition = new Condition(queueMutex);
         waiterCondition = new Condition(waiterMutex);
         
-        this.pipes = new ProcessorPipe[nWorkers];
+        this.pipes = new Pipe[nWorkers];
     }
 
     override protected bool onStateChanging(ProcessorState o, ProcessorState n) {
@@ -136,7 +135,7 @@ package final class Processor : StateMachine!ProcessorState {
             case ProcessorState.Started:
                 // creating worker threads
                 foreach (ref poolThread; this.pipes) {
-                    poolThread = new ProcessorPipe(&startWorkLoop);
+                    poolThread = new Pipe(&startWorkLoop);
                     poolThread.processor = this;
                     poolThread.start();
                 }
@@ -189,7 +188,7 @@ package final class Processor : StateMachine!ProcessorState {
     // finish() is called with the blocking variable set to true.
     private void executeWorkLoop() {
         while (atomicReadUbyte(this.status) != PoolState.stopNow) {
-            Task* task = pop();
+            Job* task = pop();
             if (task is null) {
                 if (atomicReadUbyte(this.status) == PoolState.finishing) {
                     atomicSetUbyte(this.status, PoolState.stopNow);
@@ -202,7 +201,14 @@ package final class Processor : StateMachine!ProcessorState {
     }
 
     private void wait() {
-        this.workerCondition.wait();
+        import std.datetime.systime;
+        auto stdTime = Clock.currStdTime;
+
+        // if there is nothing enqueued wait for notification
+        if(this.nextTime == long.max)
+            this.workerCondition.wait();
+        else if(this.nextTime - stdTime > 0) // otherwise wait for schedule or notification
+            this.workerCondition.wait((this.nextTime - stdTime).hnsecs);
     }
 
     private void notify() {
@@ -237,7 +243,7 @@ package final class Processor : StateMachine!ProcessorState {
     }
 
     // Pop a task off the queue.
-    private Task* pop()
+    private Job* pop()
     {
         this.queueLock();
         scope(exit) this.queueUnlock();
@@ -250,39 +256,53 @@ package final class Processor : StateMachine!ProcessorState {
         return ret;
     }
 
-    private Task* popNoSync()
-    out(returned)
+    private Job* popNoSync()
+    out(ret)
     {
         /* If task.prev and task.next aren't null, then another thread
          * can try to delete this task from the pool after it's
          * alreadly been deleted/popped.
          */
-        if (returned !is null)
+        if (ret !is null)
         {
-            assert(returned.next is null);
-            assert(returned.prev is null);
+            assert(ret.next is null);
+            assert(ret.prev is null);
         }
     }
     body
     {
-        Task* returned = this.head;
-        if (this.head !is null)
-        {
-            this.head = this.head.next;
-            returned.prev = null;
-            returned.next = null;
-            returned.taskStatus = TaskStatus.InProgress;
+        import std.datetime.systime;
+        auto stdTime = Clock.currStdTime;
+
+        this.nextTime = long.max;
+        Job* ret = this.head;
+        if(ret !is null) {
+            // skips ticks not to execute yet
+            while(ret !is null && ret.tick.time > stdTime) {
+                if(ret.tick.time < this.nextTime)
+                    this.nextTime = ret.tick.time;
+                ret = ret.next;
+            }
         }
+
+        if (ret !is null)
+        {
+            this.head = ret.next;
+            ret.prev = null;
+            ret.next = null;
+            ret.taskStatus = JobStatus.InProgress;
+        }
+
         if (this.head !is null)
         {
             this.head.prev = null;
         }
 
-        return returned;
+        return ret;
     }
 
-    private void doJob(Task* job) {
-        assert(job.taskStatus == TaskStatus.InProgress);
+    private void doJob(Job* job) {
+        assert(job.taskStatus == JobStatus.InProgress);
         assert(job.next is null);
         assert(job.prev is null);
 
@@ -293,41 +313,32 @@ package final class Processor : StateMachine!ProcessorState {
         }
 
         try {
-            job.job();
+            job.tick.exec();
         } catch (Throwable thr) {
             job.exception = thr;
             Log.msg(LL.Fatal, "tasker failed to execute delegate", thr);
         }
 
-        atomicSetUbyte(job.taskStatus, TaskStatus.Done);
+        atomicSetUbyte(job.taskStatus, JobStatus.Done);
     }
 
 
-    void run(string id, size_t costs, void delegate() func, Duration d = Duration.init) {
+    void run(string id, Tick t) {
         this.ensureState(ProcessorState.Started);
 
-        if(d == Duration.init) {
-            auto tsk = new Task(func);
-            this.abstractPut(tsk);
-        }
-        else {
-            throw new NotImplementedError;
-            /*synchronized(this.delayedLock) {
-                auto target = MonoTime.currTime + d;
-                this.delayed[target] ~= t;
-            }*/
-        }
+        auto j = new Job(t);
+        this.abstractPut(j);
     }
     
     // Push a task onto the queue.
-    private void abstractPut(Task* task)
+    private void abstractPut(Job* task)
     {
         queueLock();
         scope(exit) queueUnlock();
         abstractPutNoSync(task);
     }
 
-    private void abstractPutNoSync(Task* task)
+    private void abstractPutNoSync(Job* task)
     in
     {
         assert(task);
@@ -377,6 +388,7 @@ abstract class Tick {
     private TickMeta meta;
     private Entity entity;
     private Ticker ticker;
+    private long time;
 
     protected @property TickInfo info() {return this.meta.info !is null ? this.meta.info.clone : null;}
     protected @property Signal trigger() {return this.meta.trigger !is null ? this.meta.trigger.clone : null;}
@@ -397,23 +409,60 @@ abstract class Tick {
     /// predicted costs of tick (default=0)
     public @property size_t costs() {return 0;}
 
+    /// execute tick meant to be called by processor
+    package void exec() {
+        try {
+            // run tick
+            Log.msg(LL.FDebug, this.logPrefix~"running tick", this.meta);
+            this.run();
+            Log.msg(LL.FDebug, this.logPrefix~"finished tick", this.meta);
+            
+            this.ticker.actual = null;
+            this.ticker.tick();
+        } catch(Throwable thr) {
+            Log.msg(LL.Error, this.logPrefix~"run failed", thr);
+            try {
+                Log.msg(LL.Info, this.logPrefix~"handling run error", thr, this.meta);
+                this.error(thr);
+                
+                this.ticker.actual = null;        
+                this.ticker.tick();
+            } catch(Throwable thr2) {
+                // if even handling exception failes notify that an error occured
+                Log.msg(LL.Fatal, this.logPrefix~"handling error failed", thr2);
+                this.ticker.actual = null;
+                if(this.ticker.state != SystemState.Disposed) this.ticker.dispose;
+            }
+        }
+    }
+
     /// algorithm implementation of tick
     public void run() {}
 
     /// exception handling implementation of tick
     public void error(Throwable thr) {}
-
+    
     /// set next tick in causal string
     protected bool next(string tick, Data data = null) {
+        return this.next(tick, Duration.init, data);
+    }
+
+    /// set next tick in causal string with delay
+    protected bool next(string tick, Duration delay, Data data = null) {
+        import std.datetime.systime;
+
+        auto stdTime = Clock.currStdTime;
         auto t = this.entity.meta.createTickMeta(tick, this.meta.info.group).createTick(this.entity);
         if(t !is null) {
+            // TODO max delay??????
+            t.time = stdTime + delay.total!"hnsecs";
             t.ticker = this.ticker;
             t.meta.trigger = this.meta.trigger;
             t.meta.previous = this.meta.info;
             t.meta.data = data;
 
             if(t.checkAccept) {
-                this.ticker.coming = t;
+                this.ticker.next = t;
                 return true;
             } else return false;
         } else return false;
@@ -564,7 +613,7 @@ private class Ticker : StateMachine!SystemState {
     UUID id;
     Entity entity;
     Tick actual;
-    Tick coming;
+    Tick next;
     Exception error;
 
     private this(Entity b) {
@@ -576,8 +625,8 @@ private class Ticker : StateMachine!SystemState {
 
     this(Entity b, Tick initial) {
         this(b);
-        this.coming = initial;
-        this.coming.ticker = this;
+        this.next = initial;
+        this.next.ticker = this;
     }
 
     ~this() {
@@ -647,17 +696,17 @@ private class Ticker : StateMachine!SystemState {
         }
     }
 
-    /// run coming tick if possible, is usually called by a tasker
+    /// run next tick if possible, is usually called by a tasker
     void tick() {
-            if(this.coming !is null) {
+            if(this.next !is null) {
                 // if in ticking state try to run created tick or notify wha nothing happens
                 if(this.state == SystemState.Ticking) {
                     // create a new tick of given type or notify failing and stop
-                    if(this.coming !is null) {
+                    if(this.next !is null) {
                         // check if entity is still running after getting the sync
-                        this.actual = this.coming;
-                        this.coming = null;
-                        this.entity.space.tasker.run(this.entity.meta.ptr.addr, this.actual.costs, &this.runTick);
+                        this.actual = this.next;
+                        this.next = null;
+                        this.entity.space.tasker.run(this.entity.meta.ptr.addr, this.actual);
                     } else {
                         Log.msg(LL.Error, this.logPrefix~"could not create tick -> ending");
                         if(this.state != SystemState.Disposed) this.dispose;
@@ -669,33 +718,6 @@ private class Ticker : StateMachine!SystemState {
                 Log.msg(LL.FDebug, this.logPrefix~"nothing to do, ticker is ending");
                 if(this.state != SystemState.Disposed) this.dispose;
             }
-    }
-
-    /// run coming tick and handle exception if it occurs
-    void runTick() {
-        try {
-            // run tick
-            Log.msg(LL.FDebug, this.logPrefix~"running tick", this.actual.meta);
-            this.actual.run();
-            Log.msg(LL.FDebug, this.logPrefix~"finished tick", this.actual.meta);
-            
-            this.actual = null;
-            this.tick();
-        } catch(Throwable thr) {
-            Log.msg(LL.Error, this.actual.logPrefix~"run failed", thr);
-            try {
-                Log.msg(LL.Info, this.logPrefix~"handling run error", thr, this.actual.meta);
-                this.actual.error(thr);
-                
-                this.actual = null;        
-                this.tick();
-            } catch(Throwable thr2) {
-                // if even handling exception failes notify that an error occured
-                Log.msg(LL.Fatal, this.actual.logPrefix~"handling error failed", thr2);
-                this.actual = null;
-                if(this.state != SystemState.Disposed) this.dispose;
-            }
-        }
     }
 }
 
@@ -728,9 +750,9 @@ private class Entity : StateMachine!SystemState {
     /// disposes a ticker
     void detach(Ticker t) {
         synchronized(this.lock.writer) {
-            if(t.coming !is null)
+            if(t.next !is null)
                 synchronized(this.metaLock.writer)
-                    this.meta.ticks ~= t.coming.meta;
+                    this.meta.ticks ~= t.next.meta;
             this.ticker.remove(t.id);
         }
         t.destroy;
@@ -953,12 +975,12 @@ private class Entity : StateMachine!SystemState {
                 break;
             case SystemState.Frozen: 
                 synchronized(this.lock.writer) {
-                    // stopping and destroying all ticker and freeze coming ticks
+                    // stopping and destroying all ticker and freeze next ticks
                     foreach(t; this.ticker.values.dup) {
                         t.detaching = false;
                         t.stop();
-                        if(t.coming !is null)
-                            this.meta.ticks ~= t.coming.meta;
+                        if(t.next !is null)
+                            this.meta.ticks ~= t.next.meta;
                         this.ticker.remove(t.id);
                         t.destroy();
                     }
@@ -1211,7 +1233,7 @@ class Space : StateMachine!SystemState {
                 // if worker amount == size_t.init (0) use default (vcores - 2) but min 2
                 if(this.meta.worker < 1)
                     this.meta.worker = threadsPerCPU > 3 ? threadsPerCPU-2 : 2;
-                this.tasker = new Processor(this, this.meta.worker);
+                this.tasker = new Processor(this.meta.worker);
                 this.tasker.start();
 
                 // creating entities
@@ -1788,18 +1810,23 @@ version(unittest) {
         mixin field!(bool, "onCreated");
         mixin field!(bool, "onTicking");
         mixin field!(bool, "onFrozen");
+        mixin field!(bool, "timeOk");
     }
 
     class TestTickData : Data {
         mixin data;
 
         mixin field!(size_t, "cnt");
+        mixin field!(long, "lastTime");
     }
     
     class TestTick : Tick {
         import flow.core.util;
 
         override void run() {
+            import std.datetime.systime;
+            auto stdTime = Clock.currStdTime;
+
             auto c = this.context.as!TestTickContext;
             auto d = this.data.as!TestTickData !is null ?
                 this.data.as!TestTickData :
@@ -1812,6 +1839,9 @@ version(unittest) {
 
             d.cnt++;
 
+            c.timeOk = d.lastTime == long.init || c.timeOk && d.cnt > 4 || (c.timeOk && d.lastTime + 100.msecs.total!"hnsecs" <= stdTime);
+            d.lastTime = stdTime;
+
             if(d.cnt == 4) {
                 this.fork(this.info.type, data);
                 throw new TestTickException;
@@ -1823,7 +1853,7 @@ version(unittest) {
                 synchronized(this.sync.writer)
                     c.cnt += d.cnt;
 
-                this.next("flow.core.engine.TestTick", d);
+                this.next("flow.core.engine.TestTick", 100.msecs, d);
             }
         }
 
@@ -1950,6 +1980,7 @@ unittest {
     assert(sm.entities[0].context.as!TestTickContext.onCreated, "onCreated entity event wasn't triggered");
     assert(sm.entities[0].context.as!TestTickContext.onTicking, "onTicking entity event wasn't triggered");
     assert(sm.entities[0].context.as!TestTickContext.onFrozen, "onFrozen entity event wasn't triggered");
+    assert(sm.entities[0].context.as!TestTickContext.timeOk, "delays were not respected in frame");
     assert(sm.entities[0].context.as!TestTickContext.cnt == 6, "logic wasn't executed correct, got "~sm.entities[0].context.as!TestTickContext.cnt.to!string~" instead of 6");
     assert(sm.entities[0].context.as!TestTickContext.trigger !is null, "trigger was not passed correctly");
     assert(sm.entities[0].context.as!TestTickContext.trigger.group == g, "group was not passed correctly to signal");
