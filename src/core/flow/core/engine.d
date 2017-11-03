@@ -804,7 +804,7 @@ private class Entity : StateMachine!SystemState {
     }
 
     /// registers an event if not registered
-    void register(EventType et, string t) {
+    void registerEvent(string et, string t) {
         synchronized(this.metaLock.writer) {
             foreach(e; this.meta.events)
                 if(e.type == et && e.tick == t)
@@ -818,7 +818,7 @@ private class Entity : StateMachine!SystemState {
     }
 
     /// deregisters an event if registerd
-    void deregister(EventType et, string t) {
+    void deregisterEvent(string et, string t) {
         import std.algorithm.mutation;
 
         synchronized(this.metaLock.writer) {
@@ -934,7 +934,7 @@ private class Entity : StateMachine!SystemState {
             case SystemState.Created:
                 synchronized(this.metaLock.reader) {
                     // running onCreated ticks
-                    foreach(e; this.meta.events.filter!(e => e.type == EventType.OnCreated)) {
+                    foreach(e; this.meta.events.filter!(e => e.type == "Entity.OnCreated")) {
                         auto t = this.meta.createTickMeta(e.tick).createTick(this);
 
                         if(t.checkAccept) {
@@ -950,7 +950,7 @@ private class Entity : StateMachine!SystemState {
                 // here we need a writerlock since everyone could do that
                 synchronized(this.metaLock.reader) {
                     // running onTicking ticks
-                    foreach(e; this.meta.events.filter!(e => e.type == EventType.OnTicking)) {
+                    foreach(e; this.meta.events.filter!(e => e.type == "Entity.OnTicking")) {
                         auto t = this.meta.createTickMeta(e.tick).createTick(this);
                         if(t.checkAccept) {
                             auto ticker = new Ticker(this, t);
@@ -988,7 +988,7 @@ private class Entity : StateMachine!SystemState {
 
                 synchronized(this.metaLock.reader) {
                     // running onFrozen ticks
-                    foreach(e; this.meta.events.filter!(e => e.type == EventType.OnFrozen)) {
+                    foreach(e; this.meta.events.filter!(e => e.type == "Entity.OnFrozen")) {
                         auto t = this.meta.createTickMeta(e.tick).createTick(this);
                         if(t.checkAccept) {
                             auto ticker = new Ticker(this, t);
@@ -1002,7 +1002,7 @@ private class Entity : StateMachine!SystemState {
             case SystemState.Disposed:
                 synchronized(this.metaLock.reader) {
                     // running onDisposed ticks
-                    foreach(e; this.meta.events.filter!(e => e.type == EventType.OnDisposed)) {
+                    foreach(e; this.meta.events.filter!(e => e.type == "Entity.OnDisposed")) {
                         auto ticker = new Ticker(this, this.meta.createTickMeta(e.tick).createTick(this));
                         ticker.start(false);
                         ticker.join();
@@ -1918,15 +1918,15 @@ version(unittest) {
         e.ptr.id = "e";
 
         auto onc = new Event;
-        onc.type = EventType.OnCreated;
+        onc.type = "Entity.OnCreated";
         onc.tick = "flow.core.engine.TestOnCreatedTick";
         e.events ~= onc;
         auto ont = new Event;
-        ont.type = EventType.OnTicking;
+        ont.type = "Entity.OnTicking";
         ont.tick = "flow.core.engine.TestOnTickingTick";
         e.events ~= ont;
         auto onf = new Event;
-        onf.type = EventType.OnFrozen;
+        onf.type = "Entity.OnFrozen";
         onf.tick = "flow.core.engine.TestOnFrozenTick";
         e.events ~= onf;
 
