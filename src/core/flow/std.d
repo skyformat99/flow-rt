@@ -145,10 +145,17 @@ enum EntityAccess {
     Global
 }
 
+enum EventType {
+    OnCreated,
+    OnTicking,
+    OnFrozen,
+    OnDisposed
+}
+
 class Event : Data {
     mixin data;
 
-    mixin field!(string, "type");
+    mixin field!(EventType, "type");
     mixin field!(string, "tick");
 }
 
