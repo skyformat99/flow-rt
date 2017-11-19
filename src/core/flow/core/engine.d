@@ -1,10 +1,11 @@
 module flow.core.engine;
 
-import flow.core.util, flow.core.data;
-import flow.std;
-
-import core.thread, core.sync.rwmutex;
-import std.uuid, std.string;
+private static import core.thread;
+private static import flow.core.data;
+private static import flow.data.engine;
+private static import flow.util.error;
+private static import flow.util.state;
+private static import std.uuid;
 
 private enum SystemState {
     Created = 0,
@@ -12,11 +13,6 @@ private enum SystemState {
     Frozen,
     Disposed
 }
-
-import core.time;
-import core.thread;
-import core.sync.mutex;
-import core.sync.condition;
 
 package enum ProcessorState {
     Stopped = 0,
@@ -43,6 +39,8 @@ private struct Job {
 
     @property bool done()
     {
+        import flow.util.atomic;
+
         if (atomicReadUbyte(taskStatus) == JobStatus.Done)
         {
             if (exception)
@@ -59,7 +57,7 @@ private struct Job {
     Tick tick;
 }
 
-private final class Pipe : Thread
+private final class Pipe : core.thread.Thread
 {
     this(void delegate() dg)
     {
@@ -69,7 +67,10 @@ private final class Pipe : Thread
     Processor processor;
 }
 
-package final class Processor : StateMachine!ProcessorState {
+package final class Processor : flow.util.state.StateMachine!ProcessorState {
+    private import core.sync.condition;
+    private import core.sync.mutex;
+    
     private Pipe[] pipes;
 
     private Job* head;
@@ -143,6 +144,8 @@ package final class Processor : StateMachine!ProcessorState {
             case ProcessorState.Stopped:
                 if(o == ProcessorState.Started) { // stop only if it is started
                     {
+                        import flow.util.atomic;
+
                         this.queueLock();
                         scope(exit) this.queueUnlock();
                         atomicCasUbyte(this.status, PoolState.running, PoolState.finishing);
@@ -187,6 +190,8 @@ package final class Processor : StateMachine!ProcessorState {
     until they terminate.  It's also entered by non-worker threads when
     finish() is called with the blocking variable set to true. */
     private void executeWorkLoop() {
+        import flow.util.atomic;
+        
         while (atomicReadUbyte(this.status) != PoolState.stopNow) {
             Job* task = pop();
             if (task is null) {
@@ -302,6 +307,8 @@ package final class Processor : StateMachine!ProcessorState {
     }
 
     private void doJob(Job* job) {
+        import flow.util.atomic;
+
         assert(job.taskStatus == JobStatus.InProgress);
         assert(job.next is null);
         assert(job.prev is null);
@@ -315,6 +322,8 @@ package final class Processor : StateMachine!ProcessorState {
         try {
             job.tick.exec();
         } catch (Throwable thr) {
+            import flow.util.log;
+
             job.exception = thr;
             Log.msg(LL.Fatal, "tasker failed to execute delegate", thr);
         }
@@ -384,7 +393,12 @@ package final class Processor : StateMachine!ProcessorState {
     }
 }
 
-abstract class Tick {    
+abstract class Tick {
+    private import core.sync.rwmutex;
+    private import core.time;
+    private import flow.core.data;
+    private import flow.data.engine;
+
     private TickMeta meta;
     private Entity entity;
     private Ticker ticker;
@@ -411,6 +425,8 @@ abstract class Tick {
 
     /// execute tick meant to be called by processor
     package void exec() {
+        import flow.util.log;
+
         try {
             // run tick
             Log.msg(LL.FDebug, this.logPrefix~"running tick", this.meta);
@@ -483,12 +499,16 @@ abstract class Tick {
 
     /// gets the entity controller of a given entity located in common space
     protected EntityController get(EntityPtr entity) {
+        import flow.core.error;
+
         if(entity.space != this.entity.space.meta.id)
             throw new TickException("an entity not belonging to own space cannot be controlled");
         else return this.get(entity.id);
     }
 
     private EntityController get(string e) {
+        import flow.core.error;
+
         if(this.entity.meta.ptr.id == e)
             throw new TickException("entity cannot controll itself");
         else return this.entity.space.get(e);
@@ -500,14 +520,17 @@ abstract class Tick {
     }
 
     /// kills a given entity in common space
-    protected void kill(EntityPtr
-     entity) {
+    protected void kill(EntityPtr entity) {
+        import flow.core.error;
+        
         if(entity.space != this.entity.space.meta.id)
             throw new TickException("an entity not belonging to own space cannot be killed");
         this.kill(entity.id);
     }
 
     private void kill(string e) {
+        import flow.core.error;
+        
         if(this.entity.meta.ptr.addr == e)
             throw new TickException("entity cannot kill itself");
         else
@@ -516,6 +539,9 @@ abstract class Tick {
 
     /// registers a receptor for signal which runs a tick
     protected void register(string signal, string tick) {
+        import flow.core.error;
+        import flow.util.templates;
+        
         auto s = createData(signal).as!Signal;
         if(s is null || createData(tick) is null)
             throw new TickException("can only register receptors for valid signals and ticks");
@@ -530,6 +556,8 @@ abstract class Tick {
 
     /// send an unicast signal to a destination
     protected bool send(Unicast signal, EntityPtr entity = null) {
+        import flow.core.error;
+        
         if(signal is null)
             throw new TickException("cannot sand an empty unicast");
 
@@ -546,6 +574,8 @@ abstract class Tick {
     /// send an anycast signal to spaces matching space pattern
     protected bool send(T)(T signal, string space = string.init)
     if(is(T : Anycast) || is(T : Multicast)) {
+        import flow.core.error;
+        
         if(space != string.init) signal.space = space;
 
         if(signal.space == string.init)
@@ -561,6 +591,8 @@ private bool checkAccept(Tick t) {
     try {
         return t.accept;
     } catch(Throwable thr) {
+        import flow.util.log;
+
         Log.msg(LL.Error, t.logPrefix~"accept failed", thr);
     }
 
@@ -578,7 +610,10 @@ string logPrefix(T)(T t) if(is(T==Tick) || is(T==Ticker) || is(T:Junction)) {
         return "junction("~t.meta.info.id.to!string~"): ";
 }
 
-TickMeta createTickMeta(EntityMeta entity, string type, UUID group = randomUUID) {
+flow.core.data.TickMeta createTickMeta(flow.core.data.EntityMeta entity, string type, std.uuid.UUID group = std.uuid.randomUUID) {
+    import flow.core.data;
+    import std.uuid;
+
     auto m = new TickMeta;
     m.info = new TickInfo;
     m.info.id = randomUUID;
@@ -589,7 +624,9 @@ TickMeta createTickMeta(EntityMeta entity, string type, UUID group = randomUUID)
     return m;
 }
 
-private Tick createTick(TickMeta m, Entity e) {
+private Tick createTick(flow.core.data.TickMeta m, Entity e) {
+    import flow.util.templates;
+
     if(m !is null && m.info !is null) {
         auto t = Object.factory(m.info.type).as!Tick;
         if(t !is null) {  
@@ -601,7 +638,9 @@ private Tick createTick(TickMeta m, Entity e) {
 }
 
 /// executes an entitycentric string of discretized causality 
-private class Ticker : StateMachine!SystemState {
+private class Ticker : flow.util.state.StateMachine!SystemState {
+    private import std.uuid;
+
     bool detaching;
     
     UUID id;
@@ -635,6 +674,8 @@ private class Ticker : StateMachine!SystemState {
     }
 
     void join() {
+        import core.thread;
+
         while(this.state == SystemState.Ticking)
             Thread.sleep(5.msecs);
     }
@@ -669,6 +710,8 @@ private class Ticker : StateMachine!SystemState {
     }
 
     override protected void onStateChanged(SystemState o, SystemState n) {
+        import core.thread;
+
         switch(n) {
             case SystemState.Ticking:
                 this.tick();
@@ -692,31 +735,37 @@ private class Ticker : StateMachine!SystemState {
 
     /// run next tick if possible, is usually called by a tasker
     void tick() {
-            if(this.next !is null) {
-                // if in ticking state try to run created tick or notify wha nothing happens
-                if(this.state == SystemState.Ticking) {
-                    // create a new tick of given type or notify failing and stop
-                    if(this.next !is null) {
-                        // check if entity is still running after getting the sync
-                        this.actual = this.next;
-                        this.next = null;
-                        this.entity.space.tasker.run(this.entity.meta.ptr.addr, this.actual);
-                    } else {
-                        Log.msg(LL.Error, this.logPrefix~"could not create tick -> ending");
-                        if(this.state != SystemState.Disposed) this.dispose;
-                    }
+        import flow.util.log;
+
+        if(this.next !is null) {
+            // if in ticking state try to run created tick or notify wha nothing happens
+            if(this.state == SystemState.Ticking) {
+                // create a new tick of given type or notify failing and stop
+                if(this.next !is null) {
+                    // check if entity is still running after getting the sync
+                    this.actual = this.next;
+                    this.next = null;
+                    this.entity.space.tasker.run(this.entity.meta.ptr.addr, this.actual);
                 } else {
-                    Log.msg(LL.FDebug, this.logPrefix~"ticker is not ticking");
+                    Log.msg(LL.Error, this.logPrefix~"could not create tick -> ending");
+                    if(this.state != SystemState.Disposed) this.dispose;
                 }
             } else {
-                Log.msg(LL.FDebug, this.logPrefix~"nothing to do, ticker is ending");
-                if(this.state != SystemState.Disposed) this.dispose;
+                Log.msg(LL.FDebug, this.logPrefix~"ticker is not ticking");
             }
+        } else {
+            Log.msg(LL.FDebug, this.logPrefix~"nothing to do, ticker is ending");
+            if(this.state != SystemState.Disposed) this.dispose;
+        }
     }
 }
 
 /// hosts an entity construct
-private class Entity : StateMachine!SystemState {
+private class Entity : flow.util.state.StateMachine!SystemState {
+    private import core.sync.rwmutex;
+    private import flow.core.data;
+    private import std.uuid;
+
     /** mutex dedicated to sync context accesses */
     ReadWriteMutex sync;
     /** mutex dedicated to sync meta except context accesses */
@@ -870,6 +919,8 @@ private class Entity : StateMachine!SystemState {
 
     /// send an unicast signal into own space
     bool send(Unicast s) {
+        import flow.core.error;
+        
         synchronized(this.metaLock.reader) {
             if(s.dst == this.meta.ptr)
                 new EntityException("entity cannot send signals to itself, use next or fork");
@@ -1001,12 +1052,15 @@ private class Entity : StateMachine!SystemState {
     }
 }
 
-string addr(EntityPtr e) {
+string addr(flow.core.data.EntityPtr e) {
     return e.id~"@"~e.space;
 }
 
 /// controlls an entity
 class EntityController {
+    private import flow.core.data;
+    private import flow.data.engine;
+
     private Entity _entity;
 
     /// deep clone of entity pointer of controlled entity
@@ -1057,7 +1111,9 @@ private bool matches(Space space, string pattern) {
 }
 
 /// hosts a space construct
-class Space : StateMachine!SystemState {
+class Space : flow.util.state.StateMachine!SystemState {
+    private import flow.core.data;
+
     private SpaceMeta meta;
     private Process process;
     private Processor tasker;
@@ -1107,12 +1163,16 @@ class Space : StateMachine!SystemState {
 
     /// gets a controller for an entity contained in space (null if not existing)
     EntityController get(string e) {
+        import flow.util.templates;
+
         synchronized(this.lock.reader)
             return (e in this.entities).as!bool ? new EntityController(this.entities[e]) : null;
     }
 
     /// spawns a new entity into space
     EntityController spawn(EntityMeta m) {
+        import flow.core.error;
+        
         synchronized(this.lock.writer) {
             if(m.ptr.id in this.entities)
                 throw new SpaceException("entity with addr \""~m.ptr.addr~"\" is already existing");
@@ -1127,6 +1187,8 @@ class Space : StateMachine!SystemState {
 
     /// kills an existing entity in space
     void kill(string e) {
+        import flow.core.error;
+        
         synchronized(this.lock.writer) {
             if(e in this.entities) {
                 this.entities[e].destroy;
@@ -1216,6 +1278,8 @@ class Space : StateMachine!SystemState {
     }
 
     override protected void onStateChanged(SystemState o, SystemState n) {
+        import flow.core.error;
+        
         switch(n) {
             case SystemState.Created:
                 // creating tasker;
@@ -1262,6 +1326,10 @@ class Space : StateMachine!SystemState {
 /** hosts one or more spaces and allows to controll them
 whatever happens on this level, it has to happen in main thread or an exception occurs */
 class Process {
+    private import core.sync.rwmutex;
+    private import flow.core.data;
+    private import std.uuid;
+
     ReadWriteMutex spacesLock;
     ReadWriteMutex junctionsLock;
     private ProcessConfig config;
@@ -1282,6 +1350,8 @@ class Process {
             try {
                 this.add(nm);
             } catch(Throwable thr) {
+                import flow.util.log;
+
                 Log.msg(LL.Error, "initialization of a net at process startup failed", thr);
             }
         }
@@ -1303,6 +1373,9 @@ class Process {
 
     /// adds a junction to process
     void add(JunctionMeta m) {
+        import flow.core.error;
+        import flow.util.log;
+        import flow.util.templates;
         import std.conv;
 
         this.ensureThread();
@@ -1315,17 +1388,18 @@ class Process {
         if(m.info.id in this.junctions)
             throw new ProcessException("a junction with id \""~m.info.id.to!string~"\" already exists", m);
 
-        if(m.as!DynamicJunctionMeta !is null)
+        /*if(m.as!DynamicJunctionMeta !is null)
             synchronized(this.junctionsLock.writer)
                 this.junctions[m.info.id] = new DynamicJunction(this, m.as!DynamicJunctionMeta);
         else {
             Log.msg(LL.Error, "not supporting junction type", m);
             throw new NotImplementedError;
-        }
+        }*/
     }
 
     /// removes a junction from process
     void remove(UUID id) {
+        import flow.core.error;
         import std.conv;
 
         this.ensureThread();
@@ -1392,12 +1466,17 @@ class Process {
 
     /// ensure it is executed in main thread or not at all
     private void ensureThread() {
+        import core.thread;
+        import flow.core.error;
+        
         if(!thread_isMainThread)
             throw new ProcessError("process can be only controlled by main thread");
     }
 
     /// add a space
     Space add(SpaceMeta s) {
+        import flow.core.error;
+        
         this.ensureThread();
         
         if(s.id in this.spaces)
@@ -1412,6 +1491,8 @@ class Process {
 
     /// get an existing space or null
     Space get(string s) {
+        import flow.util.templates;
+
         this.ensureThread();
         
         synchronized(this.spacesLock.reader)
@@ -1420,6 +1501,8 @@ class Process {
 
     /// removes an existing space
     void remove(string s) {
+        import flow.core.error;
+
         this.ensureThread();
         
         synchronized(this.spacesLock.writer)
@@ -1438,15 +1521,13 @@ private enum JunctionState {
     Disposed
 }
 
-private abstract class Junction : StateMachine!JunctionState {
-    ReadWriteMutex connectionsLock;
+private class Junction : flow.util.state.StateMachine!JunctionState {
+    private import flow.core.data;
+
     Process process;
     JunctionMeta meta;
-    Listener listener;
-    Connection[] connections;
 
     this(Process p, JunctionMeta m) {
-        this.connectionsLock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
         this.process = p;
         this.meta = m;
 
@@ -1481,19 +1562,23 @@ private abstract class Junction : StateMachine!JunctionState {
     }
 
     override protected void onStateChanged(JunctionState o, JunctionState n) {
+        import flow.util.templates;
+        
         switch(n) {
             case JunctionState.Created:
+                /*import flow.util.log;
+
                 if(this.meta.listener.as!InetListenerMeta)
                     this.listener = new InetListener(this.meta.listener.as!InetListenerMeta);
                 else if(this.meta.listener !is null)
-                    Log.msg(LL.Error, this.logPrefix~"unknown listener type, won't create any for this junction", this.meta.listener);
-                break;
+                   Log.msg(LL.Error, this.logPrefix~"unknown listener type, won't create any for this junction", this.meta.listener);
+                break;*/
             case JunctionState.Up:
-                if(this.listener !is null)
-                    this.listener.start;
+                /*if(this.listener !is null)
+                    this.listener.start;*/
 
                 // establish outbound connections
-                synchronized(this.connectionsLock.writer)
+                /*synchronized(this.connectionsLock.writer)
                     foreach(ci; this.meta.connections) {
                         // only if its an outbound connection
                         if(ci != this.listener.meta.info) {
@@ -1505,14 +1590,14 @@ private abstract class Junction : StateMachine!JunctionState {
                                 }
                             }
                         }
-                    }
+                    }*/
                 break;
             case JunctionState.Down:
-                if(this.listener !is null)
-                    this.listener.stop;
+                /*if(this.listener !is null)
+                    this.listener.stop;*/
 
                 // disconnect existing connections and add outbound to meta
-                synchronized(this.connectionsLock.writer) {
+                /*synchronized(this.connectionsLock.writer) {
                     this.meta.connections = [];
                     foreach(c; this.connections) {
                         c.stop;
@@ -1520,10 +1605,10 @@ private abstract class Junction : StateMachine!JunctionState {
                             this.meta.connections ~= c.peer.listener;
                         c.destroy;
                     }
-                }
+                }*/
                 break;
             case JunctionState.Disposed:
-                this.listener.destroy;
+                //this.listener.destroy;
                 break;
             default: break;
         }
@@ -1536,295 +1621,61 @@ private abstract class Junction : StateMachine!JunctionState {
         } else static if(is(T : Unicast) || is(T : Anycast) || is(T : Multicast)) {
             this.process.ship(s);
         } else {
+            import flow.util.log;
+
             Log.msg(LL.Warning, this.logPrefix~"unknown signal type", s);
         }
     }
 }
 
-private class DynamicJunction : Junction {
-    this(Process p, DynamicJunctionMeta m) {super(p, m);}
-}
-
-private abstract class Listener {
-    ListenerMeta meta;
-
-    this(ListenerMeta m) {
-        this.meta = m;
-    }
-
-    abstract void start();
-    abstract void stop();
-}
-
-private class InetListener : Listener {
-    this(InetListenerMeta m) {super(m);}
-
-    override void start() {
-
-    }
-
-    override void stop() {
-
-    }
-}
-
-private class Connection : Thread {
-    import std.socket;
-    import core.sync.rwmutex;
-
-    Junction junction;
-    PeerInfo peer;
-    ReadWriteMutex lock;
-    bool alive;
-    bool incoming;
-
-    Socket inbound;
-    Socket outbound;
-
-    @property PeerInfo info() {
-        auto pi = new PeerInfo;
-        pi.junction = this.junction.meta.info;
-        pi.listener = this.junction.listener.meta.info;
-        return pi;
-    }
-
-    this(Junction j, Socket i, Socket o, bool inc) {
-        this.lock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
-        this.junction = j;
-        this.inbound = i;
-        this.outbound = o;
-        this.incoming = inc;
-
-        super(&this.loop);
-    }
-
-    ~this() {
-        this.stop;
-    }
-
-    void loop() {
-        ubyte[] arr;
-        size_t act;
-        size_t received;
-        ubyte[4096] buffer;
-
-        synchronized(this.lock.reader) {
-            // setting beeing alive
-            this.alive = true;
-
-            // authenticating with peer
-            this.send(this.info);
-        }
-
-        while(true) {
-            synchronized(this.lock.reader)
-                if(this.alive && this.inbound.isAlive) {
-                    try {
-                        import std.range.primitives;
-                        import std.bitmanip;
-                        auto c = this.inbound.receive(buffer);
-
-                        // if something received, append it to inbound array
-                        if(c > 0) {
-                            arr ~= buffer[0..c];
-                            received += c;
-                        }
-
-                        if(act == 0 && received > 0) { // beginning new packet
-                            act = arr[0..size_t.sizeof].bigEndianToNative!size_t;
-                            arr.popFrontN(size_t.sizeof);
-                        } else if(act > 0 && act < received) { // if packet is complete
-                            auto b = arr[0..act];
-                            auto d = b.unbin!Data;
-                            arr.popFrontN(act);
-
-                            if(d.as!PeerInfo !is null) { // peer authentications or updates
-                                if(!this.authenticate(d.as!PeerInfo))
-                                    break;
-                            } else if(d.as!Signal) // peer signals through junction
-                                this.junction.route(d.as!Signal);
-                            else
-                                Log.msg(LL.Warning, this.junction.logPrefix~"received unknown information", d);
-
-                            act = 0;
-                        } // else wait for data so loop
-                    } catch(Throwable thr) {
-                        Log.msg(LL.Error, this.junction.logPrefix~"error occured at listening to inbound data", thr, this.info);
-                        break;
-                    }
-                } else break;
-        }
-
-        // if not died because of this.alive (stop) then clean up
-        this.stop;
-    }
-
-    bool authenticate(PeerInfo pi) {
-        if(!this.junction.meta.info.validation || this.validate(pi)) {
-            this.peer = pi;
-            return true;
-        } else return false;
-    }
-
-    bool validate(PeerInfo pi) {
-        /* TODO check certificate
-        ((is it the same || if unknown yet does it validate with a known authority) &&
-        does it validate its own signature?)
-        * this has to happen also on update to prevent connection highjacking
-        * all packages sent have to be signed to prevent connection highjacking*/
-
-        return true;
-    }
-
-    void stop() {
-        synchronized(this.lock.writer) 
-            if(this.alive) {
-                this.alive = false;
-                this.peer = null;
-                
-                this.inbound.close;
-                this.inbound = null;
-
-                this.outbound.close;
-                this.outbound = null;
-            }
-    }
-
-    void send(Data d) {
-        import std.bitmanip;
-        synchronized(this.lock.reader)
-            if(this.alive && this.outbound.isAlive) {
-                auto b = d.bin;
-                this.outbound.send(b.length.nativeToBigEndian[]);
-                this.outbound.send(b);
-            }
-    }
-}
-
-private Connection connect(T)(T li) if(is(T == InetListenerInfo)) {
-    // TODO
-    return null;
-}
-
-/*struct SpaceHop {
-    Duration latency;
-    ubyte[] cert;
-}
-
-struct SpaceRoute {
-    string id;
-    SpaceHop[] hops;
-}
-
-private abstract class Peer {
-    import core.thread;
-
-    Process process;
-    PeerMeta meta;
-    PeerInfo other;
-    Thread receivingThread;
-
-    bool connected;
-
-    @property PeerInfo self() {
-        auto i = new PeerInfo;
-        i.forward = this.meta.forward;
-        i.spaces = this.process.acceptedSpaces;
-
-        return i;
-    }
-
-    protected this() {
-        receivingThread = new Thread(&this.receiving);
-        receivingThread.start();
-    }
-
-    void receiving() {
-        this.connected = true;
-
-        Data d;
-        do {
-            d = this.receive();
-        } while(this.connected);
-    }
-
-    this(Process p, PeerMeta m) {
-        this.process = p;
-        this.meta = m;
-
-        this.connect;
-    }
-
-    ~this() {
-        this.disconnect;
-    }    
-
-    abstract Data receive();
-    abstract void connect();
-    abstract void disconnect();
-}
-
-private class InetPeer : Peer {
-    Socket sock;
-
-    this(Process p, PeerMeta m) {super(p, m);}
-    this(Socket s) {
-        super();
-    }
-
-    override void connect() {
-
-    }
-
-    override void disconnect() {
-
-    }
-}*/
-
 version(unittest) {
-    class TestTickException : FlowException {mixin exception;}
+    class TestTickException : flow.util.error.FlowException {mixin flow.util.error.exception;}
 
-    class TestUnicast : Unicast {
-        mixin data;
+    class TestUnicast : flow.core.data.Unicast {
+        mixin flow.data.engine.data;
     }
 
-    class TestAnycast : Anycast {
-        mixin data;
+    class TestAnycast : flow.core.data.Anycast {
+        mixin flow.data.engine.data;
     }
-    class TestMulticast : Multicast {
-        mixin data;
-    }
-
-    class TestTickContext : Data {
-        mixin data;
-
-        mixin field!(bool, "gotTestUnicast");
-        mixin field!(bool, "gotTestAnycast");
-        mixin field!(bool, "gotTestMulticast");
-        mixin field!(size_t, "cnt");
-        mixin field!(string, "error");
-        mixin field!(bool, "forked");
-        mixin field!(TickInfo, "info");
-        mixin field!(TestTickData, "data");
-        mixin field!(TestUnicast, "trigger");
-        mixin field!(bool, "onCreated");
-        mixin field!(bool, "onTicking");
-        mixin field!(bool, "onFrozen");
-        mixin field!(bool, "timeOk");
+    class TestMulticast : flow.core.data.Multicast {
+        mixin flow.data.engine.data;
     }
 
-    class TestTickData : Data {
-        mixin data;
+    class TestTickContext : flow.data.engine.Data {
+        private import flow.core.data;
 
-        mixin field!(size_t, "cnt");
-        mixin field!(long, "lastTime");
+        mixin flow.data.engine.data;
+
+        mixin flow.data.engine.field!(bool, "gotTestUnicast");
+        mixin flow.data.engine.field!(bool, "gotTestAnycast");
+        mixin flow.data.engine.field!(bool, "gotTestMulticast");
+        mixin flow.data.engine.field!(size_t, "cnt");
+        mixin flow.data.engine.field!(string, "error");
+        mixin flow.data.engine.field!(bool, "forked");
+        mixin flow.data.engine.field!(TickInfo, "info");
+        mixin flow.data.engine.field!(TestTickData, "data");
+        mixin flow.data.engine.field!(TestUnicast, "trigger");
+        mixin flow.data.engine.field!(bool, "onCreated");
+        mixin flow.data.engine.field!(bool, "onTicking");
+        mixin flow.data.engine.field!(bool, "onFrozen");
+        mixin flow.data.engine.field!(bool, "timeOk");
+    }
+
+    class TestTickData : flow.data.engine.Data {
+        mixin flow.data.engine.data;
+
+        mixin flow.data.engine.field!(size_t, "cnt");
+        mixin flow.data.engine.field!(long, "lastTime");
     }
     
     class TestTick : Tick {
-        import flow.core.util;
-
         override void run() {
+            import core.time;
+            import flow.data.engine;
+            import flow.util.templates;
             import std.datetime.systime;
+
             auto stdTime = Clock.currStdTime;
 
             auto c = this.context.as!TestTickContext;
@@ -1858,6 +1709,9 @@ version(unittest) {
         }
 
         override void error(Throwable thr) {
+            import flow.util.error;
+            import flow.util.templates;
+
             if(thr.as!TestTickException !is null) {
                 auto c = this.context.as!TestTickContext;
                 synchronized(this.sync.writer)
@@ -1868,6 +1722,8 @@ version(unittest) {
 
     class UnicastReceivingTestTick : Tick {
         override void run() {
+            import flow.util.templates;
+
             auto c = this.context.as!TestTickContext;
             c.gotTestUnicast = true;
 
@@ -1877,6 +1733,8 @@ version(unittest) {
 
     class AnycastReceivingTestTick : Tick {
         override void run() {
+            import flow.util.templates;
+
             auto c = this.context.as!TestTickContext;
             c.gotTestAnycast = true;
         }
@@ -1884,6 +1742,8 @@ version(unittest) {
 
     class MulticastReceivingTestTick : Tick {
         override void run() {
+            import flow.util.templates;
+
             auto c = this.context.as!TestTickContext;
             c.gotTestMulticast = true;
         }
@@ -1891,6 +1751,8 @@ version(unittest) {
 
     class TestOnCreatedTick : Tick {
         override void run() {
+            import flow.util.templates;
+
             auto c = this.context.as!TestTickContext;
             c.onCreated = true;
         }
@@ -1898,6 +1760,8 @@ version(unittest) {
 
     class TestOnTickingTick : Tick {
         override void run() {
+            import flow.util.templates;
+
             auto c = this.context.as!TestTickContext;
             c.onTicking = true;
         }
@@ -1905,23 +1769,29 @@ version(unittest) {
 
     class TestOnFrozenTick : Tick {
         override void run() {
+            import flow.util.templates;
+
             auto c = this.context.as!TestTickContext;
             c.onFrozen = true;
         }
     }
 
-    class TriggeringTestContext : Data {
-        mixin data;
+    class TriggeringTestContext : flow.data.engine.Data {
+        private import flow.core.data;
 
-        mixin field!(EntityPtr, "targetEntity");
-        mixin field!(string, "targetSpace");
-        mixin field!(bool, "confirmedTestUnicast");
-        mixin field!(bool, "confirmedTestAnycast");
-        mixin field!(bool, "confirmedTestMulticast");
+        mixin flow.data.engine.data;
+
+        mixin flow.data.engine.field!(EntityPtr, "targetEntity");
+        mixin flow.data.engine.field!(string, "targetSpace");
+        mixin flow.data.engine.field!(bool, "confirmedTestUnicast");
+        mixin flow.data.engine.field!(bool, "confirmedTestAnycast");
+        mixin flow.data.engine.field!(bool, "confirmedTestMulticast");
     }
 
     class TriggeringTestTick : Tick {
         override void run() {
+            import flow.util.templates;
+
             auto c = this.context.as!TriggeringTestContext;
             c.confirmedTestUnicast = this.send(new TestUnicast, c.targetEntity);
             c.confirmedTestAnycast = this.send(new TestAnycast, c.targetSpace);
@@ -1929,7 +1799,9 @@ version(unittest) {
         }
     }
 
-    SpaceMeta createTestSpace() {
+    flow.core.data.SpaceMeta createTestSpace() {
+        import flow.core.data;
+
         auto s = new SpaceMeta;
         s.worker = 1;
         s.id = "s";
@@ -1941,7 +1813,9 @@ version(unittest) {
         return s;
     }
 
-    EntityMeta createTestEntity() {
+    flow.core.data.EntityMeta createTestEntity() {
+        import flow.core.data;
+
         auto e = new EntityMeta;
         e.ptr = new EntityPtr;
         e.ptr.id = "e";
@@ -1979,7 +1853,9 @@ version(unittest) {
         return e;
     }
 
-    EntityMeta createTriggerTestEntity(EntityPtr te) {
+    flow.core.data.EntityMeta createTriggerTestEntity(flow.core.data.EntityPtr te) {
+        import flow.core.data;
+
         auto e = new EntityMeta;
         e.ptr = new EntityPtr;
         e.ptr.id = "te";
@@ -1994,7 +1870,12 @@ version(unittest) {
 }
 
 unittest {
-    import std.stdio, std.conv;
+    import core.thread;
+    import flow.core.data;
+    import flow.util.templates;
+    import std.stdio;
+    import std.conv;
+    
     writeln("testing engine (you should see exactly one \"tick failed\" warning in log)");
 
     auto pc = new ProcessConfig;

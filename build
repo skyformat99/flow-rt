@@ -2,9 +2,11 @@
 
 rootDir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-#dc=dmd
-dc=$rootDir/util/dmd2/linux/bin64/dmd
-defaultlib="libphobos2.so" # libphobos2-ldc
+dc=dmd
+#dc=$rootDir/util/dmd2/linux/bin64/dmd
+#defaultlib="libphobos2.so" # libphobos2-ldc
+#export LIBRARY_PATH=$rootDir/util/dmd2/linux/lib64
+#export LD_LIBRARY_PATH=$rootDir/util/dmd2/linux/lib64
 
 #params for debug
 defBuildParams="-debug -g" # -debug=data -debug=tick
@@ -25,8 +27,8 @@ mkdir -p $rootDir/ifc
 mkdir -p $rootDir/lib
 mkdir -p $rootDir/ext
 
-export LIBRARY_PATH=$rootDir/util/dmd2/linux/lib64:$rootDir/lib:$rootDir/ext
-export LD_LIBRARY_PATH=$rootDir/util/dmd2/linux/lib64:$rootDir/lib:$rootDir/ext
+export LIBRARY_PATH=LIBRARY_PATH:$rootDir/lib:$rootDir/ext
+export LD_LIBRARY_PATH=LD_LIBRARY_PATH:$rootDir/lib:$rootDir/ext
 
 function buildLib {
     cd $rootDir/src/lib/$1/$2 &&
