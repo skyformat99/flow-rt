@@ -81,16 +81,16 @@ package final class Processor : StateMachine!ProcessorState {
     private Mutex queueMutex;
     private Mutex waiterMutex; // For waiterCondition
 
-    // The instanceStartIndex of the next instance that will be created.
+    /// The instanceStartIndex of the next instance that will be created.
     __gshared static size_t nextInstanceIndex = 1;
 
-    // The index of the current thread.
+    /// The index of the current thread.
     private static size_t threadIndex;
 
-    // The index of the first thread in this instance.
+    /// The index of the first thread in this instance.
     immutable size_t instanceStartIndex;
     
-    // The index that the next thread to be initialized in this pool will have.
+    /// The index that the next thread to be initialized in this pool will have.
     private size_t nextThreadIndex;
 
     private enum PoolState : ubyte {
@@ -168,9 +168,9 @@ package final class Processor : StateMachine!ProcessorState {
         this.state = ProcessorState.Stopped;
     }
 
-    // This function performs initialization for each thread that affects
-    // thread local storage and therefore must be done from within the
-    // worker thread.  It then calls executeWorkLoop().
+    /** This function performs initialization for each thread that affects
+    thread local storage and therefore must be done from within the
+    worker thread.  It then calls executeWorkLoop(). */
     private void startWorkLoop() {
         // Initialize thread index.
         {
@@ -183,9 +183,9 @@ package final class Processor : StateMachine!ProcessorState {
         this.executeWorkLoop();
     }
 
-    // This is the main work loop that worker threads spend their time in
-    // until they terminate.  It's also entered by non-worker threads when
-    // finish() is called with the blocking variable set to true.
+    /** This is the main work loop that worker threads spend their time in
+    until they terminate.  It's also entered by non-worker threads when
+    finish() is called with the blocking variable set to true. */
     private void executeWorkLoop() {
         while (atomicReadUbyte(this.status) != PoolState.stopNow) {
             Job* task = pop();
@@ -242,7 +242,7 @@ package final class Processor : StateMachine!ProcessorState {
         this.waiterMutex.unlock();
     }
 
-    // Pop a task off the queue.
+    /// Pop a task off the queue.
     private Job* pop()
     {
         this.queueLock();
@@ -330,7 +330,7 @@ package final class Processor : StateMachine!ProcessorState {
         this.abstractPut(j);
     }
     
-    // Push a task onto the queue.
+    /// Push a task onto the queue.
     private void abstractPut(Job* task)
     {
         queueLock();
@@ -544,18 +544,12 @@ abstract class Tick {
     }
 
     /// send an anycast signal to spaces matching space pattern
-    protected bool send(Anycast signal) {
-        signal.group = this.meta.info.group;
-
-        return this.entity.send(signal);
-    }
-
-    /// send a multicast signal to spaces matching space pattern
-    protected bool send(Multicast signal, string space = string.init) {
+    protected bool send(T)(T signal, string space = string.init)
+    if(is(T : Anycast) || is(T : Multicast)) {
         if(space != string.init) signal.space = space;
 
         if(signal.space == string.init)
-            throw new TickException("multicast signal needs a space pattern");
+            throw new TickException("anycast/multicast signal needs a space pattern");
 
         signal.group = this.meta.info.group;
 
@@ -888,16 +882,8 @@ private class Entity : StateMachine!SystemState {
     }
 
     /// send an anycast signal into own space
-    bool send(Anycast s) {
-        synchronized(this.metaLock.reader)
-            // ensure correct source entity pointer
-            s.src = this.meta.ptr;
-
-        return this.space.send(s);
-    }
-
-    /// send a multicast signal into own space
-    bool send(Multicast s) {
+    bool send(T)(T s) 
+    if(is(T : Anycast) || is(T : Multicast)) {
         synchronized(this.metaLock.reader)
             // ensure correct source entity pointer
             s.src = this.meta.ptr;
@@ -1029,6 +1015,9 @@ class EntityController {
     /// state of entity
     @property SystemState state() {return this._entity.state;}
 
+    /// deep clone of entity context
+    @property Data context() {return this._entity.meta.context.clone;}
+
     private this(Entity e) {
         this._entity = e;
     }
@@ -1148,14 +1137,16 @@ class Space : StateMachine!SystemState {
     }
     
     /// routes an unicast signal to receipting entities if its in this space
-    private bool route(Unicast s) {
+    private bool route(Unicast s, bool intern = false) {
         // if its a perfect match assuming process only accepted a signal for itself
         if(this.state == SystemState.Ticking && s.dst.space == this.meta.id) {
             synchronized(this.lock.reader) {
-                foreach(e; this.entities.values)
-                    if(e.meta.ptr == s.dst) {
-                        return e.receipt(s);
+                foreach(e; this.entities.values) {
+                    if(intern || e.meta.access == EntityAccess.Global) {
+                        if(e.meta.ptr == s.dst)
+                            return e.receipt(s);
                     }
+                }
             }
         }
         
@@ -1164,13 +1155,17 @@ class Space : StateMachine!SystemState {
 
    
     /// routes an anycast signal to one receipting entity
-    private bool route(Anycast s) {
+    private bool route(Anycast s, bool intern = false) {
         // if its adressed to own space or parent using * wildcard or even none
         // in each case we do not want to regex search when ==
         if(this.state == SystemState.Ticking && (s.space == this.meta.id || this.matches(s.space))) {
             synchronized(this.lock.reader) {
-                foreach(e; this.entities.values)
-                    if(e.receipt(s)) return true;
+                foreach(e; this.entities.values) {
+                    if(intern || e.meta.access == EntityAccess.Global) {
+                        if(e.receipt(s))
+                            return true;
+                    }
+                }
             }
         }
 
@@ -1184,9 +1179,11 @@ class Space : StateMachine!SystemState {
         // in each case we do not want to regex search when ==
         if(this.state == SystemState.Ticking && (s.space == this.meta.id || this.matches(s.space))) {
             synchronized(this.lock.reader) {
-                foreach(e; this.entities.values)
-                if(intern || e.meta.access == EntityAccess.Global)
-                    e.receipt(s);
+                foreach(e; this.entities.values) {
+                    if(intern || e.meta.access == EntityAccess.Global) {
+                        e.receipt(s);
+                    }
+                }
             }
 
             // a multicast is true if a space it could be delivered to was found
@@ -1196,15 +1193,8 @@ class Space : StateMachine!SystemState {
         return r;
     }
 
-    private bool send(Unicast s) {
-        return this.route(s) || this.process.ship(s.clone);
-    }
-
-    private bool send(Anycast s) {
-        return this.route(s) || this.process.ship(s.clone);
-    }
-
-    private bool send(Multicast s) {
+    private bool send(T)(T s)
+    if(is(T : Unicast) || is(T : Anycast) || is(T : Multicast)) {
         // ensure correct source space
         s.src.space = this.meta.id;
 
@@ -1357,7 +1347,7 @@ class Process {
 
             synchronized(this.junctionsLock.reader) {
                 // when here, its not hosted in local process so ship it to process hosting its space if known
-                // block until acceptance is confirmed by remote process
+                // block until acceptance is confirmed by remote process or time out is hit
             }
         }
         
@@ -1372,8 +1362,8 @@ class Process {
                     return true;
 
             synchronized(this.junctionsLock.reader) {
-                // when here, no local space matches space pattern so ship it to processes hosting spaces matching
-                // block until acceptance is confirmed by remote process
+                // when here, no local space acctepts it and matches the pattern so ship it to processes hosting spaces matching
+                // block until acceptance is confirmed by remote process or timeout is hit
             }
         }
         
@@ -1794,19 +1784,29 @@ private class InetPeer : Peer {
 version(unittest) {
     class TestTickException : FlowException {mixin exception;}
 
-    class TestSignal : Unicast {
+    class TestUnicast : Unicast {
+        mixin data;
+    }
+
+    class TestAnycast : Anycast {
+        mixin data;
+    }
+    class TestMulticast : Multicast {
         mixin data;
     }
 
     class TestTickContext : Data {
         mixin data;
 
+        mixin field!(bool, "gotTestUnicast");
+        mixin field!(bool, "gotTestAnycast");
+        mixin field!(bool, "gotTestMulticast");
         mixin field!(size_t, "cnt");
         mixin field!(string, "error");
         mixin field!(bool, "forked");
         mixin field!(TickInfo, "info");
         mixin field!(TestTickData, "data");
-        mixin field!(TestSignal, "trigger");
+        mixin field!(TestUnicast, "trigger");
         mixin field!(bool, "onCreated");
         mixin field!(bool, "onTicking");
         mixin field!(bool, "onFrozen");
@@ -1831,7 +1831,7 @@ version(unittest) {
             auto d = this.data.as!TestTickData !is null ?
                 this.data.as!TestTickData :
                 "flow.core.engine.TestTickData".createData().as!TestTickData;
-            auto t = this.trigger.as!TestSignal;
+            auto t = this.trigger.as!TestUnicast;
 
             c.info = this.info;
             c.data = d;
@@ -1866,6 +1866,29 @@ version(unittest) {
         }
     }
 
+    class UnicastReceivingTestTick : Tick {
+        override void run() {
+            auto c = this.context.as!TestTickContext;
+            c.gotTestUnicast = true;
+
+            this.next("flow.core.engine.TestTick");
+        }
+    }
+
+    class AnycastReceivingTestTick : Tick {
+        override void run() {
+            auto c = this.context.as!TestTickContext;
+            c.gotTestAnycast = true;
+        }
+    }
+
+    class MulticastReceivingTestTick : Tick {
+        override void run() {
+            auto c = this.context.as!TestTickContext;
+            c.gotTestMulticast = true;
+        }
+    }
+
     class TestOnCreatedTick : Tick {
         override void run() {
             auto c = this.context.as!TestTickContext;
@@ -1890,13 +1913,19 @@ version(unittest) {
     class TriggeringTestContext : Data {
         mixin data;
 
-        mixin field!(EntityPtr, "target");
+        mixin field!(EntityPtr, "targetEntity");
+        mixin field!(string, "targetSpace");
+        mixin field!(bool, "confirmedTestUnicast");
+        mixin field!(bool, "confirmedTestAnycast");
+        mixin field!(bool, "confirmedTestMulticast");
     }
 
     class TriggeringTestTick : Tick {
         override void run() {
             auto c = this.context.as!TriggeringTestContext;
-            this.send(new TestSignal, c.target);
+            c.confirmedTestUnicast = this.send(new TestUnicast, c.targetEntity);
+            c.confirmedTestAnycast = this.send(new TestAnycast, c.targetSpace);
+            c.confirmedTestMulticast = this.send(new TestMulticast, c.targetSpace);
         }
     }
 
@@ -1930,10 +1959,21 @@ version(unittest) {
         onf.tick = "flow.core.engine.TestOnFrozenTick";
         e.events ~= onf;
 
-        auto r = new Receptor;
-        r.signal = "flow.core.engine.TestSignal";
-        r.tick = "flow.core.engine.TestTick";
-        e.receptors ~= r;
+        auto ru = new Receptor;
+        ru.signal = "flow.core.engine.TestUnicast";
+        ru.tick = "flow.core.engine.UnicastReceivingTestTick";
+        e.receptors ~= ru;
+
+        auto ra = new Receptor;
+        ra.signal = "flow.core.engine.TestAnycast";
+        ra.tick = "flow.core.engine.AnycastReceivingTestTick";
+        e.receptors ~= ra;
+
+        auto rm = new Receptor;
+        rm.signal = "flow.core.engine.TestMulticast";
+        rm.tick = "flow.core.engine.MulticastReceivingTestTick";
+        e.receptors ~= rm;
+
         e.context = new TestTickContext;
 
         return e;
@@ -1944,7 +1984,8 @@ version(unittest) {
         e.ptr = new EntityPtr;
         e.ptr.id = "te";
         auto tc = new TriggeringTestContext;
-        tc.target = te;
+        tc.targetEntity = te;
+        tc.targetSpace = "s";
         e.context = tc;
         e.ticks ~= e.createTickMeta("flow.core.engine.TriggeringTestTick");
 
@@ -1976,16 +2017,24 @@ unittest {
     s.freeze();
     
     auto sm = s.snap;
+    auto ec = sm.entities[0].context.as!TestTickContext;
+    auto tec = sm.entities[1].context.as!TriggeringTestContext;
     assert(sm.entities.length == 2, "space snapshot does not contain correct amount of entities");
-    assert(sm.entities[0].context.as!TestTickContext.onCreated, "onCreated entity event wasn't triggered");
-    assert(sm.entities[0].context.as!TestTickContext.onTicking, "onTicking entity event wasn't triggered");
-    assert(sm.entities[0].context.as!TestTickContext.onFrozen, "onFrozen entity event wasn't triggered");
-    assert(sm.entities[0].context.as!TestTickContext.timeOk, "delays were not respected in frame");
-    assert(sm.entities[0].context.as!TestTickContext.cnt == 6, "logic wasn't executed correct, got "~sm.entities[0].context.as!TestTickContext.cnt.to!string~" instead of 6");
-    assert(sm.entities[0].context.as!TestTickContext.trigger !is null, "trigger was not passed correctly");
-    assert(sm.entities[0].context.as!TestTickContext.trigger.group == g, "group was not passed correctly to signal");
-    assert(sm.entities[0].context.as!TestTickContext.info.group == g, "group was not passed correctly to tick");
-    assert(sm.entities[0].context.as!TestTickContext.data !is null, "data was not set correctly");
-    assert(sm.entities[0].context.as!TestTickContext.error == "flow.core.engine.TestTickException", "error was not handled");
-    assert(sm.entities[0].context.as!TestTickContext.forked, "didn't fork as expected");
+    assert(tec.confirmedTestUnicast, "trigger was not correctly notified about successful unicast send");
+    assert(tec.confirmedTestUnicast, "trigger was not correctly notified about successful anycast send");
+    assert(tec.confirmedTestUnicast, "trigger was not correctly notified about successful multicast send");
+    assert(ec.gotTestUnicast, "receiver didn't get test unicast");
+    assert(ec.gotTestAnycast, "receiver didn't get test anycast");
+    assert(ec.gotTestMulticast, "receiver didn't get test multicast");
+    assert(ec.onCreated, "onCreated entity event wasn't triggered");
+    assert(ec.onTicking, "onTicking entity event wasn't triggered");
+    assert(ec.onFrozen, "onFrozen entity event wasn't triggered");
+    assert(ec.timeOk, "delays were not respected in frame");
+    assert(ec.cnt == 6, "logic wasn't executed correct, got "~ec.cnt.to!string~" instead of 6");
+    assert(ec.trigger !is null, "trigger was not passed correctly");
+    assert(ec.trigger.group == g, "group was not passed correctly to signal");
+    assert(ec.info.group == g, "group was not passed correctly to tick");
+    assert(ec.data !is null, "data was not set correctly");
+    assert(ec.error == "flow.core.engine.TestTickException", "error was not handled");
+    assert(ec.forked, "didn't fork as expected");
 }
