@@ -1,0 +1,3 @@
+[submodule "src/lib/nanomsg-wrapper"]
+	path = src/lib/nanomsg-wrapper
+	url = https://github.com/kaleidicassociates/nanomsg-wrapper.git

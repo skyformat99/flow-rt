@@ -27,31 +27,18 @@ mkdir -p $rootDir/ifc
 mkdir -p $rootDir/lib
 mkdir -p $rootDir/ext
 
-export LIBRARY_PATH=LIBRARY_PATH:$rootDir/lib:$rootDir/ext
-export LD_LIBRARY_PATH=LD_LIBRARY_PATH:$rootDir/lib:$rootDir/ext
+export LIBRARY_PATH=$rootDir/lib:$rootDir/ext:LIBRARY_PATH
+export LD_LIBRARY_PATH=$rootDir/lib:$rootDir/ext:LD_LIBRARY_PATH
 
-function buildLib {
-    cd $rootDir/src/lib/$1/$2 &&
+function buildNanoMsg {
+    cd $rootDir/src/lib/nanomsg-wrapper/source &&
     mkdir -p build &&
 
-    echo "BUILDING lib/lib$1..." &&
-    $dc -Hd=$rootDir/ifc -op -c -ofbuild/lib$1.o $defBuildParams -w -I$rootDir/ifc/ $(find ./ -name "*.d") -fPIC -vcolumns &&
+    echo "BUILDING lib/libnanomsg-wrapper.so ..." &&
+    $dc -Hd=$rootDir/ifc/nanomsg -c -ofbuild/libnanomsg-wrapper.o $defBuildParams -w -I$rootDir/ifc/ $(find ./ -name "*.d") -fPIC -vcolumns &&
 
-    echo "LINKING lib/lib$1..." &&
-    $dc -of$rootDir/lib/lib$1.so build/lib$1.o -L-l:libphobos2.so -shared -defaultlib=$defaultlib $defLinkParams
-}
-
-function testLib {
-    cd $rootDir/src/lib/$1/$2 &&
-    mkdir -p build &&
-
-    echo "BUILDING tst/$1-test..." &&
-    $dc -c -ofbuild/lib$1-test.o $defBuildParams -w -I$rootDir/ifc/ $(find ./ -name "*.d") -fPIC -vcolumns -main -unittest &&
-
-    echo "LINKING tst/$1-test..." &&
-    $dc -of$rootDir/tst/test-lib$1 build/lib$1-test.o -unittest -L-l:libphobos2.so -defaultlib=$defaultlib $defLinkParams &&
-
-    $rootDir/tst/test-lib$1
+    echo "LINKING lib/libnanomsg-wrapper.so ..." &&
+    $dc -of$rootDir/lib/libnanomsg-wrapper.so build/libnanomsg-wrapper.o -L-l:libphobos2.so -L-l:libnanomsg.so -shared -defaultlib=$defaultlib $defLinkParams
 }
 
 function buildCore {
@@ -62,7 +49,7 @@ function buildCore {
     $dc -Hd=$rootDir/ifc -op -c -ofbuild/libflow-core.o $defBuildParams -w -I$rootDir/ifc/ $(find ./ -name "*.d") -fPIC -vcolumns &&
 
     echo "LINKING lib/libflow-core..." &&
-    $dc -of$rootDir/lib/libflow-core.so build/libflow-core.o -L-l:libphobos2.so -shared -defaultlib=$defaultlib $defLinkParams
+    $dc -of$rootDir/lib/libflow-core.so build/libflow-core.o -L-l:libphobos2.so -L-l:libnanomsg-wrapper.so -shared -defaultlib=$defaultlib $defLinkParams
 }
 
 function testCore {
@@ -73,7 +60,7 @@ function testCore {
     $dc -c -ofbuild/libflow-core-test.o $defBuildParams -w -I$rootDir/ifc/ $(find ./ -name "*.d") -fPIC -vcolumns -main -unittest &&
 
     echo "LINKING tst/libflow-core-test..." &&
-    $dc -of$rootDir/tst/test-libflow-core build/libflow-core-test.o -unittest -L-l:libphobos2.so -defaultlib=$defaultlib $defLinkParams &&
+    $dc -of$rootDir/tst/test-libflow-core build/libflow-core-test.o -unittest -L-l:libphobos2.so -L-l:libnanomsg-wrapper.so -defaultlib=$defaultlib $defLinkParams &&
 
     $rootDir/tst/test-libflow-core
 }
@@ -86,7 +73,7 @@ function buildExt {
     $dc -Hd=$rootDir/ifc -op -c -ofbuild/libflow-$1.o $defBuildParams -w -I$rootDir/ifc/ $(find ./ -name "*.d") -fPIC -vcolumns &&
 
     echo "LINKING ext/libflow-$1..." &&
-    $dc -of$rootDir/ext/libflow-$1.so build/libflow-$1.o -L-l:libphobos2.so -L-l:libflow-core.so -shared -defaultlib=$defaultlib $defLinkParams
+    $dc -of$rootDir/ext/libflow-$1.so build/libflow-$1.o -L-l:libphobos2.so -L-l:libflow-core.so -shared -defaultlib=$defaultlib $defLinkParams $2
 }
 
 function testExt {
@@ -97,7 +84,7 @@ function testExt {
     $dc -c -ofbuild/libflow-$1-test.o $defBuildParams -w -I$rootDir/ifc/ $(find ./ -name "*.d") -fPIC -vcolumns -main -unittest &&
 
     echo "LINKING tst/test-libflow-$1..." &&
-    $dc -of$rootDir/tst/test-libflow-$1 build/libflow-$1-test.o -unittest -L-l:libphobos2.so -L-l:libflow-core.so -defaultlib=$defaultlib $defLinkParams &&
+    $dc -of$rootDir/tst/test-libflow-$1 build/libflow-$1-test.o -unittest -L-l:libphobos2.so -L-l:libflow-core.so -defaultlib=$defaultlib $defLinkParams $2 &&
 
     $rootDir/tst/test-libflow-$1
 }
@@ -125,6 +112,8 @@ function testBin {
 
     $rootDir/tst/test-flow-$1
 }
+
+buildNanoMsg &&
 
 buildCore &&
 buildBin run &&
