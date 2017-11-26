@@ -1876,7 +1876,7 @@ unittest {
     import std.stdio;
     import std.conv;
     
-    writeln("testing engine (you should see exactly one \"tick failed\" warning in log)");
+    writeln("testing engine (you should see exactly one \"[Error] tick@entity(e@s): run failed\" and one \"[Info] tick@entity(e@s): handling run error\" warning in log)");
 
     auto pc = new ProcessConfig;
     /* when there is one worker in taskpool, it has
