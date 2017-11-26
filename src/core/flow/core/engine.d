@@ -1092,22 +1092,36 @@ class EntityController {
     }
 }
 
-private bool matches(Space space, string pattern) {
-    import std.regex, std.array;
+private bool matches(string id, bool hark, string pattern) {
+    import std.array;
+    import std.range;
 
-    auto hit = false;
-    auto s = matchAll(space.meta.id, regex("[A-Za-z]*")).array;
-    auto p = matchAll(pattern, regex("[A-Za-z\\*]*")).array;
-    foreach(i, m; s) {
-        if(p.length > i) {
-            if(space.meta.hark && m.hit == "*")
-                hit = true;
-            else if(m.hit != p[i].hit)
-                break;
-        } else break;
+    auto ip = id.split(".").retro.array;
+    auto pp = pattern.split(".").retro.array;
+
+    if(pp.length == ip.length || (pp.length < ip.length && pp.back == "*")) {
+        foreach(i, p; pp) {
+            if(!(p == ip[i] || (hark && p == "*")))
+                return false;
+        }
+
+        return true;
     }
+    else return false;
+}
 
-    return hit;
+unittest {
+    import std.stdio;
+
+    writeln("testing domain matching");
+    assert(matches("a.b.c", false, "a.b.c"), "1:1 matching without harking failed");
+    assert(matches("a.b.c", true, "a.b.c"), "1:1 matching with harking failed");
+    assert(!matches("a.b.c", false, "a.b.*"), "first level * matching without harking was wrongly successful");
+    assert(matches("a.b.c", true, "a.b.*"), "first level * matching with harking failed");
+    assert(!matches("a.b.c", false, "a.*.c"), "second level * matching without harking was wrongly successful");
+    assert(matches("a.b.c", true, "a.*.c"), "second level * matching with harking failed");
+    assert(!matches("a.b.c", false, "*.b.c"), "thrid level * matching without harking was wrongly successful");
+    assert(matches("a.b.c", true, "*.b.c"), "third level * matching with harking failed");
 }
 
 /// hosts a space construct
@@ -1220,7 +1234,7 @@ class Space : flow.util.state.StateMachine!SystemState {
     private bool route(Anycast s, bool intern = false) {
         // if its adressed to own space or parent using * wildcard or even none
         // in each case we do not want to regex search when ==
-        if(this.state == SystemState.Ticking && (s.space == this.meta.id || this.matches(s.space))) {
+        if(this.state == SystemState.Ticking && (s.space == this.meta.id || matches(this.meta.id, this.meta.hark, s.space))) {
             synchronized(this.lock.reader) {
                 foreach(e; this.entities.values) {
                     if(intern || e.meta.access == EntityAccess.Global) {
@@ -1239,7 +1253,7 @@ class Space : flow.util.state.StateMachine!SystemState {
         auto r = false;
         // if its adressed to own space or parent using * wildcard or even none
         // in each case we do not want to regex search when ==
-        if(this.state == SystemState.Ticking && (s.space == this.meta.id || this.matches(s.space))) {
+        if(this.state == SystemState.Ticking && (s.space == this.meta.id || matches(this.meta.id, this.meta.hark, s.space))) {
             synchronized(this.lock.reader) {
                 foreach(e; this.entities.values) {
                     if(intern || e.meta.access == EntityAccess.Global) {
