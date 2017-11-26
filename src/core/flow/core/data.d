@@ -71,8 +71,8 @@ class SpaceMeta : flow.data.engine.Data {
     /// identifier of the space
     mixin flow.data.engine.field!(string, "id");
 
-    /// is space harking to wildcard
-    mixin flow.data.engine.field!(bool, "hark");
+    /// is space exposed to junctions?
+    mixin flow.data.engine.field!(bool, "exposed");
     
     /// amount of worker threads for executing ticks
     mixin flow.data.engine.field!(size_t, "worker");
@@ -161,15 +161,23 @@ class Witness : flow.data.engine.Data {
     mixin flow.data.engine.array!(ubyte, "cert");
 }
 
-abstract class JunctionInfo : flow.data.data.IdData {
+class JunctionInfo : flow.data.data.IdData {
     mixin flow.data.engine.data;
 
     mixin flow.data.engine.field!(ProcessInfo, "process");
-    mixin flow.data.engine.field!(bool, "forwards");
+    mixin flow.data.engine.field!(bool, "acceptsAnycast");
+    mixin flow.data.engine.field!(bool, "acceptsMulticast");
 }
 
-abstract class JunctionMeta : flow.data.engine.Data {
+abstract class ConnectorConfig : flow.data.engine.Data {
+    mixin flow.data.engine.data;
+    
+    mixin flow.data.engine.field!(string, "type");
+}
+
+class JunctionMeta : flow.data.engine.Data {
     mixin flow.data.engine.data;
 
     mixin flow.data.engine.field!(JunctionInfo, "info");
+    mixin flow.data.engine.field!(ConnectorConfig, "connector");
 }

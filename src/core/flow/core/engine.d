@@ -1092,7 +1092,7 @@ class EntityController {
     }
 }
 
-private bool matches(string id, bool hark, string pattern) {
+private bool matches(string id, string pattern) {
     import std.array;
     import std.range;
 
@@ -1101,7 +1101,7 @@ private bool matches(string id, bool hark, string pattern) {
 
     if(pp.length == ip.length || (pp.length < ip.length && pp.back == "*")) {
         foreach(i, p; pp) {
-            if(!(p == ip[i] || (hark && p == "*")))
+            if(!(p == ip[i] || (p == "*")))
                 return false;
         }
 
@@ -1114,14 +1114,10 @@ unittest {
     import std.stdio;
 
     writeln("testing domain matching");
-    assert(matches("a.b.c", false, "a.b.c"), "1:1 matching without harking failed");
-    assert(matches("a.b.c", true, "a.b.c"), "1:1 matching with harking failed");
-    assert(!matches("a.b.c", false, "a.b.*"), "first level * matching without harking was wrongly successful");
-    assert(matches("a.b.c", true, "a.b.*"), "first level * matching with harking failed");
-    assert(!matches("a.b.c", false, "a.*.c"), "second level * matching without harking was wrongly successful");
-    assert(matches("a.b.c", true, "a.*.c"), "second level * matching with harking failed");
-    assert(!matches("a.b.c", false, "*.b.c"), "thrid level * matching without harking was wrongly successful");
-    assert(matches("a.b.c", true, "*.b.c"), "third level * matching with harking failed");
+    assert(matches("a.b.c", "a.b.c"), "1:1 matching failed");
+    assert(matches("a.b.c", "a.b.*"), "first level * matching failed");
+    assert(matches("a.b.c", "a.*.c"), "second level * matching failed");
+    assert(matches("a.b.c", "*.b.c"), "third level * matching failed");
 }
 
 /// hosts a space construct
@@ -1234,7 +1230,7 @@ class Space : flow.util.state.StateMachine!SystemState {
     private bool route(Anycast s, bool intern = false) {
         // if its adressed to own space or parent using * wildcard or even none
         // in each case we do not want to regex search when ==
-        if(this.state == SystemState.Ticking && (s.space == this.meta.id || matches(this.meta.id, this.meta.hark, s.space))) {
+        if(this.state == SystemState.Ticking && (s.space == this.meta.id || matches(this.meta.id, s.space))) {
             synchronized(this.lock.reader) {
                 foreach(e; this.entities.values) {
                     if(intern || e.meta.access == EntityAccess.Global) {
@@ -1253,7 +1249,7 @@ class Space : flow.util.state.StateMachine!SystemState {
         auto r = false;
         // if its adressed to own space or parent using * wildcard or even none
         // in each case we do not want to regex search when ==
-        if(this.state == SystemState.Ticking && (s.space == this.meta.id || matches(this.meta.id, this.meta.hark, s.space))) {
+        if(this.state == SystemState.Ticking && (s.space == this.meta.id || matches(this.meta.id, s.space))) {
             synchronized(this.lock.reader) {
                 foreach(e; this.entities.values) {
                     if(intern || e.meta.access == EntityAccess.Global) {
@@ -1376,12 +1372,12 @@ class Process {
             this.spaces[s].destroy;
     }
 
-    @property string[] acceptedSpaces() {
+    @property string[] exposed() {
         import std.algorithm.iteration, std.array;
 
         synchronized(this.spacesLock.reader)
             return this.spaces.values
-                .filter!(s=>s !is null && s.meta !is null && s.meta.hark)
+                .filter!(s=>s !is null && s.meta !is null && s.meta.exposed)
                 .map!(s=>s.meta.id).array;
     }
 
@@ -1427,39 +1423,41 @@ class Process {
     }
 
     /// routing unicast signal from space to space also across nets
-    private bool ship(Unicast s) {
+    private bool ship(Unicast s, bool incoming = false) {
         if(s !is null) {
             foreach(spc; this.spaces.values)
                 if(s.src.space != spc.meta.id && s.dst.space == spc.meta.id)
                     return spc.route(s);
 
-            synchronized(this.junctionsLock.reader) {
-                // when here, its not hosted in local process so ship it to process hosting its space if known
-                // block until acceptance is confirmed by remote process or time out is hit
-            }
+            if(!incoming)
+                synchronized(this.junctionsLock.reader) {
+                    // when here, its not hosted in local process so ship it to process hosting its space if known
+                    // block until acceptance is confirmed by remote process or time out is hit
+                }
         }
         
         return false;
     }
 
     /// routing anycast signal from space to space also across nets
-    private bool ship(Anycast s) {
+    private bool ship(Anycast s, bool incoming = false) {
         if(s !is null) {
             foreach(spc; this.spaces.values)
                 if(s.src.space != spc.meta.id && spc.route(s))
                     return true;
 
-            synchronized(this.junctionsLock.reader) {
-                // when here, no local space acctepts it and matches the pattern so ship it to processes hosting spaces matching
-                // block until acceptance is confirmed by remote process or timeout is hit
-            }
+            if(!incoming)
+                synchronized(this.junctionsLock.reader) {
+                    // when here, no local space acctepts it and matches the pattern so ship it to processes hosting spaces matching
+                    // block until acceptance is confirmed by remote process or timeout is hit
+                }
         }
         
         return false;
     }
 
     /// routing multicast signal from space to space also across nets
-    private bool ship(Multicast s) {
+    private bool ship(Multicast s, bool incoming = false) {
         auto r = false;
         if(s !is null) {
             foreach(spc; this.spaces.values)
@@ -1467,13 +1465,14 @@ class Process {
                     r = spc.route(s) || r;
         }
 
-        synchronized(this.junctionsLock.reader) {
-            // signal might target other spaces hosted by remote processes too, so ship it to all processes hosting spaces matching pattern
-            // not blocking, just (is proccess with matching space known) || r
-            /* that means multicasts are returning true if an adequate space is known local or remote,
-            this is neccessary due to the requirement for flow to support systems interconnected by
-            huge latency lines. an extreme case could be the connection between spaces sparated by lightyears. */
-        }
+        if(!incoming)
+            synchronized(this.junctionsLock.reader) {
+                // signal might target other spaces hosted by remote processes too, so ship it to all processes hosting spaces matching pattern
+                // not blocking, just (is proccess with matching space known) || r
+                /* that means multicasts are returning true if an adequate space is known local or remote,
+                this is neccessary due to the requirement for flow to support systems interconnected by
+                huge latency lines. an extreme case could be the connection between spaces sparated by lightyears. */
+            }
         
         return r;
     }
@@ -1538,12 +1537,13 @@ private enum JunctionState {
 private class Junction : flow.util.state.StateMachine!JunctionState {
     private import flow.core.data;
 
-    Process process;
-    JunctionMeta meta;
+    private JunctionMeta meta;
+    private Process process;
+    private Connector connector;
 
-    this(Process p, JunctionMeta m) {
-        this.process = p;
+    this(JunctionMeta m, Process p) {
         this.meta = m;
+        this.process = p;
 
         super();
     }
@@ -1580,66 +1580,70 @@ private class Junction : flow.util.state.StateMachine!JunctionState {
         
         switch(n) {
             case JunctionState.Created:
-                /*import flow.util.log;
-
-                if(this.meta.listener.as!InetListenerMeta)
-                    this.listener = new InetListener(this.meta.listener.as!InetListenerMeta);
-                else if(this.meta.listener !is null)
-                   Log.msg(LL.Error, this.logPrefix~"unknown listener type, won't create any for this junction", this.meta.listener);
-                break;*/
+                this.connector = Object.factory(this.meta.connector.type).as!Connector;
+                if(this.connector is null)
+                    this.dispose();
+                break;
             case JunctionState.Up:
-                /*if(this.listener !is null)
-                    this.listener.start;*/
-
-                // establish outbound connections
-                /*synchronized(this.connectionsLock.writer)
-                    foreach(ci; this.meta.connections) {
-                        // only if its an outbound connection
-                        if(ci != this.listener.meta.info) {
-                            if(ci.as!InetListenerInfo) {
-                                auto c = ci.as!InetListenerInfo.connect;
-                                if(c !is null) {
-                                    this.connections ~= c;
-                                    c.start;
-                                }
-                            }
-                        }
-                    }*/
+                this.connector.start();
                 break;
             case JunctionState.Down:
-                /*if(this.listener !is null)
-                    this.listener.stop;*/
-
-                // disconnect existing connections and add outbound to meta
-                /*synchronized(this.connectionsLock.writer) {
-                    this.meta.connections = [];
-                    foreach(c; this.connections) {
-                        c.stop;
-                        if(!c.incoming)
-                            this.meta.connections ~= c.peer.listener;
-                        c.destroy;
-                    }
-                }*/
+                this.connector.stop();
                 break;
             case JunctionState.Disposed:
-                //this.listener.destroy;
+                this.connector.destroy();
+                this.connector = null;
                 break;
             default: break;
         }
     }
 
-    void route(T)(T s) if(is(T : Signal)) {
-        static if(is(T == ForwardRequest)) {
-            // TODO has to execute a task in junction taskpool
-            // TODO check if can and want to forward (FIREWALL HOOK)
-        } else static if(is(T : Unicast) || is(T : Anycast) || is(T : Multicast)) {
-            this.process.ship(s);
-        } else {
-            import flow.util.log;
+    protected @property string[] exposed() {return this.process.exposed;}
+    
+    bool ship(ubyte[] bin) {
+        import flow.core.data;
+        import flow.data.bin;
+        import flow.util.templates;
 
-            Log.msg(LL.Warning, this.logPrefix~"unknown signal type", s);
-        }
+        // TODO decrypt and verify
+
+        auto s = bin.unbin!Signal;
+
+        if(s.as!Unicast !is null) return this.process.ship(s.as!Unicast, true);
+        else if(this.meta.info.acceptsAnycast && s.as!Anycast !is null) return this.process.ship(s.as!Anycast, true);
+        else if(this.meta.info.acceptsMulticast && s.as!Multicast !is null) return this.process.ship(s.as!Multicast, true);
+        else return false;
     }
+
+    bool ship(T)(T s) if(is(T : Unicast)) {
+        if(this.canSend(s)) {
+            // TODO encrypt and sign
+
+            return this.send(s.dst.space, s.bin(s));
+        } else return false;
+    }
+
+    bool ship(T)(T s) if(is(T : Anycast) || is(T : Multicast)) {
+        if(this.canSend(s)) {
+            // TODO encrypt and sign
+
+            return this.send(s.space, s.bin(s));
+        } else return false;
+    }
+}
+
+abstract class Connector {
+    private import flow.core.data;
+
+    private ConnectorConfig _config;
+    protected @property ConnectorConfig config() {return this._config;}
+
+    abstract @property string type();
+
+    protected abstract void start();
+    protected abstract void stop();
+    protected abstract bool canSend(Signal s);
+    protected abstract bool send(string dst, ubyte[] bin, ubyte[] sig);
 }
 
 version(unittest) {
