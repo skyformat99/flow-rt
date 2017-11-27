@@ -3,7 +3,7 @@ module flow.ipc.nanomsg;
 import flow.core;
 
 /// at linking something bad is happening if "Data" symbol is not used in shared library
-private static import flow.data.engine; class Foo : flow.data.engine.Data {mixin flow.data.engine.data;}
+private static import flow.data.engine; class __Foo : flow.data.engine.Data {mixin flow.data.engine.data;}
 
 class NanoMsgConnectorConfig : ConnectorConfig {
     import flow.data;
