@@ -1534,29 +1534,29 @@ private enum JunctionState {
     Disposed
 }
 
-private class Junction : flow.util.state.StateMachine!JunctionState {
+class Junction : flow.util.state.StateMachine!JunctionState {
     private import flow.core.data;
 
     private JunctionMeta meta;
     private Process process;
     private Connector connector;
 
-    this(JunctionMeta m, Process p) {
+    private this(JunctionMeta m, Process p) {
         this.meta = m;
         this.process = p;
 
         super();
     }
 
-    void up() {
+    private void up() {
         this.state = JunctionState.Up;
     }
 
-    void down() {
+    private void down() {
         this.state = JunctionState.Down;
     }
 
-    void dispose() {
+    private void dispose() {
         if(this.state == JunctionState.Up)
             this.down;
         
@@ -1581,11 +1581,15 @@ private class Junction : flow.util.state.StateMachine!JunctionState {
         switch(n) {
             case JunctionState.Created:
                 this.connector = Object.factory(this.meta.connector.type).as!Connector;
-                if(this.connector is null)
+                if(this.connector !is null)
+                    this.connector._junction = this;
+                else
                     this.dispose();
                 break;
             case JunctionState.Up:
                 this.connector.start();
+                foreach(s; this.process.exposed)
+                    this.connector.expose(s);
                 break;
             case JunctionState.Down:
                 this.connector.stop();
@@ -1597,8 +1601,6 @@ private class Junction : flow.util.state.StateMachine!JunctionState {
             default: break;
         }
     }
-
-    protected @property string[] exposed() {return this.process.exposed;}
     
     bool ship(ubyte[] bin) {
         import flow.core.data;
@@ -1615,20 +1617,16 @@ private class Junction : flow.util.state.StateMachine!JunctionState {
         else return false;
     }
 
-    bool ship(T)(T s) if(is(T : Unicast)) {
-        if(this.canSend(s)) {
-            // TODO encrypt and sign
+    private void ship(T)(T s) if(is(T : Unicast)) {
+        // TODO encrypt and sign
 
-            return this.send(s.dst.space, s.bin(s));
-        } else return false;
+        this.connector.ship(s.dst.space, s.bin(s));
     }
 
-    bool ship(T)(T s) if(is(T : Anycast) || is(T : Multicast)) {
-        if(this.canSend(s)) {
-            // TODO encrypt and sign
+    private void ship(T)(T s) if(is(T : Anycast) || is(T : Multicast)) {
+        // TODO encrypt and sign
 
-            return this.send(s.space, s.bin(s));
-        } else return false;
+        this.connector.ship(s.space, s.bin(s));
     }
 }
 
@@ -1638,12 +1636,16 @@ abstract class Connector {
     private ConnectorConfig _config;
     protected @property ConnectorConfig config() {return this._config;}
 
+    private Junction _junction;
+    protected @property Junction junction() {return this._junction;}
+
     abstract @property string type();
 
     protected abstract void start();
     protected abstract void stop();
-    protected abstract bool canSend(Signal s);
-    protected abstract bool send(string dst, ubyte[] bin, ubyte[] sig);
+    protected abstract void expose(string space);
+    protected abstract void hide(string space);
+    protected abstract void ship(string dst, ubyte[] bin, ubyte[] sig);
 }
 
 version(unittest) {

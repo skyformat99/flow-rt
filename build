@@ -37,14 +37,14 @@ export LIBRARY_PATH=$rootDir/lib:$rootDir/ext:LIBRARY_PATH
 export LD_LIBRARY_PATH=$rootDir/lib:$rootDir/ext:LD_LIBRARY_PATH
 
 function buildNanoMsg {
-    cd $rootDir/src/lib/nanomsg-wrapper/source &&
+    cd $rootDir/src/lib/nanomsg &&
     mkdir -p build &&
 
     echo "BUILDING lib/libnanomsg-wrapper.so ..." &&
-    $dc $defBuildParams -Hd=$rootDir/ifc/lib/nanomsg/nanomsg -ofbuild/libnanomsg-wrapper.o $(find ./ -name "*.d") &&
+    $dc $defBuildParams -ofbuild/libnanomsg-wrapper.o $(find ./deimos -name "*.d") &&
 
     echo "LINKING lib/libnanomsg-wrapper.so ..." &&
-    $dc $defLinkParams -of$rootDir/lib/libnanomsg-wrapper.so build/libnanomsg-wrapper.o -L-l:libnanomsg.so -shared
+    $dc $defLinkParams -of$rootDir/lib/libnanomsg.so build/libnanomsg-wrapper.o -L-l:libnanomsg.so -shared
 }
 
 function buildCore {
@@ -76,10 +76,10 @@ function buildExt {
     mkdir -p build &&
 
     echo "BUILDING ext/libflow-$1..." &&
-    $dc $defBuildParams $flowBuildParams -Hd=$rootDir/ifc/ext/$1 -ofbuild/libflow-$1.o $(find ./ -name "*.d") &&
+    $dc $defBuildParams $flowBuildParams -Hd=$rootDir/ifc/ext/$1 -ofbuild/libflow-$1.o $2 $(find ./ -name "*.d") &&
 
     echo "LINKING ext/libflow-$1..." &&
-    $dc $defLinkParams $flowLinkParams -of$rootDir/ext/libflow-$1.so build/libflow-$1.o -shared ${@:2}
+    $dc $defLinkParams $flowLinkParams -of$rootDir/ext/libflow-$1.so build/libflow-$1.o -shared $3 #${@:2}
 }
 
 function testExt {
@@ -87,10 +87,10 @@ function testExt {
     mkdir -p build &&
 
     echo "BUILDING tst/test-libflow-$1..." &&
-    $dc $defBuildParams $flowBuildParams $testBuildParams -ofbuild/libflow-$1-test.o $(find ./ -name "*.d") &&
+    $dc $defBuildParams $flowBuildParams $testBuildParams -ofbuild/libflow-$1-test.o $2 $(find ./ -name "*.d") &&
 
     echo "LINKING tst/test-libflow-$1..." &&
-    $dc $defLinkParams $flowLinkParams $testLinkParams -of$rootDir/tst/test-libflow-$1 build/libflow-$1-test.o ${@:2} &&
+    $dc $defLinkParams $flowLinkParams $testLinkParams -of$rootDir/tst/test-libflow-$1 build/libflow-$1-test.o $3 &&#${@:2} &&
 
     $rootDir/tst/test-libflow-$1
 }
@@ -122,14 +122,14 @@ function testBin {
 buildNanoMsg &&
 
 buildCore &&
-buildExt ipc-nanomsg -L-l:libnanomsg-wrapper.so &&
+buildExt ipc-nanomsg -I$rootDir/src/lib/nanomsg -L-l:libnanomsg.so &&
 #buildBin run &&
 
 buildExt complex &&
 #buildBin complex-gen -L-l:libflow-complex.so &&
 
 testCore &&
-testExt ipc-nanomsg -L-l:libnanomsg-wrapper.so &&
+testExt ipc-nanomsg -I$rootDir/src/lib/nanomsg -L-l:libnanomsg.so &&
 #testBin run &&
 
 testExt complex #&&
