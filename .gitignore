@@ -4,6 +4,7 @@ hive
 # Compiled Object files
 *.o
 *.obj
+*.di
 
 # Compiled Dynamic libraries
 *.so
@@ -42,3 +43,9 @@ __test__library__
 
 # Logs
 *.log
+
+#CMake
+CMakeFiles/*
+*.cmake
+CMakeCache.txt
+Makefile

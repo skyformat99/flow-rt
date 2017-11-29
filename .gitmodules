@@ -1,3 +1,6 @@
 [submodule "src/lib/nanomsg"]
 	path = src/lib/nanomsg
 	url = https://github.com/kaleidicpublic/nanomsg.git
+[submodule "util/cmake-d"]
+	path = util/cmake-d
+	url = https://github.com/dcarp/cmake-d.git

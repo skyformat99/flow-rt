@@ -1,0 +1,6 @@
+#!/bin/bash
+
+rootDir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+$rootDir/clean
+$rootDir/build
