@@ -19,6 +19,8 @@ target_include_directories(flow-core PRIVATE "${FLOW_CORE_SRC}")
 set (NANOMSG_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/lib/nanomsg")
 file(GLOB _NANOMSG_SRC ${NANOMSG_SRC}/deimos/nanomsg/*.d)
 add_library(nanomsg ${_NANOMSG_SRC})
+#target_compile_options(nanomsg PRIVATE "-H")
+#target_compile_options(nanomsg PRIVATE "-op")
 target_include_directories(nanomsg PRIVATE "${NANOMSG_SRC}")
 
 # EXTENSIONS

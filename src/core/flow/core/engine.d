@@ -396,6 +396,7 @@ package final class Processor : flow.util.state.StateMachine!ProcessorState {
 abstract class Tick {
     private import core.sync.rwmutex;
     private import core.time;
+    private import std.datetime;
     private import flow.core.data;
     private import flow.data.engine;
 
@@ -461,6 +462,16 @@ abstract class Tick {
     /// set next tick in causal string
     protected bool next(string tick, Data data = null) {
         return this.next(tick, Duration.init, data);
+    }
+
+    /// set next tick in causal string with delay
+    protected bool next(string tick, SysTime schedule, Data data = null) {
+        auto delay = schedule - Clock.currTime();
+
+        if(delay.total!"hnsecs" > 0)
+            return this.next(tick, delay, data);
+        else
+            return this.next(tick, data);
     }
 
     /// set next tick in causal string with delay
