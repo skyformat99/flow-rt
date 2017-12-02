@@ -44,8 +44,11 @@ __test__library__
 # Logs
 *.log
 
-#CMake
+# CMake
 CMakeFiles/*
 *.cmake
 CMakeCache.txt
 Makefile
+
+# CTest
+CTestCostData.txt

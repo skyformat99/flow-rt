@@ -1,0 +1,5 @@
+core engine:
+* moved junctions to be part of spaces
+* spaces are only connected via junctions
+* added inprocess junction
+* replaced EntityAccess by visibility levels
