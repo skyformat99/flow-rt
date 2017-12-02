@@ -44,9 +44,6 @@ class SpaceMeta : flow.data.engine.Data {
 
     /// identifier of the space
     mixin flow.data.engine.field!(string, "id");
-
-    /// is space exposed to junctions?
-    mixin flow.data.engine.field!(bool, "exposed");
     
     /// amount of worker threads for executing ticks
     mixin flow.data.engine.field!(size_t, "worker");

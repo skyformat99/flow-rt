@@ -62,13 +62,14 @@ class InProcessJunction : flow.core.engine.Junction {
         auto cw = containsWildcard(s.dst);
 
         synchronized(lock.reader)
-            if(cw)
+            if(cw) {
                 foreach(j; junctions[this.id])
                     if(j.as!InProcessJunction.deliver(s))
                         return true;
-            else
+            } else {
                 if(s.dst != this.meta.info.space && s.dst in junctions[this.id])
                     return junctions[this.id][s.dst].as!InProcessJunction.deliver(s);
+            }
                     
         return false;
     }
@@ -97,10 +98,25 @@ private bool containsWildcard(string dst) {
     return dst.any!(a => a = '*');
 }
 
-version(unittest) {
-    
-}
-
 unittest {
+    /*import flow.core;
+    import flow.ipc.test;
+    import std.uuid;
 
+    auto proc = new Process;
+    scope(exit) proc.destroy;
+
+    auto spc1Domain = "spc1.test.inproc.ipc.flow";
+    auto spc2Domain = "spc2.test.inproc.ipc.flow";
+
+    auto spc1 = createSpace(spc1Domain);
+    spc1.addEntity();
+    spc1.addInProcJunction(randomUUID);
+
+    auto spc2 = createSpace(spc2Domain);
+    spc1.addEntity();
+    spc1.addInProcJunction(randomUUID);
+
+    proc.add(spc1);
+    proc.add(spc2);*/
 }

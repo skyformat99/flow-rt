@@ -1205,7 +1205,14 @@ abstract class Junction : flow.util.state.StateMachine!JunctionState {
     abstract bool ship(Multicast s);
 
     bool deliver(T)(T s) if(is(T:Unicast) || is(T:Anycast) || is(T:Multicast)) {
-        return this._space.route(s, this.meta.level);
+        import flow.util.templates;
+
+        if(s.as!Unicast !is null
+        || (this.meta.info.acceptsAnycast && s.as!Anycast !is null)
+        || (this.meta.info.acceptsMulticast && s.as!Multicast !is null))
+            return this._space.route(s, this.meta.level);
+        else
+            return false;
     }
 }
 
@@ -1270,9 +1277,9 @@ class Space : flow.util.state.StateMachine!SystemState {
                 import flow.util.templates;
 
                 // creating tasker;
-                // if worker amount == size_t.init (0) use default (vcores - 2) but min 2
+                // default is one core
                 if(this.meta.worker < 1)
-                    this.meta.worker = threadsPerCPU > 3 ? threadsPerCPU-2 : 2;
+                    this.meta.worker = 1;
                 this.tasker = new Processor(this.meta.worker);
                 this.tasker.start();
 
@@ -1507,15 +1514,6 @@ class Process {
             this.spaces[s].destroy;
     }
 
-    @property string[] exposed() {
-        import std.algorithm.iteration, std.array;
-
-        synchronized(this.spacesLock.reader)
-            return this.spaces.values
-                .filter!(s=>s !is null && s.meta !is null && s.meta.exposed)
-                .map!(s=>s.meta.id).array;
-    }
-
     /// ensure it is executed in main thread or not at all
     private void ensureThread() {
         import core.thread;
@@ -1567,47 +1565,47 @@ class Process {
 }
 
 version(unittest) {
-    class TestTickException : flow.util.error.FlowException {mixin flow.util.error.exception;}
+    class OldTestTickException : flow.util.error.FlowException {mixin flow.util.error.exception;}
 
-    class TestUnicast : flow.core.data.Unicast {
+    class OldTestUnicast : flow.core.data.Unicast {
         mixin flow.data.engine.data;
     }
 
-    class TestAnycast : flow.core.data.Anycast {
+    class OldTestAnycast : flow.core.data.Anycast {
         mixin flow.data.engine.data;
     }
-    class TestMulticast : flow.core.data.Multicast {
+    class OldTestMulticast : flow.core.data.Multicast {
         mixin flow.data.engine.data;
     }
 
-    class TestTickContext : flow.data.engine.Data {
+    class OldOldTestTickContext : flow.data.engine.Data {
         private import flow.core.data;
 
         mixin flow.data.engine.data;
 
-        mixin flow.data.engine.field!(bool, "gotTestUnicast");
-        mixin flow.data.engine.field!(bool, "gotTestAnycast");
-        mixin flow.data.engine.field!(bool, "gotTestMulticast");
+        mixin flow.data.engine.field!(bool, "gotOldTestUnicast");
+        mixin flow.data.engine.field!(bool, "gotOldTestAnycast");
+        mixin flow.data.engine.field!(bool, "gotOldTestMulticast");
         mixin flow.data.engine.field!(size_t, "cnt");
         mixin flow.data.engine.field!(string, "error");
         mixin flow.data.engine.field!(bool, "forked");
         mixin flow.data.engine.field!(TickInfo, "info");
-        mixin flow.data.engine.field!(TestTickData, "data");
-        mixin flow.data.engine.field!(TestUnicast, "trigger");
+        mixin flow.data.engine.field!(OldTestTickData, "data");
+        mixin flow.data.engine.field!(OldTestUnicast, "trigger");
         mixin flow.data.engine.field!(bool, "onCreated");
         mixin flow.data.engine.field!(bool, "onTicking");
         mixin flow.data.engine.field!(bool, "onFrozen");
         mixin flow.data.engine.field!(bool, "timeOk");
     }
 
-    class TestTickData : flow.data.engine.Data {
+    class OldTestTickData : flow.data.engine.Data {
         mixin flow.data.engine.data;
 
         mixin flow.data.engine.field!(size_t, "cnt");
         mixin flow.data.engine.field!(long, "lastTime");
     }
     
-    class TestTick : Tick {
+    class OldTestTick : Tick {
         override void run() {
             import core.time;
             import flow.data.engine;
@@ -1616,11 +1614,11 @@ version(unittest) {
 
             auto stdTime = Clock.currStdTime;
 
-            auto c = this.context.as!TestTickContext;
-            auto d = this.data.as!TestTickData !is null ?
-                this.data.as!TestTickData :
-                "flow.core.engine.TestTickData".createData().as!TestTickData;
-            auto t = this.trigger.as!TestUnicast;
+            auto c = this.context.as!OldOldTestTickContext;
+            auto d = this.data.as!OldTestTickData !is null ?
+                this.data.as!OldTestTickData :
+                "flow.core.engine.OldTestTickData".createData().as!OldTestTickData;
+            auto t = this.trigger.as!OldTestUnicast;
 
             c.info = this.info;
             c.data = d;
@@ -1633,7 +1631,7 @@ version(unittest) {
 
             if(d.cnt == 4) {
                 this.fork(this.info.type, data);
-                throw new TestTickException;
+                throw new OldTestTickException;
             } else if(d.cnt > 4) {
                 c.forked = true;
             } else {            
@@ -1642,7 +1640,7 @@ version(unittest) {
                 synchronized(this.sync.writer)
                     c.cnt += d.cnt;
 
-                this.next("flow.core.engine.TestTick", 100.msecs, d);
+                this.next("flow.core.engine.OldTestTick", 100.msecs, d);
             }
         }
 
@@ -1650,108 +1648,108 @@ version(unittest) {
             import flow.util.error;
             import flow.util.templates;
 
-            if(thr.as!TestTickException !is null) {
-                auto c = this.context.as!TestTickContext;
+            if(thr.as!OldTestTickException !is null) {
+                auto c = this.context.as!OldOldTestTickContext;
                 synchronized(this.sync.writer)
                     c.error = thr.as!FlowException.type;
             }
         }
     }
 
-    class UnicastReceivingTestTick : Tick {
+    class UnicastReceivingOldTestTick : Tick {
         override void run() {
             import flow.util.templates;
 
-            auto c = this.context.as!TestTickContext;
-            c.gotTestUnicast = true;
+            auto c = this.context.as!OldOldTestTickContext;
+            c.gotOldTestUnicast = true;
 
-            this.next("flow.core.engine.TestTick");
+            this.next("flow.core.engine.OldTestTick");
         }
     }
 
-    class AnycastReceivingTestTick : Tick {
+    class AnycastReceivingOldTestTick : Tick {
         override void run() {
             import flow.util.templates;
 
-            auto c = this.context.as!TestTickContext;
-            c.gotTestAnycast = true;
+            auto c = this.context.as!OldOldTestTickContext;
+            c.gotOldTestAnycast = true;
         }
     }
 
-    class MulticastReceivingTestTick : Tick {
+    class MulticastReceivingOldTestTick : Tick {
         override void run() {
             import flow.util.templates;
 
-            auto c = this.context.as!TestTickContext;
-            c.gotTestMulticast = true;
+            auto c = this.context.as!OldOldTestTickContext;
+            c.gotOldTestMulticast = true;
         }
     }
 
-    class TestOnCreatedTick : Tick {
+    class OldTestOnCreatedTick : Tick {
         override void run() {
             import flow.util.templates;
 
-            auto c = this.context.as!TestTickContext;
+            auto c = this.context.as!OldOldTestTickContext;
             c.onCreated = true;
         }
     }
 
-    class TestOnTickingTick : Tick {
+    class OldTestOnTickingTick : Tick {
         override void run() {
             import flow.util.templates;
 
-            auto c = this.context.as!TestTickContext;
+            auto c = this.context.as!OldOldTestTickContext;
             c.onTicking = true;
         }
     }
 
-    class TestOnFrozenTick : Tick {
+    class OldTestOnFrozenTick : Tick {
         override void run() {
             import flow.util.templates;
 
-            auto c = this.context.as!TestTickContext;
+            auto c = this.context.as!OldOldTestTickContext;
             c.onFrozen = true;
         }
     }
 
-    class TriggeringTestContext : flow.data.engine.Data {
+    class OldTriggeringTestContext : flow.data.engine.Data {
         private import flow.core.data;
 
         mixin flow.data.engine.data;
 
         mixin flow.data.engine.field!(EntityPtr, "targetEntity");
         mixin flow.data.engine.field!(string, "targetSpace");
-        mixin flow.data.engine.field!(bool, "confirmedTestUnicast");
-        mixin flow.data.engine.field!(bool, "confirmedTestAnycast");
-        mixin flow.data.engine.field!(bool, "confirmedTestMulticast");
+        mixin flow.data.engine.field!(bool, "confirmedOldTestUnicast");
+        mixin flow.data.engine.field!(bool, "confirmedOldTestAnycast");
+        mixin flow.data.engine.field!(bool, "confirmedOldTestMulticast");
     }
 
-    class TriggeringTestTick : Tick {
+    class TriggeringOldTestTick : Tick {
         override void run() {
             import flow.util.templates;
 
-            auto c = this.context.as!TriggeringTestContext;
-            c.confirmedTestUnicast = this.send(new TestUnicast, c.targetEntity);
-            c.confirmedTestAnycast = this.send(new TestAnycast, c.targetSpace);
-            c.confirmedTestMulticast = this.send(new TestMulticast, c.targetSpace);
+            auto c = this.context.as!OldTriggeringTestContext;
+            c.confirmedOldTestUnicast = this.send(new OldTestUnicast, c.targetEntity);
+            c.confirmedOldTestAnycast = this.send(new OldTestAnycast, c.targetSpace);
+            c.confirmedOldTestMulticast = this.send(new OldTestMulticast, c.targetSpace);
         }
     }
 
-    flow.core.data.SpaceMeta createTestSpace() {
+    flow.core.data.SpaceMeta oldCreateTestSpace() {
         import flow.core.data;
 
         auto s = new SpaceMeta;
         s.worker = 1;
         s.id = "s";
-        auto te = createTestEntity();
+        auto te = oldCreateTestEntity();
         s.entities ~= te;
-        auto tte = createTriggerTestEntity(te.ptr);
+        auto tte = oldCreateTriggerTestEntity(te.ptr);
         s.entities ~= tte;
 
         return s;
     }
 
-    flow.core.data.EntityMeta createTestEntity() {
+    flow.core.data.EntityMeta oldCreateTestEntity() {
         import flow.core.data;
 
         auto e = new EntityMeta;
@@ -1760,48 +1758,48 @@ version(unittest) {
 
         auto onc = new Event;
         onc.type = EventType.OnCreated;
-        onc.tick = "flow.core.engine.TestOnCreatedTick";
+        onc.tick = "flow.core.engine.OldTestOnCreatedTick";
         e.events ~= onc;
         auto ont = new Event;
         ont.type = EventType.OnTicking;
-        ont.tick = "flow.core.engine.TestOnTickingTick";
+        ont.tick = "flow.core.engine.OldTestOnTickingTick";
         e.events ~= ont;
         auto onf = new Event;
         onf.type = EventType.OnFrozen;
-        onf.tick = "flow.core.engine.TestOnFrozenTick";
+        onf.tick = "flow.core.engine.OldTestOnFrozenTick";
         e.events ~= onf;
 
         auto ru = new Receptor;
-        ru.signal = "flow.core.engine.TestUnicast";
-        ru.tick = "flow.core.engine.UnicastReceivingTestTick";
+        ru.signal = "flow.core.engine.OldTestUnicast";
+        ru.tick = "flow.core.engine.UnicastReceivingOldTestTick";
         e.receptors ~= ru;
 
         auto ra = new Receptor;
-        ra.signal = "flow.core.engine.TestAnycast";
-        ra.tick = "flow.core.engine.AnycastReceivingTestTick";
+        ra.signal = "flow.core.engine.OldTestAnycast";
+        ra.tick = "flow.core.engine.AnycastReceivingOldTestTick";
         e.receptors ~= ra;
 
         auto rm = new Receptor;
-        rm.signal = "flow.core.engine.TestMulticast";
-        rm.tick = "flow.core.engine.MulticastReceivingTestTick";
+        rm.signal = "flow.core.engine.OldTestMulticast";
+        rm.tick = "flow.core.engine.MulticastReceivingOldTestTick";
         e.receptors ~= rm;
 
-        e.context = new TestTickContext;
+        e.context = new OldOldTestTickContext;
 
         return e;
     }
 
-    flow.core.data.EntityMeta createTriggerTestEntity(flow.core.data.EntityPtr te) {
+    flow.core.data.EntityMeta oldCreateTriggerTestEntity(flow.core.data.EntityPtr te) {
         import flow.core.data;
 
         auto e = new EntityMeta;
         e.ptr = new EntityPtr;
         e.ptr.id = "te";
-        auto tc = new TriggeringTestContext;
+        auto tc = new OldTriggeringTestContext;
         tc.targetEntity = te;
         tc.targetSpace = "s";
         e.context = tc;
-        e.ticks ~= e.createTickMeta("flow.core.engine.TriggeringTestTick");
+        e.ticks ~= e.createTickMeta("flow.core.engine.TriggeringOldTestTick");
 
         return e;
     }
@@ -1820,7 +1818,7 @@ unittest {
     to be perfectly deterministic using limited complexity */
     auto p = new Process();
     scope(exit) p.destroy;
-    auto s = p.add(createTestSpace());
+    auto s = p.add(oldCreateTestSpace());
     auto e = s.get("e");
     auto te = s.get("te");
     auto g = te._entity.meta.ticks[0].info.group;
@@ -1835,15 +1833,15 @@ unittest {
     s.freeze();
     
     auto sm = s.snap;
-    auto ec = sm.entities[0].context.as!TestTickContext;
-    auto tec = sm.entities[1].context.as!TriggeringTestContext;
+    auto ec = sm.entities[0].context.as!OldOldTestTickContext;
+    auto tec = sm.entities[1].context.as!OldTriggeringTestContext;
     assert(sm.entities.length == 2, "space snapshot does not contain correct amount of entities");
-    assert(tec.confirmedTestUnicast, "trigger was not correctly notified about successful unicast send");
-    assert(tec.confirmedTestUnicast, "trigger was not correctly notified about successful anycast send");
-    assert(tec.confirmedTestUnicast, "trigger was not correctly notified about successful multicast send");
-    assert(ec.gotTestUnicast, "receiver didn't get test unicast");
-    assert(ec.gotTestAnycast, "receiver didn't get test anycast");
-    assert(ec.gotTestMulticast, "receiver didn't get test multicast");
+    assert(tec.confirmedOldTestUnicast, "trigger was not correctly notified about successful unicast send");
+    assert(tec.confirmedOldTestUnicast, "trigger was not correctly notified about successful anycast send");
+    assert(tec.confirmedOldTestUnicast, "trigger was not correctly notified about successful multicast send");
+    assert(ec.gotOldTestUnicast, "receiver didn't get test unicast");
+    assert(ec.gotOldTestAnycast, "receiver didn't get test anycast");
+    assert(ec.gotOldTestMulticast, "receiver didn't get test multicast");
     assert(ec.onCreated, "onCreated entity event wasn't triggered");
     assert(ec.onTicking, "onTicking entity event wasn't triggered");
     assert(ec.onFrozen, "onFrozen entity event wasn't triggered");
@@ -1853,6 +1851,6 @@ unittest {
     assert(ec.trigger.group == g, "group was not passed correctly to signal");
     assert(ec.info.group == g, "group was not passed correctly to tick");
     assert(ec.data !is null, "data was not set correctly");
-    assert(ec.error == "flow.core.engine.TestTickException", "error was not handled");
+    assert(ec.error == "flow.core.engine.OldTestTickException", "error was not handled");
     assert(ec.forked, "didn't fork as expected");
 }
