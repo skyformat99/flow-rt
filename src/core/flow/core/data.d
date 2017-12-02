@@ -21,13 +21,13 @@ class Unicast : Signal {
 class Multicast : Signal {
     mixin flow.data.engine.data;
 
-    mixin flow.data.engine.field!(string, "space");
+    mixin flow.data.engine.field!(string, "dst");
 }
 
 class Anycast : Signal {
     mixin flow.data.engine.data;
 
-    mixin flow.data.engine.field!(string, "space");
+    mixin flow.data.engine.field!(string, "dst");
 }
 
 /*class Damage : flow.data.engine.Data {

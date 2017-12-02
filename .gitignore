@@ -45,7 +45,7 @@ __test__library__
 *.log
 
 # CMake
-CMakeFiles/*
+/CMakeFiles
 *.cmake
 CMakeCache.txt
 Makefile

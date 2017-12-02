@@ -566,35 +566,35 @@ abstract class Tick {
     }
 
     /// send an unicast signal to a destination
-    protected bool send(Unicast signal, EntityPtr entity = null) {
+    protected bool send(Unicast s, EntityPtr e = null) {
         import flow.core.error;
         
-        if(signal is null)
+        if(s is null)
             throw new TickException("cannot sand an empty unicast");
 
-        if(entity !is null) signal.dst = entity;
+        if(e !is null) s.dst = e;
 
-        if(signal.dst is null || signal.dst.id == string.init || signal.dst.space == string.init)
+        if(s.dst is null || s.dst.id == string.init || s.dst.space == string.init)
             throw new TickException("unicast signal needs a valid destination(dst)");
 
-        signal.group = this.meta.info.group;
+        s.group = this.meta.info.group;
 
-        return this.entity.send(signal);
+        return this.entity.send(s);
     }
 
     /// send an anycast signal to spaces matching space pattern
-    protected bool send(T)(T signal, string space = string.init)
+    protected bool send(T)(T s, string dst = string.init)
     if(is(T : Anycast) || is(T : Multicast)) {
         import flow.core.error;
         
-        if(space != string.init) signal.space = space;
+        if(dst != string.init) s.dst = dst;
 
-        if(signal.space == string.init)
+        if(s.dst == string.init)
             throw new TickException("anycast/multicast signal needs a space pattern");
 
-        signal.group = this.meta.info.group;
+        s.group = this.meta.info.group;
 
-        return this.entity.send(signal);
+        return this.entity.send(s);
     }
 }
 
@@ -1249,6 +1249,89 @@ class Space : flow.util.state.StateMachine!SystemState {
         this.state = SystemState.Disposed;
     }
 
+    override protected bool onStateChanging(SystemState o, SystemState n) {
+        switch(n) {
+            case SystemState.Ticking:
+                return o == SystemState.Created || o == SystemState.Frozen;
+            case SystemState.Frozen:
+                return o == SystemState.Ticking;
+            case SystemState.Disposed:
+                return o == SystemState.Created || o == SystemState.Frozen;
+            default: return false;
+        }
+    }
+
+    override protected void onStateChanged(SystemState o, SystemState n) {
+        import flow.core.error;
+        
+        switch(n) {
+            case SystemState.Created:
+                import core.cpuid;
+                import flow.util.templates;
+
+                // creating tasker;
+                // if worker amount == size_t.init (0) use default (vcores - 2) but min 2
+                if(this.meta.worker < 1)
+                    this.meta.worker = threadsPerCPU > 3 ? threadsPerCPU-2 : 2;
+                this.tasker = new Processor(this.meta.worker);
+                this.tasker.start();
+
+                // creating entities
+                foreach(em; this.meta.entities) {
+                    if(em.ptr.id in this.entities)
+                        throw new SpaceException("entity with addr \""~em.ptr.addr~"\" already exists");
+                    else {
+                        Entity e = new Entity(this, em);
+                        this.entities[em.ptr.id] = e;
+                    }
+                }
+
+                // creating junctions
+                foreach(jm; this.meta.junctions) {
+                    auto j = Object.factory(jm.type).as!Junction;
+                    jm.info.space = this.meta.id; // ensure junction knows correct space
+                    j._meta = jm;
+                    j._space = this;
+                    this.junctions ~= j;
+                }
+                break;
+            case SystemState.Ticking:
+                synchronized(this.lock.reader)
+                    foreach(e; this.entities)
+                        e.tick();
+
+                foreach(j; this.junctions)
+                    j.start();
+                break;
+            case SystemState.Frozen:
+                foreach(j; this.junctions)
+                    j.stop();
+
+                synchronized(this.lock.reader)
+                    foreach(e; this.entities.values)
+                        e.freeze();
+                break;
+            case SystemState.Disposed:
+                import std.array;
+
+                foreach(j; this.junctions) {
+                    j.dispose();
+                    j.destroy();
+                }
+
+                this.junctions = Junction[].init;
+
+                synchronized(this.lock.writer)
+                    foreach(e; this.entities.keys)
+                        this.entities[e].destroy;
+
+                this.tasker.stop();
+                this.tasker.destroy;
+                break;
+            default: break;
+        }
+    }
+
     /// snapshots whole space (deep clone)
     SpaceMeta snap() {
         synchronized(this.lock.reader) {
@@ -1320,7 +1403,7 @@ class Space : flow.util.state.StateMachine!SystemState {
     private bool route(Anycast s, ushort level = 0) {
         // if its adressed to own space or parent using * wildcard or even none
         // in each case we do not want to regex search when ==
-        if(this.state == SystemState.Ticking && (s.space == this.meta.id || matches(this.meta.id, s.space))) {
+        if(this.state == SystemState.Ticking) {
             synchronized(this.lock.reader) {
                 foreach(e; this.entities.values) {
                     if(e.meta.level >= 0) {
@@ -1339,7 +1422,7 @@ class Space : flow.util.state.StateMachine!SystemState {
         auto r = false;
         // if its adressed to own space or parent using * wildcard or even none
         // in each case we do not want to regex search when ==
-        if(this.state == SystemState.Ticking && (s.space == this.meta.id || matches(this.meta.id, s.space))) {
+        if(this.state == SystemState.Ticking) {
             synchronized(this.lock.reader) {
                 foreach(e; this.entities.values) {
                     if(e.meta.level >= 0) {
@@ -1356,13 +1439,25 @@ class Space : flow.util.state.StateMachine!SystemState {
     }
 
     private bool send(T)(T s)
-    if(is(T : Unicast) || is(T : Anycast) || is(T : Multicast)) {
+    if(is(T : Anycast) || is(T : Multicast)) {
         // ensure correct source space
         s.src.space = this.meta.id;
 
+        auto isMe = s.dst == this.meta.id || this.meta.id.matches(s.dst);
         /* Only inside own space memory is shared,
         as soon as a signal is getting shiped to another space it is deep cloned */
-        return this.route(s) || this.ship(s.clone);
+        return isMe ? this.route(s) : this.ship(s.clone);
+    }
+
+    private bool send(T)(T s)
+    if(is(T : Unicast)) {
+        // ensure correct source space
+        s.src.space = this.meta.id;
+
+        auto isMe = s.dst.space == this.meta.id || this.meta.id.matches(s.dst.space);
+        /* Only inside own space memory is shared,
+        as soon as a signal is getting shiped to another space it is deep cloned */
+        return isMe ? this.route(s) : this.ship(s.clone);
     }
 
     private bool ship(Unicast s) {
@@ -1388,89 +1483,6 @@ class Space : flow.util.state.StateMachine!SystemState {
             ret = j.ship(s) || ret;
 
         return ret;
-    }
-
-
-    override protected bool onStateChanging(SystemState o, SystemState n) {
-        switch(n) {
-            case SystemState.Ticking:
-                return o == SystemState.Created || o == SystemState.Frozen;
-            case SystemState.Frozen:
-                return o == SystemState.Ticking;
-            case SystemState.Disposed:
-                return o == SystemState.Created || o == SystemState.Frozen;
-            default: return false;
-        }
-    }
-
-    override protected void onStateChanged(SystemState o, SystemState n) {
-        import flow.core.error;
-        
-        switch(n) {
-            case SystemState.Created:
-                import core.cpuid;
-                import flow.util.templates;
-
-                // creating tasker;
-                // if worker amount == size_t.init (0) use default (vcores - 2) but min 2
-                if(this.meta.worker < 1)
-                    this.meta.worker = threadsPerCPU > 3 ? threadsPerCPU-2 : 2;
-                this.tasker = new Processor(this.meta.worker);
-                this.tasker.start();
-
-                // creating entities
-                foreach(em; this.meta.entities) {
-                    if(em.ptr.id in this.entities)
-                        throw new SpaceException("entity with addr \""~em.ptr.addr~"\" already exists");
-                    else {
-                        Entity e = new Entity(this, em);
-                        this.entities[em.ptr.id] = e;
-                    }
-                }
-
-                // creating junctions
-                foreach(jm; this.meta.junctions) {
-                    auto j = Object.factory(jm.type).as!Junction;
-                    j._meta = jm;
-                    j._space = this;
-                    this.junctions ~= j;
-                }
-                break;
-            case SystemState.Ticking:
-                synchronized(this.lock.reader)
-                    foreach(e; this.entities)
-                        e.tick();
-
-                foreach(j; this.junctions)
-                    j.start();
-                break;
-            case SystemState.Frozen:
-                foreach(j; this.junctions)
-                    j.stop();
-
-                synchronized(this.lock.reader)
-                    foreach(e; this.entities.values)
-                        e.freeze();
-                break;
-            case SystemState.Disposed:
-                import std.array;
-
-                foreach(j; this.junctions) {
-                    j.dispose();
-                    j.destroy();
-                }
-
-                this.junctions = Junction[].init;
-
-                synchronized(this.lock.writer)
-                    foreach(e; this.entities.keys)
-                        this.entities[e].destroy;
-
-                this.tasker.stop();
-                this.tasker.destroy;
-                break;
-            default: break;
-        }
     }
 }
 
