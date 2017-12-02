@@ -12,7 +12,7 @@ import std.array;
 /// at linking something bad is happening if "Data" symbol is not used in shared library
 private static import flow.data.engine; class __Foo : flow.data.engine.Data {mixin flow.data.engine.data;}
 
-class NanoMsgConnectorConfig : ConnectorConfig {
+/*class NanoMsgConnectorConfig : ConnectorConfig {
     import flow.data;
 
     mixin data;
@@ -72,7 +72,7 @@ class NanoMsgConnector : Connector {
                 int sock = nn_socket (AF_SP, NN_SUB);
                 if(nn_setsockopt(sock, NN_SUB, NN_SUB_SUBSCRIBE, dst.ptr, 0) >= 0) {
                     this.subSock[space] = sock;
-                } else {/*TODO throw exception*/}
+                } else {*//*TODO throw exception*//*}
             }
         }
     }
@@ -89,4 +89,4 @@ class NanoMsgConnector : Connector {
 
         nn_send(this.pubSock, msg.ptr, 0, 0);
     }
-}
+}*/

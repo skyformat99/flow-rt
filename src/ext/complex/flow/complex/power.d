@@ -184,7 +184,7 @@ SpaceMeta createPower(string id, size_t amount, string[string] params) {
         em.ptr = new EntityPtr;
         em.ptr.id = i.to!string;
         em.ptr.space = id;
-        em.access = EntityAccess.Local;
+        em.level = 0;
 
         for(size_t j = 0; j < amount; j++) {
             if(i != j) {

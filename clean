@@ -4,9 +4,12 @@ rootDir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 rm -fr $rootDir/CMakeCache.txt
 rm -fr $rootDir/CMakeFiles
+rm -fr $rootDir/bin
 rm -fr $rootDir/lib
-rm -fr $rootDir/ifc
+rm -fr $rootDir/Testing
 rm -fr $(find $rootDir -name "*.di")
 rm -fr $(find $rootDir -name "*.o")
 rm -fr $(find $rootDir -name "*.a")
 rm -fr $(find $rootDir -name "*.so")
+rm -fr cmake_install.cmake
+rm -fr CTestTestfile.cmake

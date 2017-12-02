@@ -55,12 +55,6 @@ void main(string[] args) {
 
         outputFile.write(sm.json(true));
 
-        auto pcFile = opts.output.buildPath("process.cfg");
-        if(!pcFile.exists) {
-            auto pc = new ProcessConfig;
-            pcFile.write(pc.json(true));
-        }
-
         auto libsFile = opts.output.buildPath("libs.lst");
         if(libsFile.exists) {
             import std.string, std.algorithm.searching;

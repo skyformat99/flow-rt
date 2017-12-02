@@ -112,14 +112,8 @@ void run(string confDir, string libDir) {
     foreach(lib; libsFile.readText.split)
         dlopen(libDir.buildPath(lib).toStringz, RTLD_NOW|RTLD_GLOBAL);
 
-    Log.msg(LL.Message, "initializing process");
-    auto pc = createDataFromJson(procFile.readText).as!ProcessConfig;
-    if(pc is null) {
-        Log.msg(LL.Fatal, "process configuration is invalid -> exiting");
-        exit(-1);
-    }
-    
-    auto p = new Process(pc);
+    Log.msg(LL.Message, "initializing process");    
+    auto p = new Process();
     scope(exit) p.destroy;
 
     Log.msg(LL.Message, "initializing spaces");
