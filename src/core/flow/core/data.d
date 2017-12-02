@@ -39,32 +39,6 @@ class Anycast : Signal {
     mixin flow.data.engine.field!(Data, "recovery");
 }*/
 
-class ProcessInfo : flow.data.engine.Data {
-    mixin flow.data.engine.data;
-
-    /// public RSA certificate (set by process from ProcessConfig)
-    mixin flow.data.engine.array!(ubyte, "cert");
-
-    /// process domain (top level domain of spaces in process)
-    mixin flow.data.engine.array!(string, "domain");
-
-    /// witnesses used to approve peers (no witnesses leads to general accepteance of peer processes)
-    mixin flow.data.engine.array!(Witness, "witnesses");
-}
-
-/// configuration object of a process
-class ProcessConfig : flow.data.engine.Data {
-    mixin flow.data.engine.data;
-
-    /// private/public RSA key (no key disables encryption)
-    mixin flow.data.engine.array!(ubyte, "key");
-
-    mixin flow.data.engine.field!(ProcessInfo, "info");
-
-    /// junctions allow signals to get shipped across processes
-    mixin flow.data.engine.array!(JunctionMeta, "junctions");
-}
-
 class SpaceMeta : flow.data.engine.Data {
     mixin flow.data.engine.data;
 
@@ -77,8 +51,39 @@ class SpaceMeta : flow.data.engine.Data {
     /// amount of worker threads for executing ticks
     mixin flow.data.engine.field!(size_t, "worker");
 
+    /// junctions allow signals to get shipped across spaces
+    mixin flow.data.engine.array!(JunctionMeta, "junctions");
+
     /// entities of space
     mixin flow.data.engine.array!(EntityMeta, "entities");
+}
+
+class JunctionInfo : flow.data.data.IdData {
+    mixin flow.data.engine.data;
+
+    mixin flow.data.engine.field!(string, "space");
+
+    /// public RSA certificate (set by junction itself from private key)
+    mixin flow.data.engine.array!(ubyte, "cert");
+
+    mixin flow.data.engine.field!(bool, "isConfirming");
+
+    mixin flow.data.engine.field!(bool, "acceptsAnycast");
+    mixin flow.data.engine.field!(bool, "acceptsMulticast");
+}
+
+class JunctionMeta : flow.data.engine.Data {
+    mixin flow.data.engine.data;
+
+    mixin flow.data.engine.field!(JunctionInfo, "info");
+    mixin flow.data.engine.field!(string, "type");
+    mixin flow.data.engine.field!(ushort, "level");
+
+    /// witnesses used to approve peers (no witnesses leads to general accepteance of peer certificates)
+    mixin flow.data.engine.array!(Witness, "witnesses");
+
+    /// private/public RSA key (no key disables encryption)
+    mixin flow.data.engine.array!(ubyte, "key");
 }
 
 class EntityMeta : flow.data.engine.Data {
@@ -87,7 +92,7 @@ class EntityMeta : flow.data.engine.Data {
     mixin flow.data.engine.data;
 
     mixin flow.data.engine.field!(EntityPtr, "ptr");
-    mixin flow.data.engine.field!(EntityAccess, "access");
+    mixin flow.data.engine.field!(ushort, "level");
     mixin flow.data.engine.field!(Data, "context");
     mixin flow.data.engine.array!(Event, "events");
     mixin flow.data.engine.array!(Receptor, "receptors");
@@ -101,12 +106,6 @@ class EntityPtr : flow.data.engine.Data {
 
     mixin flow.data.engine.field!(string, "id");
     mixin flow.data.engine.field!(string, "space");
-}
-
-/// scopes an entity can have
-enum EntityAccess {
-    Local,
-    Global
 }
 
 enum EventType {
@@ -159,25 +158,4 @@ class Witness : flow.data.engine.Data {
 
     /// certificate of the witness
     mixin flow.data.engine.array!(ubyte, "cert");
-}
-
-class JunctionInfo : flow.data.data.IdData {
-    mixin flow.data.engine.data;
-
-    mixin flow.data.engine.field!(ProcessInfo, "process");
-    mixin flow.data.engine.field!(bool, "acceptsAnycast");
-    mixin flow.data.engine.field!(bool, "acceptsMulticast");
-}
-
-abstract class ConnectorConfig : flow.data.engine.Data {
-    mixin flow.data.engine.data;
-    
-    mixin flow.data.engine.field!(string, "type");
-}
-
-class JunctionMeta : flow.data.engine.Data {
-    mixin flow.data.engine.data;
-
-    mixin flow.data.engine.field!(JunctionInfo, "info");
-    mixin flow.data.engine.field!(ConnectorConfig, "connector");
 }

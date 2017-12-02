@@ -1131,6 +1131,84 @@ unittest {
     assert(matches("a.b.c", "*.b.c"), "third level * matching failed");
 }
 
+private enum JunctionState {
+    Created = 0,
+    Up,
+    Down,
+    Disposed
+}
+
+abstract class Junction : flow.util.state.StateMachine!JunctionState {
+    private import flow.core.data;
+
+    private JunctionMeta _meta;
+    private Space _space;
+    private string[] destinations;
+
+    protected @property JunctionMeta meta() {return this._meta;}
+    protected @property string space() {return this._space.meta.id;}
+
+    this() {
+        super();
+    }
+
+    private void start() {
+        this.state = JunctionState.Up;
+    }
+
+    private void stop() {
+        this.state = JunctionState.Down;
+    }
+
+    private void dispose() {
+        if(this.state == JunctionState.Up)
+            this.stop();
+        
+        this.state = JunctionState.Disposed;
+    }
+
+    override protected bool onStateChanging(JunctionState o, JunctionState n) {
+        switch(n) {
+            case JunctionState.Up:
+                return o == JunctionState.Created || o == JunctionState.Down;
+            case JunctionState.Down:
+                return o == JunctionState.Up;
+            case JunctionState.Disposed:
+                return o == JunctionState.Created || o == JunctionState.Down;
+            default: return false;
+        }
+    }
+
+    override protected void onStateChanged(JunctionState o, JunctionState n) {
+        import flow.util.templates;
+        
+        switch(n) {
+            case JunctionState.Created:
+                break;
+            case JunctionState.Up:
+                this.start();
+                break;
+            case JunctionState.Down:
+                this.stop();
+                break;
+            case JunctionState.Disposed:
+                break;
+            default: break;
+        }
+    }
+
+    protected abstract void up();
+    protected abstract void down();
+
+    abstract bool ship(Unicast s);
+    abstract bool ship(Anycast s);
+    abstract bool ship(Multicast s);
+
+    bool deliver(T)(T s) if(is(T:Unicast) || is(T:Anycast) || is(T:Multicast)) {
+        return this._space.route(s, this.meta.level);
+    }
+}
+
 /// hosts a space construct
 class Space : flow.util.state.StateMachine!SystemState {
     private import flow.core.data;
@@ -1139,6 +1217,7 @@ class Space : flow.util.state.StateMachine!SystemState {
     private Process process;
     private Processor tasker;
 
+    private Junction[] junctions;
     private Entity[string] entities;
 
     private this(Process p, SpaceMeta m) {
@@ -1220,12 +1299,12 @@ class Space : flow.util.state.StateMachine!SystemState {
     }
     
     /// routes an unicast signal to receipting entities if its in this space
-    private bool route(Unicast s, bool intern = false) {
+    private bool route(Unicast s, ushort level = 0) {
         // if its a perfect match assuming process only accepted a signal for itself
         if(this.state == SystemState.Ticking && s.dst.space == this.meta.id) {
             synchronized(this.lock.reader) {
                 foreach(e; this.entities.values) {
-                    if(intern || e.meta.access == EntityAccess.Global) {
+                    if(e.meta.level >= 0) {
                         if(e.meta.ptr == s.dst)
                             return e.receipt(s);
                     }
@@ -1238,13 +1317,13 @@ class Space : flow.util.state.StateMachine!SystemState {
 
    
     /// routes an anycast signal to one receipting entity
-    private bool route(Anycast s, bool intern = false) {
+    private bool route(Anycast s, ushort level = 0) {
         // if its adressed to own space or parent using * wildcard or even none
         // in each case we do not want to regex search when ==
         if(this.state == SystemState.Ticking && (s.space == this.meta.id || matches(this.meta.id, s.space))) {
             synchronized(this.lock.reader) {
                 foreach(e; this.entities.values) {
-                    if(intern || e.meta.access == EntityAccess.Global) {
+                    if(e.meta.level >= 0) {
                         if(e.receipt(s))
                             return true;
                     }
@@ -1256,14 +1335,14 @@ class Space : flow.util.state.StateMachine!SystemState {
     }
     
     /// routes a multicast signal to receipting entities if its addressed to space
-    private bool route(Multicast s, bool intern = false) {
+    private bool route(Multicast s, ushort level = 0) {
         auto r = false;
         // if its adressed to own space or parent using * wildcard or even none
         // in each case we do not want to regex search when ==
         if(this.state == SystemState.Ticking && (s.space == this.meta.id || matches(this.meta.id, s.space))) {
             synchronized(this.lock.reader) {
                 foreach(e; this.entities.values) {
-                    if(intern || e.meta.access == EntityAccess.Global) {
+                    if(e.meta.level >= 0) {
                         e.receipt(s);
                     }
                 }
@@ -1282,9 +1361,35 @@ class Space : flow.util.state.StateMachine!SystemState {
         s.src.space = this.meta.id;
 
         /* Only inside own space memory is shared,
-        as soon as a signal is getting shipd to another space it is deep cloned */
-        return this.route(s, true) || this.process.ship(s.clone);
+        as soon as a signal is getting shiped to another space it is deep cloned */
+        return this.route(s) || this.ship(s.clone);
     }
+
+    private bool ship(Unicast s) {
+        foreach(j; this.junctions)
+            if(j.ship(s)) return true;
+
+        return false;
+    }
+
+    private bool ship(Anycast s) {
+        auto ret = false;
+        foreach(j; this.junctions)
+            // anycasts can only be shipped via confirming junctions
+            if(j.meta.info.isConfirming && j.ship(s))
+                return true;
+
+        return false;
+    }
+
+    private bool ship(Multicast s) {
+        auto ret = false;
+        foreach(j; this.junctions)
+            ret = j.ship(s) || ret;
+
+        return ret;
+    }
+
 
     override protected bool onStateChanging(SystemState o, SystemState n) {
         switch(n) {
@@ -1303,8 +1408,10 @@ class Space : flow.util.state.StateMachine!SystemState {
         
         switch(n) {
             case SystemState.Created:
-                // creating tasker;
                 import core.cpuid;
+                import flow.util.templates;
+
+                // creating tasker;
                 // if worker amount == size_t.init (0) use default (vcores - 2) but min 2
                 if(this.meta.worker < 1)
                     this.meta.worker = threadsPerCPU > 3 ? threadsPerCPU-2 : 2;
@@ -1320,18 +1427,41 @@ class Space : flow.util.state.StateMachine!SystemState {
                         this.entities[em.ptr.id] = e;
                     }
                 }
+
+                // creating junctions
+                foreach(jm; this.meta.junctions) {
+                    auto j = Object.factory(jm.type).as!Junction;
+                    j._meta = jm;
+                    j._space = this;
+                    this.junctions ~= j;
+                }
                 break;
             case SystemState.Ticking:
                 synchronized(this.lock.reader)
                     foreach(e; this.entities)
                         e.tick();
+
+                foreach(j; this.junctions)
+                    j.start();
                 break;
             case SystemState.Frozen:
+                foreach(j; this.junctions)
+                    j.stop();
+
                 synchronized(this.lock.reader)
                     foreach(e; this.entities.values)
                         e.freeze();
                 break;
             case SystemState.Disposed:
+                import std.array;
+
+                foreach(j; this.junctions) {
+                    j.dispose();
+                    j.destroy();
+                }
+
+                this.junctions = Junction[].init;
+
                 synchronized(this.lock.writer)
                     foreach(e; this.entities.keys)
                         this.entities[e].destroy;
@@ -1353,29 +1483,11 @@ class Process {
 
     ReadWriteMutex spacesLock;
     ReadWriteMutex junctionsLock;
-    private ProcessConfig config;
     private Space[string] spaces;
-    private Junction[UUID] junctions;
 
-    this(ProcessConfig c = null) {
+    this() {
         this.spacesLock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
         this.junctionsLock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
-
-        // if no config given generate default one
-        if(c is null)
-            c = new ProcessConfig;
-
-        this.config = c;
-
-        foreach(nm; this.config.junctions) {
-            try {
-                this.add(nm);
-            } catch(Throwable thr) {
-                import flow.util.log;
-
-                Log.msg(LL.Error, "initialization of a net at process startup failed", thr);
-            }
-        }
     }
 
     ~this() {
@@ -1390,102 +1502,6 @@ class Process {
             return this.spaces.values
                 .filter!(s=>s !is null && s.meta !is null && s.meta.exposed)
                 .map!(s=>s.meta.id).array;
-    }
-
-    /// adds a junction to process
-    void add(JunctionMeta m) {
-        import flow.core.error;
-        import flow.util.log;
-        import flow.util.templates;
-        import std.conv;
-
-        this.ensureThread();
-        
-        if(m is null || m.info is null || m.info.id == UUID.init)
-            throw new ProcessException("invalid net metadata", m);
-
-        Log.msg(LL.Info, "initializing junction with id \""~m.info.id.to!string~"\"");
-
-        if(m.info.id in this.junctions)
-            throw new ProcessException("a junction with id \""~m.info.id.to!string~"\" already exists", m);
-
-        /*if(m.as!DynamicJunctionMeta !is null)
-            synchronized(this.junctionsLock.writer)
-                this.junctions[m.info.id] = new DynamicJunction(this, m.as!DynamicJunctionMeta);
-        else {
-            Log.msg(LL.Error, "not supporting junction type", m);
-            throw new NotImplementedError;
-        }*/
-    }
-
-    /// removes a junction from process
-    void remove(UUID id) {
-        import flow.core.error;
-        import std.conv;
-
-        this.ensureThread();
-        
-        synchronized(this.junctionsLock.writer)
-            if(id in this.junctions) {
-                Junction j = this.junctions[id];
-                this.junctions.remove(id);
-                j.destroy;
-            } else throw new ProcessException("no junction with id \""~id.to!string~"\" found for removal");
-    }
-
-    /// routing unicast signal from space to space also across nets
-    private bool ship(Unicast s, bool incoming = false) {
-        if(s !is null) {
-            foreach(spc; this.spaces.values)
-                if(s.src.space != spc.meta.id && s.dst.space == spc.meta.id)
-                    return spc.route(s);
-
-            if(!incoming)
-                synchronized(this.junctionsLock.reader) {
-                    // when here, its not hosted in local process so ship it to process hosting its space if known
-                    // block until acceptance is confirmed by remote process or time out is hit
-                }
-        }
-        
-        return false;
-    }
-
-    /// routing anycast signal from space to space also across nets
-    private bool ship(Anycast s, bool incoming = false) {
-        if(s !is null) {
-            foreach(spc; this.spaces.values)
-                if(s.src.space != spc.meta.id && spc.route(s))
-                    return true;
-
-            if(!incoming)
-                synchronized(this.junctionsLock.reader) {
-                    // when here, no local space acctepts it and matches the pattern so ship it to processes hosting spaces matching
-                    // block until acceptance is confirmed by remote process or timeout is hit
-                }
-        }
-        
-        return false;
-    }
-
-    /// routing multicast signal from space to space also across nets
-    private bool ship(Multicast s, bool incoming = false) {
-        auto r = false;
-        if(s !is null) {
-            foreach(spc; this.spaces.values)
-                if(s.src.space != spc.meta.id)
-                    r = spc.route(s) || r;
-        }
-
-        if(!incoming)
-            synchronized(this.junctionsLock.reader) {
-                // signal might target other spaces hosted by remote processes too, so ship it to all processes hosting spaces matching pattern
-                // not blocking, just (is proccess with matching space known) || r
-                /* that means multicasts are returning true if an adequate space is known local or remote,
-                this is neccessary due to the requirement for flow to support systems interconnected by
-                huge latency lines. an extreme case could be the connection between spaces sparated by lightyears. */
-            }
-        
-        return r;
     }
 
     /// ensure it is executed in main thread or not at all
@@ -1536,127 +1552,6 @@ class Process {
             } else
                 throw new ProcessException("space with id \""~s~"\" is not existing");
     }
-}
-
-private enum JunctionState {
-    Created = 0,
-    Up,
-    Down,
-    Disposed
-}
-
-class Junction : flow.util.state.StateMachine!JunctionState {
-    private import flow.core.data;
-
-    private JunctionMeta meta;
-    private Process process;
-    private Connector connector;
-
-    private this(JunctionMeta m, Process p) {
-        this.meta = m;
-        this.process = p;
-
-        super();
-    }
-
-    private void up() {
-        this.state = JunctionState.Up;
-    }
-
-    private void down() {
-        this.state = JunctionState.Down;
-    }
-
-    private void dispose() {
-        if(this.state == JunctionState.Up)
-            this.down;
-        
-        this.state = JunctionState.Disposed;
-    }
-
-    override protected bool onStateChanging(JunctionState o, JunctionState n) {
-        switch(n) {
-            case JunctionState.Up:
-                return o == JunctionState.Created || o == JunctionState.Down;
-            case JunctionState.Down:
-                return o == JunctionState.Up;
-            case JunctionState.Disposed:
-                return o == JunctionState.Created || o == JunctionState.Down;
-            default: return false;
-        }
-    }
-
-    override protected void onStateChanged(JunctionState o, JunctionState n) {
-        import flow.util.templates;
-        
-        switch(n) {
-            case JunctionState.Created:
-                this.connector = Object.factory(this.meta.connector.type).as!Connector;
-                if(this.connector !is null)
-                    this.connector._junction = this;
-                else
-                    this.dispose();
-                break;
-            case JunctionState.Up:
-                this.connector.start();
-                foreach(s; this.process.exposed)
-                    this.connector.expose(s);
-                break;
-            case JunctionState.Down:
-                this.connector.stop();
-                break;
-            case JunctionState.Disposed:
-                this.connector.destroy();
-                this.connector = null;
-                break;
-            default: break;
-        }
-    }
-    
-    bool ship(ubyte[] bin) {
-        import flow.core.data;
-        import flow.data.bin;
-        import flow.util.templates;
-
-        // TODO decrypt and verify
-
-        auto s = bin.unbin!Signal;
-
-        if(s.as!Unicast !is null) return this.process.ship(s.as!Unicast, true);
-        else if(this.meta.info.acceptsAnycast && s.as!Anycast !is null) return this.process.ship(s.as!Anycast, true);
-        else if(this.meta.info.acceptsMulticast && s.as!Multicast !is null) return this.process.ship(s.as!Multicast, true);
-        else return false;
-    }
-
-    private void ship(T)(T s) if(is(T : Unicast)) {
-        // TODO encrypt and sign
-
-        this.connector.ship(s.dst.space, s.bin(s));
-    }
-
-    private void ship(T)(T s) if(is(T : Anycast) || is(T : Multicast)) {
-        // TODO encrypt and sign
-
-        this.connector.ship(s.space, s.bin(s));
-    }
-}
-
-abstract class Connector {
-    private import flow.core.data;
-
-    private ConnectorConfig _config;
-    protected @property ConnectorConfig config() {return this._config;}
-
-    private Junction _junction;
-    protected @property Junction junction() {return this._junction;}
-
-    abstract @property string type();
-
-    protected abstract void start();
-    protected abstract void stop();
-    protected abstract void expose(string space);
-    protected abstract void hide(string space);
-    protected abstract void ship(string dst, ubyte[] bin, ubyte[] sig);
 }
 
 version(unittest) {
@@ -1909,10 +1804,9 @@ unittest {
     
     writeln("testing engine (you should see exactly one \"[Error] tick@entity(e@s): run failed\" and one \"[Info] tick@entity(e@s): handling run error\" warning in log)");
 
-    auto pc = new ProcessConfig;
     /* when there is one worker in taskpool, it has
     to be perfectly deterministic using limited complexity */
-    auto p = new Process(pc);
+    auto p = new Process();
     scope(exit) p.destroy;
     auto s = p.add(createTestSpace());
     auto e = s.get("e");
