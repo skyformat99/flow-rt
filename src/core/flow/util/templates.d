@@ -2,7 +2,7 @@ module flow.util.templates;
 
 /// Returns: full qualified name of type
 template fqn(T) {
-    import std.traits : fullyQualifiedName;
+    private import std.traits : fullyQualifiedName;
 
     enum fqn = fullyQualifiedName!T;
 }

@@ -1,10 +1,11 @@
 module flow.data.bin;
 
-private static import flow.data.engine;
-private static import std.range;
-private static import std.variant;
+private import flow.data.engine;
+private import std.range;
+private import std.traits;
+private import std.variant;
 
-private void bin(std.variant.Variant t, flow.data.engine.PropertyInfo pi, ref std.range.Appender!(ubyte[]) a) {
+private void bin(Variant t, PropertyInfo pi, ref Appender!(ubyte[]) a) {
     import flow.data.engine : Data, TypeDesc;
     import std.datetime : SysTime, DateTime, Duration, Date;
     import std.uuid : UUID;
@@ -100,18 +101,18 @@ private void bin(std.variant.Variant t, flow.data.engine.PropertyInfo pi, ref st
     }
 }
 
-private void bin(T)(T arr, ref std.range.Appender!(ubyte[]) a)
+private void bin(T)(T arr, ref Appender!(ubyte[]) a)
 if(
-    std.range.isArray!T &&
-    flow.data.engine.canHandle!(std.range.ElementType!T) &&
+    isArray!T &&
+    canHandle!(ElementType!T) &&
     !is(T == string)
 ) {
     arr.length.bin(a);
     foreach(e; arr) e.bin(a);
 }
 
-private void bin(T)(T val, ref std.range.Appender!(ubyte[]) a)
-if(flow.data.engine.canHandle!T) {
+private void bin(T)(T val, ref Appender!(ubyte[]) a)
+if(canHandle!T) {
     import flow.data.engine : Data, PropertyInfo;
     import flow.util.templates : as;
     import std.datetime : SysTime, DateTime, Duration, Date;
@@ -147,8 +148,9 @@ if(flow.data.engine.canHandle!T) {
 
 /// serializes data to binary
 ubyte[] bin(T)(T data)
-if(is(T: flow.data.engine.Data)) {
+if(is(T: Data)) {
     import std.range : appender;
+    
     auto a = appender!(ubyte[]);
     data.bin(a);
     return a.data;
@@ -163,8 +165,8 @@ class InvalidBinException : Exception {
 /// deserializes binary data to a given suppoerted array type
 T unbin(T)(ref ubyte[] arr)
 if(
-    std.range.isArray!T &&
-    flow.data.engine.canHandle!(std.range.ElementType!T) &&
+    isArray!T &&
+    canHandle!(ElementType!T) &&
     !is(T == string)
 ) {
     import std.range : ElementType;
@@ -179,7 +181,7 @@ if(
 
 /// deserializes binary data to a given supported type
 T unbin(T)(ref ubyte[] arr)
-if(flow.data.engine.canHandle!T) {
+if(canHandle!T) {
     import flow.data.engine : Data, createData, PropertyInfo;
     import flow.util.templates : as;
     import std.bitmanip : bigEndianToNative;
@@ -232,7 +234,7 @@ if(flow.data.engine.canHandle!T) {
     }
 }
 
-private void unbin(ref ubyte[] arr, flow.data.engine.Data d, flow.data.engine.PropertyInfo pi) {
+private void unbin(ref ubyte[] arr, Data d, PropertyInfo pi) {
     import flow.data.engine : Data, TypeDesc;
     import std.datetime : SysTime, DateTime, Duration, Date;
     import std.uuid : UUID;

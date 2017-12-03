@@ -1,110 +1,117 @@
 module flow.core.data;
 
-private static import flow.data.engine;
-private static import flow.data.data;
+private import flow.data.engine;
+private import flow.data.data;
 
-abstract class Signal : flow.data.data.IdData {
+/// data representing a signal
+abstract class Signal : IdData {
     private import std.uuid : UUID;
 
-    mixin flow.data.engine.data;
+    mixin data;
 
-    mixin flow.data.engine.field!(UUID, "group");
-    mixin flow.data.engine.field!(EntityPtr, "src");
+    mixin field!(UUID, "group");
+    mixin field!(EntityPtr, "src");
 }
 
+/// data representing an unicast
 class Unicast : Signal {
-    mixin flow.data.engine.data;
+    mixin data;
 
-    mixin flow.data.engine.field!(EntityPtr, "dst");
+    mixin field!(EntityPtr, "dst");
 }
 
-class Multicast : Signal {
-    mixin flow.data.engine.data;
-
-    mixin flow.data.engine.field!(string, "dst");
-}
-
+/// data representing a anycast
 class Anycast : Signal {
-    mixin flow.data.engine.data;
+    mixin data;
 
-    mixin flow.data.engine.field!(string, "dst");
+    mixin field!(string, "dst");
 }
 
-/*class Damage : flow.data.engine.Data {
+/// data representing a multicast
+class Multicast : Signal {
+    mixin data;
+
+    mixin field!(string, "dst");
+}
+
+/*class Damage : Data {
     private import flow.data.engine : Data;
 
-    mixin flow.data.engine.data;
+    mixin data;
 
-    mixin flow.data.engine.field!(string, "msg");
-    mixin flow.data.engine.field!(Data, "recovery");
+    mixin field!(string, "msg");
+    mixin field!(Data, "recovery");
 }*/
 
-class SpaceMeta : flow.data.engine.Data {
-    mixin flow.data.engine.data;
+/// metadata of a space
+class SpaceMeta : Data {
+    mixin data;
 
     /// identifier of the space
-    mixin flow.data.engine.field!(string, "id");
+    mixin field!(string, "id");
     
     /// amount of worker threads for executing ticks
-    mixin flow.data.engine.field!(size_t, "worker");
+    mixin field!(size_t, "worker");
 
     /// junctions allow signals to get shipped across spaces
-    mixin flow.data.engine.array!(JunctionMeta, "junctions");
+    mixin array!(JunctionMeta, "junctions");
 
     /// entities of space
-    mixin flow.data.engine.array!(EntityMeta, "entities");
+    mixin array!(EntityMeta, "entities");
 }
 
-class JunctionInfo : flow.data.data.IdData {
-    mixin flow.data.engine.data;
+/// info of a junction
+class JunctionInfo : IdData {
+    mixin data;
 
-    mixin flow.data.engine.field!(string, "space");
+    mixin field!(string, "space");
 
     /// public RSA certificate (set by junction itself from private key)
-    mixin flow.data.engine.array!(ubyte, "cert");
+    mixin array!(ubyte, "cert");
 
-    mixin flow.data.engine.field!(bool, "isConfirming");
+    mixin field!(bool, "isConfirming");
 
-    mixin flow.data.engine.field!(bool, "acceptsAnycast");
-    mixin flow.data.engine.field!(bool, "acceptsMulticast");
+    mixin field!(bool, "acceptsAnycast");
+    mixin field!(bool, "acceptsMulticast");
 }
 
-class JunctionMeta : flow.data.engine.Data {
-    mixin flow.data.engine.data;
+/// metadata of a junction
+class JunctionMeta : Data {
+    mixin data;
 
-    mixin flow.data.engine.field!(JunctionInfo, "info");
-    mixin flow.data.engine.field!(string, "type");
-    mixin flow.data.engine.field!(ushort, "level");
+    mixin field!(JunctionInfo, "info");
+    mixin field!(string, "type");
+    mixin field!(ushort, "level");
 
     /// witnesses used to approve peers (no witnesses leads to general accepteance of peer certificates)
-    mixin flow.data.engine.array!(Witness, "witnesses");
+    mixin array!(Witness, "witnesses");
 
     /// private/public RSA key (no key disables encryption)
-    mixin flow.data.engine.array!(ubyte, "key");
+    mixin array!(ubyte, "key");
 }
 
-class EntityMeta : flow.data.engine.Data {
-    private import flow.data.engine : Data;
+/// metadata of an entity
+class EntityMeta : Data {
+    mixin data;
 
-    mixin flow.data.engine.data;
+    mixin field!(EntityPtr, "ptr");
+    mixin field!(ushort, "level");
+    mixin field!(Data, "context");
+    mixin array!(Event, "events");
+    mixin array!(Receptor, "receptors");
 
-    mixin flow.data.engine.field!(EntityPtr, "ptr");
-    mixin flow.data.engine.field!(ushort, "level");
-    mixin flow.data.engine.field!(Data, "context");
-    mixin flow.data.engine.array!(Event, "events");
-    mixin flow.data.engine.array!(Receptor, "receptors");
-
-    mixin flow.data.engine.array!(TickMeta, "ticks");
+    mixin array!(TickMeta, "ticks");
 }
 
 /// referencing a specific entity 
-class EntityPtr : flow.data.engine.Data {
-    mixin flow.data.engine.data;
+class EntityPtr : Data {
+    mixin data;
 
-    mixin flow.data.engine.field!(string, "id");
-    mixin flow.data.engine.field!(string, "space");
+    mixin field!(string, "id");
+    mixin field!(string, "space");
 }
 
+/// type of events can occur in an entity
 enum EventType {
     OnCreated,
     OnTicking,
@@ -112,47 +119,50 @@ enum EventType {
     OnDisposed
 }
 
-class Event : flow.data.engine.Data {
-    mixin flow.data.engine.data;
+/// mapping a tick to an event
+class Event : Data {
+    mixin data;
 
-    mixin flow.data.engine.field!(EventType, "type");
-    mixin flow.data.engine.field!(string, "tick");
+    mixin field!(EventType, "type");
+    mixin field!(string, "tick");
 }
 
-public class TickMeta : flow.data.engine.Data {
-    private import flow.data.engine : Data;
+/// metadata of a tick
+public class TickMeta : Data {
+    mixin data;
 
-    mixin flow.data.engine.data;
-
-    mixin flow.data.engine.field!(TickInfo, "info");
-    mixin flow.data.engine.field!(Signal, "trigger");
-    mixin flow.data.engine.field!(TickInfo, "previous");
-    mixin flow.data.engine.field!(Data, "data");
+    mixin field!(TickInfo, "info");
+    mixin field!(Signal, "trigger");
+    mixin field!(TickInfo, "previous");
+    mixin field!(Data, "data");
 }
 
-class TickInfo : flow.data.data.IdData {
+/// info of a tick
+class TickInfo : IdData {
     private import std.uuid : UUID;
 
-    mixin flow.data.engine.data;
+    mixin data;
 
-    mixin flow.data.engine.field!(EntityPtr, "entity");
-    mixin flow.data.engine.field!(string, "type");
-    mixin flow.data.engine.field!(UUID, "group");
+    mixin field!(EntityPtr, "entity");
+    mixin field!(string, "type");
+    mixin field!(UUID, "group");
 }
 
-class Receptor : flow.data.engine.Data {
-    mixin flow.data.engine.data;
+/// mapping a tick to a signal
+class Receptor : Data {
+    mixin data;
 
-    mixin flow.data.engine.field!(string, "signal");
-    mixin flow.data.engine.field!(string, "tick");
+    mixin field!(string, "signal");
+    mixin field!(string, "tick");
 }
 
-class Witness : flow.data.engine.Data {
-    mixin flow.data.engine.data;
+/// root certificate
+class Witness : Data {
+    mixin data;
 
     /// name of the witness
-    mixin flow.data.engine.field!(string, "name");
+    mixin field!(string, "name");
 
     /// certificate of the witness
-    mixin flow.data.engine.array!(ubyte, "cert");
+    mixin array!(ubyte, "cert");
 }

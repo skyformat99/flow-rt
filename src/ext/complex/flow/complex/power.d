@@ -203,7 +203,7 @@ SpaceMeta createPower(string id, size_t amount, string[string] params) {
         rr.tick = "flow.complex.power.React";
         em.receptors ~= rr;
 
-        auto dt = em.createTickMeta("flow.complex.power.Exist");
+        auto dt = em.addTick("flow.complex.power.Exist");
         em.ticks ~= dt;
 
         sm.entities ~= em;

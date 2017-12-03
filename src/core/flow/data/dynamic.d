@@ -1,8 +1,9 @@
 module flow.data.dynamic;
 
-private static import flow.data.engine;
-private static import std.range;
-private static import std.variant;
+private import flow.data.engine;
+private import std.range;
+private import std.traits;
+private import std.variant;
 
 /// is thrown when a requested or required property is not existing
 class PropertyNotExistingException : Exception {
@@ -10,7 +11,7 @@ class PropertyNotExistingException : Exception {
     this(){super(string.init);}
 }
 
-private std.variant.Variant get(flow.data.engine.Data d, string name){
+private Variant get(Data d, string name){
     import flow.data.engine : PropertyInfo;
     import flow.util.templates : as;
 
@@ -21,8 +22,8 @@ private std.variant.Variant get(flow.data.engine.Data d, string name){
 }
 
 /// get property as data
-T get(T)(flow.data.engine.Data d, string name)
-if(is(T : flow.data.engine.Data)) {
+T get(T)(Data d, string name)
+if(is(T : Data)) {
     import flow.data.engine : Data;
     import flow.util.templates : as;
 
@@ -30,10 +31,10 @@ if(is(T : flow.data.engine.Data)) {
 }
 
 /// get property as data array
-T get(T)(flow.data.engine.Data d, string name)
+T get(T)(Data d, string name)
 if(
-    std.range.isArray!T &&
-    is(std.range.ElementType!T : flow.data.engine.Data)
+    isArray!T &&
+    is(ElementType!T : Data)
 ) {
     import flow.data.engine : Data;
     import flow.util.templates : as;
@@ -42,10 +43,10 @@ if(
 }
 
 /// get property as supported type
-T get(T)(flow.data.engine.Data d, string name)
+T get(T)(Data d, string name)
 if(
-    flow.data.engine.canHandle!T &&
-    !is(T : flow.data.engine.Data)
+    canHandle!T &&
+    !is(T : Data)
 ) {
     import std.traits : OriginalType;
 
@@ -53,12 +54,12 @@ if(
 }
 
 /// get property as supported array
-T get(T)(flow.data.engine.Data d, string name)
+T get(T)(Data d, string name)
 if(
     !is(T == string) &&
-    std.range.isArray!T &&
-    flow.data.engine.canHandle!(std.range.ElementType!T) &&
-    !is(std.range.ElementType!T : flow.data.engine.Data)
+    isArray!T &&
+    canHandle!(ElementType!T) &&
+    !is(ElementType!T : Data)
 ) {
     import std.range : ElementType;
     import std.traits : OriginalType;
@@ -66,7 +67,7 @@ if(
     return cast(T)d.get(name).get!(OriginalType!(ElementType!T)[])();
 }
 
-private bool set(flow.data.engine.Data d, string name, std.variant.Variant val) {
+private bool set(Data d, string name, Variant val) {
     import flow.data.engine : PropertyInfo;
     import flow.util.templates : as;
 
@@ -77,8 +78,8 @@ private bool set(flow.data.engine.Data d, string name, std.variant.Variant val) 
 }
 
 /// set property using data
-bool set(T)(flow.data.engine.Data d, string name, T val)
-if(is(T : flow.data.engine.Data)) {
+bool set(T)(Data d, string name, T val)
+if(is(T : Data)) {
     import flow.data.engine : Data;
     import flow.util.templates : as;
     import std.variant : Variant;
@@ -87,10 +88,10 @@ if(is(T : flow.data.engine.Data)) {
 }
 
 /// set property using data array
-bool set(T)(flow.data.engine.Data d, string name, T val)
+bool set(T)(Data d, string name, T val)
 if(
-    std.range.isArray!T &&
-    is(std.range.ElementType!T : flow.data.engine.Data)
+    isArray!T &&
+    is(ElementType!T : Data)
 ) {
     import flow.data.engine : Data;
     import flow.util.templates : as;
@@ -100,10 +101,10 @@ if(
 }
 
 /// set property using supported type
-bool set(T)(flow.data.engine.Data d, string name, T val)
+bool set(T)(Data d, string name, T val)
 if(
-    flow.data.engine.canHandle!T &&
-    !is(T : flow.data.engine.Data)
+    canHandle!T &&
+    !is(T : Data)
 ) {
     import std.traits : OriginalType;
     import std.variant : Variant;
@@ -112,12 +113,12 @@ if(
 }
 
 /// set property using supported type array
-bool set(T)(flow.data.engine.Data d, string name, T val)
+bool set(T)(Data d, string name, T val)
 if(
     !is(T == string) &&
-    std.range.isArray!T &&
-    flow.data.engine.canHandle!(std.range.ElementType!T) &&
-    !is(std.range.ElementType!T : flow.data.engine.Data)
+    isArray!T &&
+    canHandle!(ElementType!T) &&
+    !is(ElementType!T : Data)
 ) {
     import std.range : ElementType;
     import std.traits : OriginalType;

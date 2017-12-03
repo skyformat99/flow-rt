@@ -1,13 +1,14 @@
 module flow.data.engine;
 
-private static import std.variant;
-private static import std.range;
+private import std.variant;
+private import std.range;
+private import std.traits;
 
 /// checks if data engine can handle a certain data type
 template canHandle(T) {
-    import std.datetime : SysTime, DateTime, Date, Duration;
-    import std.traits : OriginalType;
-    import std.uuid : UUID;
+    private import std.datetime;
+    private import std.traits;
+    private import std.uuid;
 
     enum canHandle =
         is(T == bool) ||
@@ -76,8 +77,8 @@ struct PropertyInfo {
     private bool _array;
     private TypeDesc _desc;
 
-    private std.variant.Variant function(Data) _getter;
-	private bool function(Data, std.variant.Variant) _setter;
+    private Variant function(Data) _getter;
+	private bool function(Data, Variant) _setter;
 	private bool function(Data, Data) _equals;
 
     /// returns the type informations
@@ -96,12 +97,12 @@ struct PropertyInfo {
     @property TypeDesc desc() {return this._desc;}
 
     /// gets the value as variant
-    std.variant.Variant get(Data d) {
+    Variant get(Data d) {
         return _getter(d);
     }
 
     /// sets the value from a variant
-    bool set(Data d, std.variant.Variant v) {
+    bool set(Data d, Variant v) {
         return _setter(d, v);
     }
 
@@ -270,7 +271,7 @@ if (canHandle!T) {
 
 /// helper for generating properties
 template TPropertyHelper(T, string name) {
-    import std.variant : Variant;
+    private import std.variant;
 
     PropertyInfo getFieldInfo(Variant function(Data) getter, bool function(Data, Variant) setter, bool function(Data, Data) equals) {
         import std.datetime : SysTime, DateTime, Date, Duration;
@@ -349,8 +350,8 @@ Data createData(string name) {
 /// deep clone an array of data
 T clone(T)(T arr)
 if(
-    std.range.isArray!T &&
-    is(std.range.ElementType!T : Data)
+    isArray!T &&
+    is(ElementType!T : Data)
 ) {
     import std.range : ElementType;
     
@@ -363,9 +364,9 @@ if(
 /// deep clone an array of supported type
 T clone(T)(T arr)
 if(
-    std.range.isArray!T &&
-    canHandle!(std.range.ElementType!T) &&
-    !is(std.range.ElementType!T : Data)
+    isArray!T &&
+    canHandle!(ElementType!T) &&
+    !is(ElementType!T : Data)
 ) {
     T cArr;
     foreach(e; arr) cArr ~= e;
@@ -373,7 +374,7 @@ if(
     return cArr;
 }
 
-private std.variant.Variant clone(std.variant.Variant t, PropertyInfo pi) {
+private Variant clone(Variant t, PropertyInfo pi) {
     import std.datetime : SysTime, DateTime, Date, Duration;
     import std.uuid : UUID;
     import std.variant : Variant;

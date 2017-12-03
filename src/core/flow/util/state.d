@@ -1,16 +1,16 @@
 module flow.util.state;
 
-private static import flow.util.error;
-private static import std.traits;
+private import flow.util.error;
+private import std.traits;
 
 /// thrown when state machine detects an invalid state for operation
-class InvalidStateException : flow.util.error.FlowException {mixin flow.util.error.exception;}
+class InvalidStateException : FlowException {mixin exception;}
 
 /// thrown when state machine refuses switch to given state
-class StateRefusedException : flow.util.error.FlowException {mixin flow.util.error.exception;}
+class StateRefusedException : FlowException {mixin exception;}
 
 /// state machine mixin template
-abstract class StateMachine(T) if (std.traits.isScalarType!T) {
+abstract class StateMachine(T) if (isScalarType!T) {
     private import core.sync.rwmutex : ReadWriteMutex;
 
     private ReadWriteMutex _lock;

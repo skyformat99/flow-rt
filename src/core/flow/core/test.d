@@ -2,21 +2,22 @@ module flow.core.test;
 
 /// imports for tests
 version(unittest) {
-    import flow.core;
-    import flow.data;
-    import flow.util;
+    private import flow.core.data;
+    private import flow.core.engine;
+    private import flow.data;
+    private import flow.util;
 }
 
 /// casts for testing
 version(unittest) {
-    class TestUnicast : flow.core.data.Unicast {
+    class TestUnicast : Unicast {
         mixin data;
     }
 
-    class TestAnycast : flow.core.data.Anycast {
+    class TestAnycast : Anycast {
         mixin data;
     }
-    class TestMulticast : flow.core.data.Multicast {
+    class TestMulticast : Multicast {
         mixin data;
     }
 }
@@ -79,24 +80,5 @@ version(unittest) {
             auto c = this.context.as!TestReceivingContext;
             c.gotTestMulticast = true;
         }
-    }
-}
-
-/// helper functions
-version(unittest) {
-    SpaceMeta createSpace(string id, size_t worker = 1) {
-        auto sm = createData("flow.core.data.SpaceMeta").as!SpaceMeta;
-        sm.id = id;
-        sm.worker = worker;
-
-        return sm;
-    }
-
-    EntityMeta addEntity(SpaceMeta sm) {
-        auto em = createData("flow.core.data.EntityMeta").as!EntityMeta;
-        em.ptr = createData("flow.core.data.EntityMeta").as!EntityPtr;
-
-        sm.entities ~= em;
-        return em;
     }
 }

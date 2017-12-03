@@ -1,26 +1,28 @@
 module flow.ipc.inproc;
 
-static import flow.core.data;
-static import flow.core.engine;
+private import flow.data;
+private import flow.core;
 
-class InProcessJunctionMeta : flow.core.data.JunctionMeta {
+/// metadata of in process junction
+class InProcessJunctionMeta : JunctionMeta {
     private import std.uuid : UUID;
 
-    mixin flow.data.engine.data;
+    mixin data;
 
-    mixin flow.data.engine.field!(UUID, "id");
+    mixin field!(UUID, "id");
 }
 
-class InProcessJunction : flow.core.engine.Junction {
-    private import core.sync.rwmutex;
-    private import flow.core.data;
-    private import std.uuid;
+/// junction allowing direct signalling between spaces hosted in same process
+class InProcessJunction : Junction {
+    private import core.sync.rwmutex : ReadWriteMutex;
+    private import std.uuid : UUID;
 
     private static __gshared ReadWriteMutex lock;
     private static shared InProcessJunction[string][UUID] junctions;
 
+    /// instances with the same id belong to the same junction
     @property UUID id() {
-        import flow.util.templates;
+        import flow.util : as;
         return this.meta.as!InProcessJunctionMeta.id;
     }
 
@@ -28,26 +30,25 @@ class InProcessJunction : flow.core.engine.Junction {
         lock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
     }
 
+    /// ctor
     this() {
         super();
     }
 
     override void up() {
-        import flow.util.templates;
+        import flow.util : as;
 
         synchronized(lock.writer)
             junctions[this.id][this.meta.info.space] = this.as!(shared(InProcessJunction));
     }
 
     override void down() {
-        import flow.util.templates;
-
         synchronized(lock.writer)
             junctions[this.id].remove(this.meta.info.space);
     }
 
     override bool ship(Unicast s) {
-        import flow.util.templates;
+        import flow.util : as;
 
         synchronized(lock.reader)
             if(s.dst.space != this.meta.info.space && s.dst.space in junctions[this.id])
@@ -57,7 +58,7 @@ class InProcessJunction : flow.core.engine.Junction {
     }
 
     override bool ship(Anycast s) {
-        import flow.util.templates;
+        import flow.util : as;
 
         auto cw = containsWildcard(s.dst);
 
@@ -75,7 +76,7 @@ class InProcessJunction : flow.core.engine.Junction {
     }
 
     override bool ship(Multicast s) {
-        import flow.util.templates;
+        import flow.util : as;
 
         auto cw = containsWildcard(s.dst);
 
@@ -93,7 +94,7 @@ class InProcessJunction : flow.core.engine.Junction {
 }
 
 private bool containsWildcard(string dst) {
-    import std.algorithm.searching;
+    import std.algorithm.searching : any;
 
     return dst.any!(a => a = '*');
 }

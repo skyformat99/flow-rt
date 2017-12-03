@@ -1,11 +1,12 @@
 module flow.data.json;
 
-private static import flow.data.engine;
-private static import std.json;
-private static import std.range;
-private static import std.variant;
+private import flow.data.engine;
+private import std.json;
+private import std.range;
+private import std.traits;
+private import std.variant;
 
-private std.json.JSONValue jsonValue(std.variant.Variant t, flow.data.engine.PropertyInfo pi) {
+private JSONValue jsonValue(Variant t, PropertyInfo pi) {
     import flow.data.engine : Data, TypeDesc;
     import std.datetime : SysTime, DateTime, Date, Duration;
     import std.uuid : UUID;
@@ -101,16 +102,16 @@ private std.json.JSONValue jsonValue(std.variant.Variant t, flow.data.engine.Pro
     }
 }
 
-private std.json.JSONValue jsonValue(T)(T arr)
+private JSONValue jsonValue(T)(T arr)
 if(
-    std.range.isArray!T &&
+    isArray!T &&
     (
-        is(std.range.ElementType!T : flow.data.engine.Data) ||
-        is(std.range.ElementType!T == std.uuid.UUID) ||
-        is(std.range.ElementType!T == std.datetime.SysTime) ||
-        is(std.range.ElementType!T == std.datetime.DateTime) ||
-        is(std.range.ElementType!T == std.datetime.Date) ||
-        is(std.range.ElementType!T == std.datetime.Duration)
+        is(ElementType!T : Data) ||
+        is(ElementType!T == std.uuid.UUID) ||
+        is(ElementType!T == std.datetime.SysTime) ||
+        is(ElementType!T == std.datetime.DateTime) ||
+        is(ElementType!T == std.datetime.Date) ||
+        is(ElementType!T == std.datetime.Duration)
     )
 ) {
     import std.json : JSONValue;
@@ -124,18 +125,18 @@ if(
     } else return JSONValue(null);
 }
 
-private std.json.JSONValue jsonValue(T)(T arr)
+private JSONValue jsonValue(T)(T arr)
 if(
-    std.range.isArray!T &&
-    flow.data.engine.canHandle!(std.range.ElementType!T) &&
+    isArray!T &&
+    canHandle!(ElementType!T) &&
     !is(T == string) &&
-    !is(std.range.ElementType!T : flow.data.engine.Data) &&
-    !is(std.range.ElementType!T == std.uuid.UUID) &&
-    !is(std.range.ElementType!T == std.datetime.SysTime) &&
-    !is(std.range.ElementType!T == std.datetime.DateTime) &&
-    !is(std.range.ElementType!T == std.datetime.Date) &&
-    !is(std.range.ElementType!T == std.datetime.Duration) &&
-    !is(std.range.ElementType!T == ubyte)
+    !is(ElementType!T : Data) &&
+    !is(ElementType!T == std.uuid.UUID) &&
+    !is(ElementType!T == std.datetime.SysTime) &&
+    !is(ElementType!T == std.datetime.DateTime) &&
+    !is(ElementType!T == std.datetime.Date) &&
+    !is(ElementType!T == std.datetime.Duration) &&
+    !is(ElementType!T == ubyte)
 ) {
     import std.json : JSONValue;
     import std.range : empty;
@@ -148,10 +149,10 @@ if(
     } else return JSONValue(null);
 }
 
-private std.json.JSONValue jsonValue(T)(T arr)
+private JSONValue jsonValue(T)(T arr)
 if(
-    std.range.isArray!T &&
-    is(std.range.ElementType!T == ubyte)
+    isArray!T &&
+    is(ElementType!T == ubyte)
 ) {
     import std.base64 : Base64;
     import std.json : JSONValue;
@@ -163,10 +164,10 @@ if(
     } else return JSONValue(null);
 }
 
-private std.json.JSONValue jsonValue(T)(T val)
+private JSONValue jsonValue(T)(T val)
 if(
-    flow.data.engine.canHandle!T &&
-    !is(T : flow.data.engine.Data) &&
+    canHandle!T &&
+    !is(T : Data) &&
     !is(T == float) &&
     !is(T == double) &&
     !is(T == std.uuid.UUID) &&
@@ -180,7 +181,7 @@ if(
     return val is T.init ? JSONValue(null) : JSONValue(val);
 }
 
-private std.json.JSONValue jsonValue(T)(T val)
+private JSONValue jsonValue(T)(T val)
 if(
     is(T == float) ||
     is(T == double)
@@ -191,14 +192,14 @@ if(
     return val is T.init || isNaN(val) ? JSONValue(null) : JSONValue(val);
 }
 
-private std.json.JSONValue jsonValue(T)(T val)
+private JSONValue jsonValue(T)(T val)
 if(is(T == std.uuid.UUID)) {
     import std.json : JSONValue;
 
     return val is T.init ? JSONValue(null) : JSONValue(val.toString());
 }
 
-private std.json.JSONValue jsonValue(T)(T val)
+private JSONValue jsonValue(T)(T val)
 if(
     is(T == std.datetime.SysTime) ||
     is(T == std.datetime.DateTime) ||
@@ -209,15 +210,15 @@ if(
     return val is T.init ? JSONValue(null) : JSONValue(val.toISOExtString());
 }
 
-private std.json.JSONValue jsonValue(T)(T val)
+private JSONValue jsonValue(T)(T val)
 if(is(T == std.datetime.Duration)) {
     import std.json : JSONValue;
 
     return val is T.init ? JSONValue(null) : JSONValue(val.total!"hnsecs");
 }
 
-private std.json.JSONValue jsonValue(T)(T data)
-if(is(T : flow.data.engine.Data)) {
+private JSONValue jsonValue(T)(T data)
+if(is(T : Data)) {
     import flow.data.engine : PropertyInfo;
     import flow.util.templates : as;
     import std.json : JSONValue;
@@ -261,7 +262,7 @@ class InvalidJsonException : Exception {
 }
 
 /// create a data object from json
-flow.data.engine.Data createDataFromJson(string str, JsonSerializer serializer = JsonSerializer.StdJson) {
+Data createDataFromJson(string str, JsonSerializer serializer = JsonSerializer.StdJson) {
     import flow.util.error : NotImplementedError;
     import std.json : parseJSON;
 
@@ -273,8 +274,8 @@ flow.data.engine.Data createDataFromJson(string str, JsonSerializer serializer =
     }
 }
 
-private flow.data.engine.Data createData(std.json.JSONValue j) {
-    import flow.data.engine : Data, PropertyInfo;
+private Data createData(JSONValue j) {
+    import flow.data.engine : createData, Data, PropertyInfo;
     import flow.util.templates : as;
     import std.datetime : SysTime, DateTime, Date, Duration;
     import std.uuid : UUID;
@@ -284,7 +285,7 @@ private flow.data.engine.Data createData(std.json.JSONValue j) {
     if(dt == string.init)
         throw new InvalidJsonException("json object has no dataType");
 
-    auto d = flow.data.engine.createData(dt);
+    auto d = createData(dt);
     foreach(string name, e; j) {
         if(name != "dataType") {
             if(name !in d.properties)
@@ -323,10 +324,10 @@ private flow.data.engine.Data createData(std.json.JSONValue j) {
     return d;
 }
 
-private std.variant.Variant get(T)(std.json.JSONValue j, flow.data.engine.Data d, flow.data.engine.PropertyInfo pi)
+private Variant get(T)(JSONValue j, Data d, PropertyInfo pi)
 if(
-    flow.data.engine.canHandle!T &&
-    !is(T : flow.data.engine.Data)
+    canHandle!T &&
+    !is(T : Data)
 ) {
     import flow.util.templates : as;
     import std.base64 : Base64;
@@ -387,8 +388,8 @@ if(
     } else return Variant();
 }
 
-private std.variant.Variant get(T)(std.json.JSONValue j, flow.data.engine.Data d, flow.data.engine.PropertyInfo pi)
-if(is(T : flow.data.engine.Data)) {
+private Variant get(T)(JSONValue j, Data d, PropertyInfo pi)
+if(is(T : Data)) {
     import flow.data.engine : Data, TypeDesc;
     import std.json : JSON_TYPE;
     import std.variant : Variant;

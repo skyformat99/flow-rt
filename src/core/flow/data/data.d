@@ -1,12 +1,12 @@
 module flow.data.data;
 
-private static import flow.data.engine;
+private import flow.data.engine;
 
 /// identifyable data
-class IdData : flow.data.engine.Data {
+class IdData : Data {
     private import std.uuid : UUID;
 
-    mixin flow.data.engine.data;
+    mixin data;
 
-    mixin flow.data.engine.field!(UUID, "id");
+    mixin field!(UUID, "id");
 }

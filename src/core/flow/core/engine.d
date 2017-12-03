@@ -1,11 +1,9 @@
 module flow.core.engine;
 
-private static import core.thread;
-private static import flow.core.data;
-private static import flow.data.engine;
-private static import flow.util.error;
-private static import flow.util.state;
-private static import std.uuid;
+private import core.thread;
+private import flow.core.data;
+private import flow.util;
+private import std.uuid;
 
 private enum SystemState {
     Created = 0,
@@ -37,10 +35,8 @@ private struct Job {
     Throwable exception;
     ubyte taskStatus = JobStatus.NotStarted;
 
-    @property bool done()
-    {
-        import flow.util.atomic;
-
+    @property bool done() {
+        import flow.util : atomicReadUbyte;
         if (atomicReadUbyte(taskStatus) == JobStatus.Done)
         {
             if (exception)
@@ -57,7 +53,7 @@ private struct Job {
     Tick tick;
 }
 
-private final class Pipe : core.thread.Thread
+private final class Pipe : Thread
 {
     this(void delegate() dg)
     {
@@ -67,10 +63,11 @@ private final class Pipe : core.thread.Thread
     Processor processor;
 }
 
-package final class Processor : flow.util.state.StateMachine!ProcessorState {
-    private import core.sync.condition;
-    private import core.sync.mutex;
-    
+package final class Processor : StateMachine!ProcessorState {
+    private import core.sync.condition : Condition;
+    private import core.sync.rwmutex : ReadWriteMutex;
+    private import core.sync.mutex : Mutex;
+
     private Pipe[] pipes;
 
     private Job* head;
@@ -144,7 +141,7 @@ package final class Processor : flow.util.state.StateMachine!ProcessorState {
             case ProcessorState.Stopped:
                 if(o == ProcessorState.Started) { // stop only if it is started
                     {
-                        import flow.util.atomic;
+                        import flow.util : atomicCasUbyte;
 
                         this.queueLock();
                         scope(exit) this.queueUnlock();
@@ -189,9 +186,9 @@ package final class Processor : flow.util.state.StateMachine!ProcessorState {
     /** This is the main work loop that worker threads spend their time in
     until they terminate.  It's also entered by non-worker threads when
     finish() is called with the blocking variable set to true. */
-    private void executeWorkLoop() {
-        import flow.util.atomic;
-        
+    private void executeWorkLoop() {    
+        import flow.util : atomicReadUbyte, atomicSetUbyte;
+
         while (atomicReadUbyte(this.status) != PoolState.stopNow) {
             Job* task = pop();
             if (task is null) {
@@ -206,7 +203,8 @@ package final class Processor : flow.util.state.StateMachine!ProcessorState {
     }
 
     private void wait() {
-        import std.datetime.systime;
+        import std.datetime.systime : Clock;
+
         auto stdTime = Clock.currStdTime;
 
         // if there is nothing enqueued wait for notification
@@ -262,8 +260,7 @@ package final class Processor : flow.util.state.StateMachine!ProcessorState {
     }
 
     private Job* popNoSync()
-    out(ret)
-    {
+    out(ret) {
         /* If task.prev and task.next aren't null, then another thread
          * can try to delete this task from the pool after it's
          * alreadly been deleted/popped.
@@ -273,10 +270,9 @@ package final class Processor : flow.util.state.StateMachine!ProcessorState {
             assert(ret.next is null);
             assert(ret.prev is null);
         }
-    }
-    body
-    {
-        import std.datetime.systime;
+    } body {
+        import std.datetime.systime : Clock;
+
         auto stdTime = Clock.currStdTime;
 
         this.nextTime = long.max;
@@ -307,7 +303,7 @@ package final class Processor : flow.util.state.StateMachine!ProcessorState {
     }
 
     private void doJob(Job* job) {
-        import flow.util.atomic;
+        import flow.util : atomicSetUbyte;
 
         assert(job.taskStatus == JobStatus.InProgress);
         assert(job.next is null);
@@ -322,8 +318,6 @@ package final class Processor : flow.util.state.StateMachine!ProcessorState {
         try {
             job.tick.exec();
         } catch (Throwable thr) {
-            import flow.util.log;
-
             job.exception = thr;
             Log.msg(LL.Fatal, "tasker failed to execute delegate", thr);
         }
@@ -348,27 +342,20 @@ package final class Processor : flow.util.state.StateMachine!ProcessorState {
     }
 
     private void abstractPutNoSync(Job* task)
-    in
-    {
+    in {
         assert(task);
-    }
-    out
-    {
+    } out {
         import std.conv : text;
 
         assert(tail.prev !is tail);
         assert(tail.next is null, text(tail.prev, '\t', tail.next));
-        if (tail.prev !is null)
-        {
+        if (tail.prev !is null) {
             assert(tail.prev.next is tail, text(tail.prev, '\t', tail.next));
         }
-    }
-    body
-    {
+    } body {
         // Not using enforce() to save on function call overhead since this
         // is a performance critical function.
-        if (status != PoolState.running)
-        {
+        if (status != PoolState.running) {
             throw new Error(
                 "Cannot submit a new task to a pool after calling " ~
                 "finish() or stop()."
@@ -376,14 +363,11 @@ package final class Processor : flow.util.state.StateMachine!ProcessorState {
         }
 
         task.next = null;
-        if (head is null)   //Queue is empty.
-        {
+        if (head is null) {   //Queue is empty.
             head = task;
             tail = task;
             tail.prev = null;
-        }
-        else
-        {
+        } else {
             assert(tail);
             task.prev = tail;
             tail.next = task;
@@ -393,12 +377,11 @@ package final class Processor : flow.util.state.StateMachine!ProcessorState {
     }
 }
 
+/// represents a definded change in systems information
 abstract class Tick {
-    private import core.sync.rwmutex;
-    private import core.time;
-    private import std.datetime;
-    private import flow.core.data;
-    private import flow.data.engine;
+    private import core.sync.rwmutex : ReadWriteMutex;
+    private import flow.data : Data;
+    private import std.datetime.systime : SysTime;
 
     private TickMeta meta;
     private Entity entity;
@@ -426,8 +409,7 @@ abstract class Tick {
 
     /// execute tick meant to be called by processor
     package void exec() {
-        import flow.util.log;
-
+        import flow.util : Log;
         try {
             // run tick
             Log.msg(LL.FDebug, this.logPrefix~"running tick", this.meta);
@@ -466,6 +448,8 @@ abstract class Tick {
 
     /// set next tick in causal string with delay
     protected bool next(string tick, SysTime schedule, Data data = null) {
+        import std.datetime.systime : Clock;
+
         auto delay = schedule - Clock.currTime();
 
         if(delay.total!"hnsecs" > 0)
@@ -476,7 +460,7 @@ abstract class Tick {
 
     /// set next tick in causal string with delay
     protected bool next(string tick, Duration delay, Data data = null) {
-        import std.datetime.systime;
+        import std.datetime.systime : Clock;
 
         auto stdTime = Clock.currStdTime;
         auto t = this.entity.meta.createTickMeta(tick, this.meta.info.group).createTick(this.entity);
@@ -510,7 +494,7 @@ abstract class Tick {
 
     /// gets the entity controller of a given entity located in common space
     protected EntityController get(EntityPtr entity) {
-        import flow.core.error;
+        import flow.core.error : TickException;
 
         if(entity.space != this.entity.space.meta.id)
             throw new TickException("an entity not belonging to own space cannot be controlled");
@@ -518,7 +502,7 @@ abstract class Tick {
     }
 
     private EntityController get(string e) {
-        import flow.core.error;
+        import flow.core.error : TickException;
 
         if(this.entity.meta.ptr.id == e)
             throw new TickException("entity cannot controll itself");
@@ -532,7 +516,7 @@ abstract class Tick {
 
     /// kills a given entity in common space
     protected void kill(EntityPtr entity) {
-        import flow.core.error;
+        import flow.core.error : TickException;
         
         if(entity.space != this.entity.space.meta.id)
             throw new TickException("an entity not belonging to own space cannot be killed");
@@ -540,7 +524,7 @@ abstract class Tick {
     }
 
     private void kill(string e) {
-        import flow.core.error;
+        import flow.core.error : TickException;
         
         if(this.entity.meta.ptr.addr == e)
             throw new TickException("entity cannot kill itself");
@@ -550,8 +534,8 @@ abstract class Tick {
 
     /// registers a receptor for signal which runs a tick
     protected void register(string signal, string tick) {
-        import flow.core.error;
-        import flow.util.templates;
+        import flow.core.error : TickException;
+        import flow.data : createData;
         
         auto s = createData(signal).as!Signal;
         if(s is null || createData(tick) is null)
@@ -567,7 +551,7 @@ abstract class Tick {
 
     /// send an unicast signal to a destination
     protected bool send(Unicast s, EntityPtr e = null) {
-        import flow.core.error;
+        import flow.core.error : TickException;
         
         if(s is null)
             throw new TickException("cannot sand an empty unicast");
@@ -585,7 +569,7 @@ abstract class Tick {
     /// send an anycast signal to spaces matching space pattern
     protected bool send(T)(T s, string dst = string.init)
     if(is(T : Anycast) || is(T : Multicast)) {
-        import flow.core.error;
+        import flow.core.error : TickException;
         
         if(dst != string.init) s.dst = dst;
 
@@ -602,7 +586,7 @@ private bool checkAccept(Tick t) {
     try {
         return t.accept;
     } catch(Throwable thr) {
-        import flow.util.log;
+        import flow.util : Log;
 
         Log.msg(LL.Error, t.logPrefix~"accept failed", thr);
     }
@@ -610,8 +594,9 @@ private bool checkAccept(Tick t) {
     return false;
 }
 
+/// gets the prefix string of ticks, ticker and junctions for logging
 string logPrefix(T)(T t) if(is(T==Tick) || is(T==Ticker) || is(T:Junction)) {
-    import std.conv;
+    import std.conv : to;
 
     static if(is(T==Tick))
         return "tick@entity("~t.entity.meta.ptr.addr~"): ";
@@ -621,9 +606,9 @@ string logPrefix(T)(T t) if(is(T==Tick) || is(T==Ticker) || is(T:Junction)) {
         return "junction("~t.meta.info.id.to!string~"): ";
 }
 
-flow.core.data.TickMeta createTickMeta(flow.core.data.EntityMeta entity, string type, std.uuid.UUID group = std.uuid.randomUUID) {
-    import flow.core.data;
-    import std.uuid;
+private TickMeta createTickMeta(EntityMeta entity, string type, UUID group = randomUUID) {
+    import flow.core.data : TickMeta, TickInfo;
+    import std.uuid : randomUUID;
 
     auto m = new TickMeta;
     m.info = new TickInfo;
@@ -635,8 +620,8 @@ flow.core.data.TickMeta createTickMeta(flow.core.data.EntityMeta entity, string 
     return m;
 }
 
-private Tick createTick(flow.core.data.TickMeta m, Entity e) {
-    import flow.util.templates;
+private Tick createTick(TickMeta m, Entity e) {
+    import flow.util : as;
 
     if(m !is null && m.info !is null) {
         auto t = Object.factory(m.info.type).as!Tick;
@@ -648,10 +633,8 @@ private Tick createTick(flow.core.data.TickMeta m, Entity e) {
     } else return null;
 }
 
-/// executes an entitycentric string of discretized causality 
-private class Ticker : flow.util.state.StateMachine!SystemState {
-    private import std.uuid;
-
+/// executes an entitycentric string of discretized causality
+private class Ticker : StateMachine!SystemState {
     bool detaching;
     
     UUID id;
@@ -685,7 +668,7 @@ private class Ticker : flow.util.state.StateMachine!SystemState {
     }
 
     void join() {
-        import core.thread;
+        import core.thread : Thread;
 
         while(this.state == SystemState.Ticking)
             Thread.sleep(5.msecs);
@@ -721,8 +704,6 @@ private class Ticker : flow.util.state.StateMachine!SystemState {
     }
 
     override protected void onStateChanged(SystemState o, SystemState n) {
-        import core.thread;
-
         switch(n) {
             case SystemState.Ticking:
                 this.tick();
@@ -746,8 +727,6 @@ private class Ticker : flow.util.state.StateMachine!SystemState {
 
     /// run next tick if possible, is usually called by a tasker
     void tick() {
-        import flow.util.log;
-
         if(this.next !is null) {
             // if in ticking state try to run created tick or notify wha nothing happens
             if(this.state == SystemState.Ticking) {
@@ -772,10 +751,8 @@ private class Ticker : flow.util.state.StateMachine!SystemState {
 }
 
 /// hosts an entity construct
-private class Entity : flow.util.state.StateMachine!SystemState {
-    private import core.sync.rwmutex;
-    private import flow.core.data;
-    private import std.uuid;
+private class Entity : StateMachine!SystemState {
+    private import core.sync.rwmutex : ReadWriteMutex;
 
     /** mutex dedicated to sync context accesses */
     ReadWriteMutex sync;
@@ -845,7 +822,7 @@ private class Entity : flow.util.state.StateMachine!SystemState {
 
     /// deregisters a receptor if registerd
     void deregister(string s, string t) {
-        import std.algorithm.mutation;
+        import std.algorithm.mutation : remove;
 
         synchronized(this.metaLock.writer) {
             foreach(i, r; this.meta.receptors) {
@@ -873,7 +850,7 @@ private class Entity : flow.util.state.StateMachine!SystemState {
 
     /// deregisters an event if registerd
     void deregister(EventType et, string t) {
-        import std.algorithm.mutation;
+        import std.algorithm.mutation : remove;
 
         synchronized(this.metaLock.writer) {
             foreach(i, e; this.meta.events) {
@@ -909,6 +886,8 @@ private class Entity : flow.util.state.StateMachine!SystemState {
 
     /// starts a ticker
     bool start(Tick t) {
+        t.meta.info.entity = this.meta.ptr.clone; // ensuring tick belongs to us
+
         auto accepted = t.checkAccept;
         
         synchronized(this.lock.writer) {
@@ -930,8 +909,8 @@ private class Entity : flow.util.state.StateMachine!SystemState {
 
     /// send an unicast signal into own space
     bool send(Unicast s) {
-        import flow.core.error;
-        
+        import flow.core.error : EntityException;
+
         synchronized(this.metaLock.reader) {
             if(s.dst == this.meta.ptr)
                 new EntityException("entity cannot send signals to itself, use next or fork");
@@ -976,7 +955,7 @@ private class Entity : flow.util.state.StateMachine!SystemState {
     }
 
     override protected void onStateChanged(SystemState o, SystemState n) {
-        import std.algorithm.iteration;
+        import std.algorithm.iteration : filter;
 
         switch(n) {
             case SystemState.Created:
@@ -1063,14 +1042,14 @@ private class Entity : flow.util.state.StateMachine!SystemState {
     }
 }
 
-string addr(flow.core.data.EntityPtr e) {
+/// gets the string address of an entity
+string addr(EntityPtr e) {
     return e.id~"@"~e.space;
 }
 
 /// controlls an entity
 class EntityController {
-    private import flow.core.data;
-    private import flow.data.engine;
+    private import flow.data : Data;
 
     private Entity _entity;
 
@@ -1104,8 +1083,8 @@ class EntityController {
 }
 
 private bool matches(string id, string pattern) {
-    import std.array;
-    import std.range;
+    import std.array : array;
+    import std.range : split, retro, back;
 
     auto ip = id.split(".").retro.array;
     auto pp = pattern.split(".").retro.array;
@@ -1122,7 +1101,7 @@ private bool matches(string id, string pattern) {
 }
 
 unittest {
-    import std.stdio;
+    import std.stdio : writeln;
 
     writeln("testing domain matching");
     assert(matches("a.b.c", "a.b.c"), "1:1 matching failed");
@@ -1138,9 +1117,8 @@ private enum JunctionState {
     Disposed
 }
 
-abstract class Junction : flow.util.state.StateMachine!JunctionState {
-    private import flow.core.data;
-
+/// allows signals from one space to get shipped to other spaces
+abstract class Junction : StateMachine!JunctionState {
     private JunctionMeta _meta;
     private Space _space;
     private string[] destinations;
@@ -1148,6 +1126,7 @@ abstract class Junction : flow.util.state.StateMachine!JunctionState {
     protected @property JunctionMeta meta() {return this._meta;}
     protected @property string space() {return this._space.meta.id;}
 
+    /// ctor
     this() {
         super();
     }
@@ -1179,9 +1158,7 @@ abstract class Junction : flow.util.state.StateMachine!JunctionState {
         }
     }
 
-    override protected void onStateChanged(JunctionState o, JunctionState n) {
-        import flow.util.templates;
-        
+    override protected void onStateChanged(JunctionState o, JunctionState n) {        
         switch(n) {
             case JunctionState.Created:
                 break;
@@ -1200,13 +1177,17 @@ abstract class Junction : flow.util.state.StateMachine!JunctionState {
     protected abstract void up();
     protected abstract void down();
 
-    abstract bool ship(Unicast s);
-    abstract bool ship(Anycast s);
-    abstract bool ship(Multicast s);
+    /// ship an unicast through the junction
+    protected abstract bool ship(Unicast s);
 
-    bool deliver(T)(T s) if(is(T:Unicast) || is(T:Anycast) || is(T:Multicast)) {
-        import flow.util.templates;
+    /// ship an anycast through the junction
+    protected abstract bool ship(Anycast s);
 
+    /// ship a multicast through the junction
+    protected abstract bool ship(Multicast s);
+
+    /// deliver
+    protected bool deliver(T)(T s) if(is(T:Unicast) || is(T:Anycast) || is(T:Multicast)) {
         if(s.as!Unicast !is null
         || (this.meta.info.acceptsAnycast && s.as!Anycast !is null)
         || (this.meta.info.acceptsMulticast && s.as!Multicast !is null))
@@ -1216,10 +1197,8 @@ abstract class Junction : flow.util.state.StateMachine!JunctionState {
     }
 }
 
-/// hosts a space construct
-class Space : flow.util.state.StateMachine!SystemState {
-    private import flow.core.data;
-
+/// hosts a space which can host n entities
+class Space : StateMachine!SystemState {
     private SpaceMeta meta;
     private Process process;
     private Processor tasker;
@@ -1249,6 +1228,7 @@ class Space : flow.util.state.StateMachine!SystemState {
         this.state = SystemState.Ticking;
     }
 
+    /// disposes space
     void dispose() {
         if(this.state == SystemState.Ticking)
             this.freeze();
@@ -1269,12 +1249,9 @@ class Space : flow.util.state.StateMachine!SystemState {
     }
 
     override protected void onStateChanged(SystemState o, SystemState n) {
-        import flow.core.error;
-        
         switch(n) {
             case SystemState.Created:
-                import core.cpuid;
-                import flow.util.templates;
+                import flow.core.error : SpaceException;
 
                 // creating tasker;
                 // default is one core
@@ -1319,8 +1296,6 @@ class Space : flow.util.state.StateMachine!SystemState {
                         e.freeze();
                 break;
             case SystemState.Disposed:
-                import std.array;
-
                 foreach(j; this.junctions) {
                     j.dispose();
                     j.destroy();
@@ -1353,16 +1328,14 @@ class Space : flow.util.state.StateMachine!SystemState {
 
     /// gets a controller for an entity contained in space (null if not existing)
     EntityController get(string e) {
-        import flow.util.templates;
-
         synchronized(this.lock.reader)
             return (e in this.entities).as!bool ? new EntityController(this.entities[e]) : null;
     }
 
     /// spawns a new entity into space
     EntityController spawn(EntityMeta m) {
-        import flow.core.error;
-        
+        import flow.core.error : SpaceException;
+
         synchronized(this.lock.writer) {
             if(m.ptr.id in this.entities)
                 throw new SpaceException("entity with addr \""~m.ptr.addr~"\" is already existing");
@@ -1377,8 +1350,8 @@ class Space : flow.util.state.StateMachine!SystemState {
 
     /// kills an existing entity in space
     void kill(string e) {
-        import flow.core.error;
-        
+        import flow.core.error : SpaceException;
+
         synchronized(this.lock.writer) {
             if(e in this.entities) {
                 this.entities[e].destroy;
@@ -1394,7 +1367,7 @@ class Space : flow.util.state.StateMachine!SystemState {
         if(this.state == SystemState.Ticking && s.dst.space == this.meta.id) {
             synchronized(this.lock.reader) {
                 foreach(e; this.entities.values) {
-                    if(e.meta.level >= 0) {
+                    if(e.meta.level >= level) { // only accept if entities level is equal or higher the one of the junction
                         if(e.meta.ptr == s.dst)
                             return e.receipt(s);
                     }
@@ -1413,7 +1386,7 @@ class Space : flow.util.state.StateMachine!SystemState {
         if(this.state == SystemState.Ticking) {
             synchronized(this.lock.reader) {
                 foreach(e; this.entities.values) {
-                    if(e.meta.level >= 0) {
+                    if(e.meta.level >= level) { // only accept if entities level is equal or higher the one of the junction
                         if(e.receipt(s))
                             return true;
                     }
@@ -1432,7 +1405,7 @@ class Space : flow.util.state.StateMachine!SystemState {
         if(this.state == SystemState.Ticking) {
             synchronized(this.lock.reader) {
                 foreach(e; this.entities.values) {
-                    if(e.meta.level >= 0) {
+                    if(e.meta.level >= level) { // only accept if entities level is equal or higher the one of the junction
                         e.receipt(s);
                     }
                 }
@@ -1475,7 +1448,6 @@ class Space : flow.util.state.StateMachine!SystemState {
     }
 
     private bool ship(Anycast s) {
-        auto ret = false;
         foreach(j; this.junctions)
             // anycasts can only be shipped via confirming junctions
             if(j.meta.info.isConfirming && j.ship(s))
@@ -1496,14 +1468,13 @@ class Space : flow.util.state.StateMachine!SystemState {
 /** hosts one or more spaces and allows to controll them
 whatever happens on this level, it has to happen in main thread or an exception occurs */
 class Process {
-    private import core.sync.rwmutex;
-    private import flow.core.data;
-    private import std.uuid;
+    private import core.sync.rwmutex : ReadWriteMutex;
 
-    ReadWriteMutex spacesLock;
-    ReadWriteMutex junctionsLock;
+    private ReadWriteMutex spacesLock;
+    private ReadWriteMutex junctionsLock;
     private Space[string] spaces;
 
+    /// ctor
     this() {
         this.spacesLock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
         this.junctionsLock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
@@ -1516,17 +1487,16 @@ class Process {
 
     /// ensure it is executed in main thread or not at all
     private void ensureThread() {
-        import core.thread;
-        import flow.core.error;
-        
+        import flow.core.error : ProcessError;
+
         if(!thread_isMainThread)
             throw new ProcessError("process can be only controlled by main thread");
     }
 
     /// add a space
-    Space add(SpaceMeta s) {
-        import flow.core.error;
-        
+    Space add(SpaceMeta s) {   
+        import flow.core.error : ProcessException;
+
         this.ensureThread();
         
         if(s.id in this.spaces)
@@ -1541,8 +1511,6 @@ class Process {
 
     /// get an existing space or null
     Space get(string s) {
-        import flow.util.templates;
-
         this.ensureThread();
         
         synchronized(this.spacesLock.reader)
@@ -1551,7 +1519,7 @@ class Process {
 
     /// removes an existing space
     void remove(string s) {
-        import flow.core.error;
+        import flow.core.error : ProcessException;
 
         this.ensureThread();
         
@@ -1565,52 +1533,49 @@ class Process {
 }
 
 version(unittest) {
-    class OldTestTickException : flow.util.error.FlowException {mixin flow.util.error.exception;}
+    private import flow.data;
 
-    class OldTestUnicast : flow.core.data.Unicast {
-        mixin flow.data.engine.data;
+    class OldTestTickException : FlowException {mixin exception;}
+
+    class OldTestUnicast : Unicast {
+        mixin data;
     }
 
-    class OldTestAnycast : flow.core.data.Anycast {
-        mixin flow.data.engine.data;
+    class OldTestAnycast : Anycast {
+        mixin data;
     }
-    class OldTestMulticast : flow.core.data.Multicast {
-        mixin flow.data.engine.data;
-    }
-
-    class OldOldTestTickContext : flow.data.engine.Data {
-        private import flow.core.data;
-
-        mixin flow.data.engine.data;
-
-        mixin flow.data.engine.field!(bool, "gotOldTestUnicast");
-        mixin flow.data.engine.field!(bool, "gotOldTestAnycast");
-        mixin flow.data.engine.field!(bool, "gotOldTestMulticast");
-        mixin flow.data.engine.field!(size_t, "cnt");
-        mixin flow.data.engine.field!(string, "error");
-        mixin flow.data.engine.field!(bool, "forked");
-        mixin flow.data.engine.field!(TickInfo, "info");
-        mixin flow.data.engine.field!(OldTestTickData, "data");
-        mixin flow.data.engine.field!(OldTestUnicast, "trigger");
-        mixin flow.data.engine.field!(bool, "onCreated");
-        mixin flow.data.engine.field!(bool, "onTicking");
-        mixin flow.data.engine.field!(bool, "onFrozen");
-        mixin flow.data.engine.field!(bool, "timeOk");
+    class OldTestMulticast : Multicast {
+        mixin data;
     }
 
-    class OldTestTickData : flow.data.engine.Data {
-        mixin flow.data.engine.data;
+    class OldOldTestTickContext : Data {
+        mixin data;
 
-        mixin flow.data.engine.field!(size_t, "cnt");
-        mixin flow.data.engine.field!(long, "lastTime");
+        mixin field!(bool, "gotOldTestUnicast");
+        mixin field!(bool, "gotOldTestAnycast");
+        mixin field!(bool, "gotOldTestMulticast");
+        mixin field!(size_t, "cnt");
+        mixin field!(string, "error");
+        mixin field!(bool, "forked");
+        mixin field!(TickInfo, "info");
+        mixin field!(OldTestTickData, "data");
+        mixin field!(OldTestUnicast, "trigger");
+        mixin field!(bool, "onCreated");
+        mixin field!(bool, "onTicking");
+        mixin field!(bool, "onFrozen");
+        mixin field!(bool, "timeOk");
+    }
+
+    class OldTestTickData : Data {
+        mixin data;
+
+        mixin field!(size_t, "cnt");
+        mixin field!(long, "lastTime");
     }
     
     class OldTestTick : Tick {
         override void run() {
-            import core.time;
-            import flow.data.engine;
-            import flow.util.templates;
-            import std.datetime.systime;
+            import std.datetime.systime : Clock;
 
             auto stdTime = Clock.currStdTime;
 
@@ -1645,9 +1610,6 @@ version(unittest) {
         }
 
         override void error(Throwable thr) {
-            import flow.util.error;
-            import flow.util.templates;
-
             if(thr.as!OldTestTickException !is null) {
                 auto c = this.context.as!OldOldTestTickContext;
                 synchronized(this.sync.writer)
@@ -1658,8 +1620,6 @@ version(unittest) {
 
     class UnicastReceivingOldTestTick : Tick {
         override void run() {
-            import flow.util.templates;
-
             auto c = this.context.as!OldOldTestTickContext;
             c.gotOldTestUnicast = true;
 
@@ -1669,8 +1629,6 @@ version(unittest) {
 
     class AnycastReceivingOldTestTick : Tick {
         override void run() {
-            import flow.util.templates;
-
             auto c = this.context.as!OldOldTestTickContext;
             c.gotOldTestAnycast = true;
         }
@@ -1678,8 +1636,6 @@ version(unittest) {
 
     class MulticastReceivingOldTestTick : Tick {
         override void run() {
-            import flow.util.templates;
-
             auto c = this.context.as!OldOldTestTickContext;
             c.gotOldTestMulticast = true;
         }
@@ -1687,8 +1643,6 @@ version(unittest) {
 
     class OldTestOnCreatedTick : Tick {
         override void run() {
-            import flow.util.templates;
-
             auto c = this.context.as!OldOldTestTickContext;
             c.onCreated = true;
         }
@@ -1696,8 +1650,6 @@ version(unittest) {
 
     class OldTestOnTickingTick : Tick {
         override void run() {
-            import flow.util.templates;
-
             auto c = this.context.as!OldOldTestTickContext;
             c.onTicking = true;
         }
@@ -1705,29 +1657,24 @@ version(unittest) {
 
     class OldTestOnFrozenTick : Tick {
         override void run() {
-            import flow.util.templates;
-
             auto c = this.context.as!OldOldTestTickContext;
             c.onFrozen = true;
         }
     }
 
-    class OldTriggeringTestContext : flow.data.engine.Data {
-        private import flow.core.data;
 
-        mixin flow.data.engine.data;
+    class OldTriggeringTestContext : Data {
+        mixin data;
 
-        mixin flow.data.engine.field!(EntityPtr, "targetEntity");
-        mixin flow.data.engine.field!(string, "targetSpace");
-        mixin flow.data.engine.field!(bool, "confirmedOldTestUnicast");
-        mixin flow.data.engine.field!(bool, "confirmedOldTestAnycast");
-        mixin flow.data.engine.field!(bool, "confirmedOldTestMulticast");
+        mixin field!(EntityPtr, "targetEntity");
+        mixin field!(string, "targetSpace");
+        mixin field!(bool, "confirmedOldTestUnicast");
+        mixin field!(bool, "confirmedOldTestAnycast");
+        mixin field!(bool, "confirmedOldTestMulticast");
     }
 
     class TriggeringOldTestTick : Tick {
         override void run() {
-            import flow.util.templates;
-
             auto c = this.context.as!OldTriggeringTestContext;
             c.confirmedOldTestUnicast = this.send(new OldTestUnicast, c.targetEntity);
             c.confirmedOldTestAnycast = this.send(new OldTestAnycast, c.targetSpace);
@@ -1735,9 +1682,7 @@ version(unittest) {
         }
     }
 
-    flow.core.data.SpaceMeta oldCreateTestSpace() {
-        import flow.core.data;
-
+    SpaceMeta oldCreateTestSpace() {
         auto s = new SpaceMeta;
         s.worker = 1;
         s.id = "s";
@@ -1749,9 +1694,7 @@ version(unittest) {
         return s;
     }
 
-    flow.core.data.EntityMeta oldCreateTestEntity() {
-        import flow.core.data;
-
+    EntityMeta oldCreateTestEntity() {
         auto e = new EntityMeta;
         e.ptr = new EntityPtr;
         e.ptr.id = "e";
@@ -1789,9 +1732,7 @@ version(unittest) {
         return e;
     }
 
-    flow.core.data.EntityMeta oldCreateTriggerTestEntity(flow.core.data.EntityPtr te) {
-        import flow.core.data;
-
+    EntityMeta oldCreateTriggerTestEntity(EntityPtr te) {
         auto e = new EntityMeta;
         e.ptr = new EntityPtr;
         e.ptr.id = "te";
@@ -1806,11 +1747,8 @@ version(unittest) {
 }
 
 unittest {
-    import core.thread;
-    import flow.core.data;
-    import flow.util.templates;
-    import std.stdio;
-    import std.conv;
+    import std.stdio : writeln;
+    import std.conv : to;
     
     writeln("testing engine (you should see exactly one \"[Error] tick@entity(e@s): run failed\" and one \"[Info] tick@entity(e@s): handling run error\" warning in log)");
 
