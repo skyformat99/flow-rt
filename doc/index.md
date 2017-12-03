@@ -1,5 +1,3 @@
-[Read the docs](http://flow-rt.readthedocs.io)
-
 * [Overview](01_overview.md)
 * [Basics](02_basics.md)
 * [Introduction](03_introduction.md)

@@ -27,8 +27,9 @@ class TestMulticast : Multicast {
 ```
 
 ## Data of entities
-They are kind of the memory of entities
-While our first entity notes if it was successfully sending the casts, our second one notes if it got them.
+They are kind of memory of entities.
+While our first entity notes if it was successfully sending the casts,
+our second one notes if it got them.
 ```D
 class TestSendingContext : Data {
     mixin data;
@@ -100,6 +101,8 @@ class MulticastReceivingTestTick : Tick {
 This is the content of the main function.
 First we create the systems order using helper functions, then kickstart it.
 After everything happened we stop it and get out the information we then check for correctness.
+This order generates just data which can and usually is serialized. It is the same data which falls out at the end.
+That means if you got a system you can freeze it, snapshot it, end the process and restart everything again. It will continue where it got frozen.
 
 ```D
     // we want to bind two spaces together by an inprocess junction
