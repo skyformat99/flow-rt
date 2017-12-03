@@ -39,7 +39,8 @@ abstract class StateMachine(T) if (isScalarType!T) {
         
         if(allowed)
             this.onStateChanged(oldState, this._state);
-        else throw new StateRefusedException;
+        else
+            throw new StateRefusedException;
     }
 
     protected this() {

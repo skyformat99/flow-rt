@@ -12,8 +12,8 @@
                 "handle SIGUSR2 nostop noprint",
                 "break onInvalidMemoryOperationError"
             ],
-            "target": "test-libflow-core",
-            "cwd": "${workspaceRoot}/tst"
+            "target": "test_flow-core",
+            "cwd": "${workspaceRoot}/bin"
         },
         {
             "name": "flow-complex-gen",

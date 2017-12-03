@@ -2,7 +2,7 @@ cmake_minimum_required (VERSION 3.8)
 project (flow D)
 include(UseDUnittest)
 
-set(CMAKE_BUILD_TYPE Debug)
+set(CMAKE_BUILD_TYPE DEBUG)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY bin)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY lib)

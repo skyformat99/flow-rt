@@ -23,9 +23,6 @@ hive
 
 /bin
 /lib
-/ext
-/tst
-/ifc
 
 # tmp/cfg
 tmp/cfg
@@ -47,8 +44,9 @@ __test__library__
 # CMake
 /CMakeFiles
 *.cmake
-CMakeCache.txt
+/CMakeCache.txt
 Makefile
 
 # CTest
-CTestCostData.txt
+/CTestCostData.txt
+/Testing

@@ -69,7 +69,7 @@ class InProcessJunction : Junction {
                         return true;
             } else {
                 if(s.dst != this.meta.info.space && s.dst in junctions[this.id])
-                    return junctions[this.id][s.dst].as!InProcessJunction.deliver(s);
+                    return junctions[this.id][s.dst].as!InProcessJunction.deliver(s.clone);
             }
                     
         return false;
@@ -100,7 +100,8 @@ private bool containsWildcard(string dst) {
 }
 
 unittest {
-    /*import flow.core;
+    import flow.core;
+    import flow.ipc.make;
     import flow.ipc.test;
     import std.uuid;
 
@@ -110,14 +111,21 @@ unittest {
     auto spc1Domain = "spc1.test.inproc.ipc.flow";
     auto spc2Domain = "spc2.test.inproc.ipc.flow";
 
-    auto spc1 = createSpace(spc1Domain);
-    spc1.addEntity();
-    spc1.addInProcJunction(randomUUID);
+    auto sm1 = createSpace(spc1Domain);
+    sm1.addEntity();
+    sm1.addInProcJunction(randomUUID);
 
-    auto spc2 = createSpace(spc2Domain);
-    spc1.addEntity();
-    spc1.addInProcJunction(randomUUID);
+    auto sm2 = createSpace(spc2Domain);
+    sm2.addEntity();
+    sm2.addInProcJunction(randomUUID);
 
-    proc.add(spc1);
-    proc.add(spc2);*/
+    auto spc1 = proc.add(sm1);
+    auto spc2 = proc.add(sm2);
+
+    // 2 before 1 since 2 must be up when 1 begins
+    spc2.tick();
+    spc1.tick();
+
+    spc2.freeze();
+    spc1.freeze();
 }

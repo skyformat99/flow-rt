@@ -1163,10 +1163,10 @@ abstract class Junction : StateMachine!JunctionState {
             case JunctionState.Created:
                 break;
             case JunctionState.Up:
-                this.start();
+                this.up();
                 break;
             case JunctionState.Down:
-                this.stop();
+                this.down();
                 break;
             case JunctionState.Disposed:
                 break;
@@ -1426,7 +1426,7 @@ class Space : StateMachine!SystemState {
         auto isMe = s.dst == this.meta.id || this.meta.id.matches(s.dst);
         /* Only inside own space memory is shared,
         as soon as a signal is getting shiped to another space it is deep cloned */
-        return isMe ? this.route(s) : this.ship(s.clone);
+        return isMe ? this.route(s) : this.ship(s);
     }
 
     private bool send(T)(T s)
@@ -1437,7 +1437,7 @@ class Space : StateMachine!SystemState {
         auto isMe = s.dst.space == this.meta.id || this.meta.id.matches(s.dst.space);
         /* Only inside own space memory is shared,
         as soon as a signal is getting shiped to another space it is deep cloned */
-        return isMe ? this.route(s) : this.ship(s.clone);
+        return isMe ? this.route(s) : this.ship(s);
     }
 
     private bool ship(Unicast s) {

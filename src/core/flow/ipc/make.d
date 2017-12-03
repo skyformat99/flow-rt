@@ -24,6 +24,7 @@ JunctionMeta addInProcJunction(
     
     auto jm = new InProcessJunctionMeta;
     jm.info = new JunctionInfo;
+    jm.type = "flow.ipc.inproc.InProcessJunction";
     
     jm.id = id;
     jm.level = level;
