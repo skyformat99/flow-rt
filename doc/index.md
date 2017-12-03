@@ -2,6 +2,7 @@
 
 * [Overview](01_overview.md)
 * [Basics](02_basics.md)
+* [Introduction](03_introduction.md)
 * [Credits](10_credits.md)
 * [HOWTO file a BUG](11_howto_bug.md)
 

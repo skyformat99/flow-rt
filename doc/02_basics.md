@@ -11,6 +11,16 @@ Nonetheless it is overlapping and therefore the correct classification for that 
 ### Signal
 Is data which is getting exchanged between entities.
 
+Flow knows three types of signals
+#### Unicast
+Is a directed signal from entity a to entity b
+
+#### Anycast
+Is a request directed to all entities within one or more spaces receptive to that certain kind of anycast. However this request can be accepted by only one entity. Anycasts are not via working non confirming junctions.
+
+#### Multicast
+Is a cast directed to all entities within one or more spaces receptive to that certain kind of multicast. All possible and reachable destination entities are receiving multicasts.
+
 ### Entity
 Equals to actor model's actor.
 It receives signals which are triggering some functionality. Also it can send signals to other entities.
@@ -21,6 +31,8 @@ Offers n entities a media where signals can be exchanged and functionality can b
 ### Junction
 Allows signals to transparently cross borders.
 This way spaces can be connected with each other.
+
+Junctions like entities have levels. The junction has to have a lower or equal level to reach an entity.
 
 ### Process
 Hosts m spaces. While a real OS process could in theory host multiple flow processes it is adviced to map 1:1.

@@ -95,8 +95,8 @@ class EntityMeta : Data {
     mixin data;
 
     mixin field!(EntityPtr, "ptr");
-    mixin field!(ushort, "level");
     mixin field!(Data, "context");
+    mixin field!(ushort, "level");
     mixin array!(Event, "events");
     mixin array!(Receptor, "receptors");
 

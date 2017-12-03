@@ -550,6 +550,14 @@ abstract class Tick {
     }
 
     /// send an unicast signal to a destination
+    protected bool send(Unicast s, string entity, string space) {
+        auto eptr = new EntityPtr;
+        eptr.id = entity;
+        eptr.space = space;
+        return this.send(s, eptr);
+    }
+
+    /// send an unicast signal to a destination
     protected bool send(Unicast s, EntityPtr e = null) {
         import flow.core.error : TickException;
         
@@ -1265,6 +1273,9 @@ class Space : StateMachine!SystemState {
                     if(em.ptr.id in this.entities)
                         throw new SpaceException("entity with addr \""~em.ptr.addr~"\" already exists");
                     else {
+                        // ensure entity belonging to this space
+                        em.ptr.space = this.meta.id;
+
                         Entity e = new Entity(this, em);
                         this.entities[em.ptr.id] = e;
                     }
@@ -1340,6 +1351,9 @@ class Space : StateMachine!SystemState {
             if(m.ptr.id in this.entities)
                 throw new SpaceException("entity with addr \""~m.ptr.addr~"\" is already existing");
             else {
+                // ensure entity belonging to this space
+                m.ptr.space = this.meta.id;
+                
                 this.meta.entities ~= m;
                 Entity e = new Entity(this, m);
                 this.entities[m.ptr.id] = e;
@@ -1419,22 +1433,22 @@ class Space : StateMachine!SystemState {
     }
 
     private bool send(T)(T s)
-    if(is(T : Anycast) || is(T : Multicast)) {
+    if(is(T : Unicast)) {
         // ensure correct source space
         s.src.space = this.meta.id;
 
-        auto isMe = s.dst == this.meta.id || this.meta.id.matches(s.dst);
+        auto isMe = s.dst.space == this.meta.id || this.meta.id.matches(s.dst.space);
         /* Only inside own space memory is shared,
         as soon as a signal is getting shiped to another space it is deep cloned */
         return isMe ? this.route(s) : this.ship(s);
     }
 
     private bool send(T)(T s)
-    if(is(T : Unicast)) {
+    if(is(T : Anycast) || is(T : Multicast)) {
         // ensure correct source space
         s.src.space = this.meta.id;
 
-        auto isMe = s.dst.space == this.meta.id || this.meta.id.matches(s.dst.space);
+        auto isMe = s.dst == this.meta.id || this.meta.id.matches(s.dst);
         /* Only inside own space memory is shared,
         as soon as a signal is getting shiped to another space it is deep cloned */
         return isMe ? this.route(s) : this.ship(s);
