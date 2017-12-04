@@ -1420,13 +1420,10 @@ class Space : StateMachine!SystemState {
             synchronized(this.lock.reader) {
                 foreach(e; this.entities.values) {
                     if(e.meta.level >= level) { // only accept if entities level is equal or higher the one of the junction
-                        e.receipt(s);
+                        r = e.receipt(s) || r;
                     }
                 }
             }
-
-            // a multicast is true if a space it could be delivered to was found
-            r = true;
         }
 
         return r;
@@ -1766,8 +1763,8 @@ unittest {
     
     writeln("testing engine (you should see exactly one \"[Error] tick@entity(e@s): run failed\" and one \"[Info] tick@entity(e@s): handling run error\" warning in log)");
 
-    /* when there is one worker in taskpool, it has
-    to be perfectly deterministic using limited complexity */
+    // when there is one worker in taskpool, it has
+    // to be perfectly deterministic using limited complexity
     auto p = new Process();
     scope(exit) p.destroy;
     auto s = p.add(oldCreateTestSpace());

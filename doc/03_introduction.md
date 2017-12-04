@@ -168,7 +168,7 @@ That means if you got a system you can freeze it, snapshot it, end the process a
     assert(nsm2.entities[0].context.as!TestReceivingContext.gotTestMulticast, "didn't get test multicast");
 
     // we check if all got a confirmation for the testsignal
-    assert(nsm1.entities[0].context.as!TestSendingContext.confirmedTestUnicast, "didn't confirmed test unicast");
-    assert(nsm1.entities[0].context.as!TestSendingContext.confirmedTestAnycast, "didn't confirmed test anycast");
-    assert(nsm1.entities[0].context.as!TestSendingContext.confirmedTestMulticast, "didn't confirmed test multicast");
+    assert(nsm1.entities[0].context.as!TestSendingContext.confirmedTestUnicast, "didn't confirm test unicast");
+    assert(nsm1.entities[0].context.as!TestSendingContext.confirmedTestAnycast, "didn't confirm test anycast");
+    assert(nsm1.entities[0].context.as!TestSendingContext.confirmedTestMulticast, "didn't confirm test multicast");
 ```
