@@ -12,8 +12,8 @@ SpaceMeta createSpace(string id, size_t worker = 1) {
     return sm;
 }
 
-/// creates entity metadata and appends it to a spaces metadata
-EntityMeta addEntity(SpaceMeta sm, string id, string contextType, ushort level = 0) {
+/// creates entity metadata
+EntityMeta createEntity(string id, string contextType, ushort level = 0) {
     import flow.data : createData;
 
     auto em = new EntityMeta;
@@ -21,6 +21,13 @@ EntityMeta addEntity(SpaceMeta sm, string id, string contextType, ushort level =
     em.ptr.id = id;
     em.context = createData(contextType);
     em.level = level;
+
+    return em;
+}
+
+/// creates entity metadata and appends it to a spaces metadata
+EntityMeta addEntity(SpaceMeta sm, string id, string contextType, ushort level = 0) {
+    auto em = id.createEntity(contextType, level);
     sm.entities ~= em;
 
     return em;
