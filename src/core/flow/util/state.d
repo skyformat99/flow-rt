@@ -26,21 +26,28 @@ abstract class StateMachine(T) if (isScalarType!T) {
     protected @property void state(T value) {
         auto allowed = false;
         T oldState;
+        Exception error;
         synchronized(this.lock.writer) {
-            if(this._state != value) {
-                allowed = this.onStateChanging(this._state, value);
+            if(this._state == value)
+                return; // already in state, do nothing
+            else {
+                try {
+                    allowed = this.onStateChanging(this._state, value);
+                } catch(Exception exc) {
+                    error = exc;
+                }
 
                 if(allowed) {
                     oldState = this._state;
                     this._state = value;
                 }
             }
-        }
         
-        if(allowed)
-            this.onStateChanged(oldState, this._state);
-        else
-            throw new StateRefusedException;
+            if(allowed)
+                this.onStateChanged(oldState, this._state);
+            else
+                throw new StateRefusedException(string.init, null, [error]);
+        }
     }
 
     protected this() {
@@ -180,7 +187,7 @@ unittest {
     assert(t.checkIllegalState(TestState.State3), "illegal state check didn't cause expected exception");
     assert(t.checkState(TestState.State1), "couldn't check for valid state");
 
-    assert(t.checkIllegalSwitch(TestState.State1), "could switch state even its forbidden");
+    assert(t.checkSwitch(TestState.State1), "equal state switch should just pass siltent and do nothing");
     assert(t.checkIllegalSwitch(TestState.State3), "could switch state even its forbidden");
 
     // switching t to state2
@@ -192,7 +199,7 @@ unittest {
     assert(t.checkState(TestState.State2), "couldn't check for valid state");
 
     assert(t.checkIllegalSwitch(TestState.State1), "could switch state even its forbidden");
-    assert(t.checkIllegalSwitch(TestState.State2), "could switch state even its forbidden");
+    assert(t.checkSwitch(TestState.State2), "equal state switch should just pass siltent and do nothing");
     assert(t.checkIllegalSwitch(TestState.State3), "could switch state even its requirement is not met");
 
     // switching to state3

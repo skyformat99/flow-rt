@@ -18,12 +18,8 @@ mixin template exception() {
 
     override @property string type() {return fqn!(typeof(this));}
 
-    Exception[] inner;
-
     this(string msg = string.init, Data d = null, Exception[] i = null) {
-        super(msg != string.init ? msg : this.type);
-        this.data = d;
-        this.inner = i;
+        super(msg != string.init ? msg : this.type, d, i);
     }
 }
 
@@ -46,8 +42,16 @@ class FlowException : Exception {
     /// context data
     Data data;
 
+    // inner exceptions
+    Exception[] inner;
+
     /// ctor
-    this(string msg) {super(msg);}
+    this(string msg = string.init, Data d = null, Exception[] i = null) {
+        super(msg);
+        
+        this.data = d;
+        this.inner = i;
+    }
 }
 
 /// thrown when hitting code which is not implemented yet

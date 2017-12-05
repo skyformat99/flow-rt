@@ -6,10 +6,8 @@ private import flow.util;
 private import std.uuid;
 
 private enum SystemState {
-    Created = 0,
-    Ticking,
     Frozen,
-    Disposed
+    Ticking
 }
 
 package enum ProcessorState {
@@ -417,7 +415,7 @@ abstract class Tick {
             Log.msg(LL.FDebug, this.logPrefix~"finished tick", this.meta);
             
             this.ticker.actual = null;
-            this.ticker.tick();
+            this.ticker.run();
         } catch(Throwable thr) {
             Log.msg(LL.Error, this.logPrefix~"run failed", thr);
             try {
@@ -425,12 +423,13 @@ abstract class Tick {
                 this.error(thr);
                 
                 this.ticker.actual = null;        
-                this.ticker.tick();
+                this.ticker.run();
             } catch(Throwable thr2) {
                 // if even handling exception failes notify that an error occured
                 Log.msg(LL.Fatal, this.logPrefix~"handling error failed", thr2);
                 this.ticker.actual = null;
-                if(this.ticker.state != SystemState.Disposed) this.ticker.dispose;
+
+                this.ticker.handle(thr2);
             }
         }
     }
@@ -439,7 +438,9 @@ abstract class Tick {
     public void run() {}
 
     /// exception handling implementation of tick
-    public void error(Throwable thr) {}
+    public void error(Throwable thr) {
+        throw thr;
+    }
     
     /// set next tick in causal string
     protected bool next(string tick, Data data = null) {
@@ -450,7 +451,7 @@ abstract class Tick {
     protected bool next(string tick, SysTime schedule, Data data = null) {
         import std.datetime.systime : Clock;
 
-        auto delay = schedule - Clock.currTime();
+        auto delay = schedule - Clock.currTime;
 
         if(delay.total!"hnsecs" > 0)
             return this.next(tick, delay, data);
@@ -575,14 +576,27 @@ abstract class Tick {
     }
 
     /// send an anycast signal to spaces matching space pattern
-    protected bool send(T)(T s, string dst = string.init)
-    if(is(T : Anycast) || is(T : Multicast)) {
+    protected bool send(Anycast s, string dst = string.init) {
         import flow.core.error : TickException;
         
         if(dst != string.init) s.dst = dst;
 
         if(s.dst == string.init)
-            throw new TickException("anycast/multicast signal needs a space pattern");
+            throw new TickException("anycast signal needs a space pattern");
+
+        s.group = this.meta.info.group;
+
+        return this.entity.send(s);
+    }
+
+    /// send an anycast signal to spaces matching space pattern
+    protected bool send(Multicast s, string dst = string.init) {
+        import flow.core.error : TickException;
+        
+        if(dst != string.init) s.dst = dst;
+
+        if(s.dst == string.init)
+            throw new TickException("multicast signal needs a space pattern");
 
         s.group = this.meta.info.group;
 
@@ -603,15 +617,21 @@ private bool checkAccept(Tick t) {
 }
 
 /// gets the prefix string of ticks, ticker and junctions for logging
-string logPrefix(T)(T t) if(is(T==Tick) || is(T==Ticker) || is(T:Junction)) {
+string logPrefix(Tick t) {
     import std.conv : to;
+    return "tick@entity("~t.entity.meta.ptr.addr~"): ";
+}
 
-    static if(is(T==Tick))
-        return "tick@entity("~t.entity.meta.ptr.addr~"): ";
-    else static if(is(T==Ticker))
-        return "ticker@entity("~t.entity.meta.ptr.addr~"): ";
-    else static if(is(T:Junction))
-        return "junction("~t.meta.info.id.to!string~"): ";
+/// gets the prefix string of ticks, ticker and junctions for logging
+string logPrefix(Ticker t) {
+    import std.conv : to;
+    return "ticker@entity("~t.entity.meta.ptr.addr~"): ";
+}
+
+/// gets the prefix string of ticks, ticker and junctions for logging
+string logPrefix(Junction t) {
+    import std.conv : to;
+    return "junction("~t.meta.info.id.to!string~"): ";
 }
 
 private TickMeta createTickMeta(EntityMeta entity, string type, UUID group = randomUUID) {
@@ -643,13 +663,13 @@ private Tick createTick(TickMeta m, Entity e) {
 
 /// executes an entitycentric string of discretized causality
 private class Ticker : StateMachine!SystemState {
-    bool detaching;
+    bool sync;
     
     UUID id;
     Entity entity;
     Tick actual;
     Tick next;
-    Exception error;
+    Throwable error;
 
     private this(Entity b) {
         this.id = randomUUID;
@@ -665,13 +685,16 @@ private class Ticker : StateMachine!SystemState {
     }
 
     ~this() {
-        if(this.state != SystemState.Disposed)
-            this.dispose;
+        if(this.state == SystemState.Ticking)
+            this.freeze();
+
+        if(!this.sync)
+            this.detach();
     }
 
     /// starts ticking
-    void start(bool detaching = true) {
-        this.detaching = detaching;
+    void tick(bool sync = false) {
+        this.sync = sync;
         this.state = SystemState.Ticking;
     }
 
@@ -682,16 +705,8 @@ private class Ticker : StateMachine!SystemState {
             Thread.sleep(5.msecs);
     }
 
-    /// stops ticking with or without causing dispose
-    void stop() {
+    void freeze() {
         this.state = SystemState.Frozen;
-    }
-
-    void dispose() {
-        if(this.state == SystemState.Ticking)
-            this.stop();
-
-        this.state = SystemState.Disposed;
     }
 
     /// causes entity to dispose ticker
@@ -702,11 +717,9 @@ private class Ticker : StateMachine!SystemState {
     override protected bool onStateChanging(SystemState o, SystemState n) {
         switch(n) {
             case SystemState.Ticking:
-                return o == SystemState.Created || o == SystemState.Frozen;
+                return o == SystemState.Frozen;
             case SystemState.Frozen:
                 return o == SystemState.Ticking;
-            case SystemState.Disposed:
-                return o == SystemState.Created || o == SystemState.Frozen;
             default: return false;
         }
     }
@@ -714,47 +727,49 @@ private class Ticker : StateMachine!SystemState {
     override protected void onStateChanged(SystemState o, SystemState n) {
         switch(n) {
             case SystemState.Ticking:
-                this.tick();
+                this.run();
                 break;
             case SystemState.Frozen:
-                // wait for executing tick to end
+                // wait for executing tick to end if there is one
                 while(this.actual !is null)
                     Thread.sleep(5.msecs);
                 break;
-            case SystemState.Disposed:
-                // wait for executing tick to end
-                while(this.actual !is null)
-                    Thread.sleep(5.msecs);
-
-                if(this.detaching)
-                    this.detach();
+            default:
                 break;
-            default: break;
         }
     }
 
     /// run next tick if possible, is usually called by a tasker
-    void tick() {
-        if(this.next !is null) {
-            // if in ticking state try to run created tick or notify wha nothing happens
-            if(this.state == SystemState.Ticking) {
-                // create a new tick of given type or notify failing and stop
-                if(this.next !is null) {
-                    // check if entity is still running after getting the sync
-                    this.actual = this.next;
-                    this.next = null;
-                    this.entity.space.tasker.run(this.entity.meta.ptr.addr, this.actual);
-                } else {
-                    Log.msg(LL.Error, this.logPrefix~"could not create tick -> ending");
-                    if(this.state != SystemState.Disposed) this.dispose;
-                }
+    void run() {
+        // if in ticking state try to run created tick or notify wha nothing happens
+        if(this.state == SystemState.Ticking) {
+            if(this.next !is null) {
+                    // create a new tick of given type or notify failing and stop
+                    if(this.next !is null) {
+                        // check if entity is still running after getting the sync
+                        this.actual = this.next;
+                        this.next = null;
+                        this.entity.space.tasker.run(this.entity.meta.ptr.addr, this.actual);
+                    } else {
+                        Log.msg(LL.Error, this.logPrefix~"could not run tick -> ending");
+                        this.freeze(); // now it has to be frozen
+                    }
             } else {
-                Log.msg(LL.FDebug, this.logPrefix~"ticker is not ticking");
+                Log.msg(LL.FDebug, this.logPrefix~"nothing to do, ticker is ending");
+                this.freeze(); // now it has to be frozen
             }
         } else {
-            Log.msg(LL.FDebug, this.logPrefix~"nothing to do, ticker is ending");
-            if(this.state != SystemState.Disposed) this.dispose;
+            Log.msg(LL.FDebug, this.logPrefix~"ticker is not ticking");
         }
+    }
+
+    void handle(Throwable thr) {
+        this.error = thr;
+
+        if(this.sync) {
+            if(this.state == SystemState.Ticking)
+                this.freeze();
+        } else this.entity.damage(thr);
     }
 }
 
@@ -782,8 +797,8 @@ private class Entity : StateMachine!SystemState {
     }
 
     ~this() {
-        if(this.state != SystemState.Disposed)
-            this.dispose;
+        if(this.state == SystemState.Ticking)
+            this.freeze();
     }
 
     /// disposes a ticker
@@ -797,21 +812,117 @@ private class Entity : StateMachine!SystemState {
         t.destroy;
     }
 
-    /// meakes entity freeze
-    void freeze() {
-        this.state = SystemState.Frozen;
-    }
-
     /// makes entity tick
     void tick() {
         this.state = SystemState.Ticking;
     }
 
-    void dispose() {
-        if(this.state == SystemState.Ticking)
-            this.freeze;
+    /// meakes entity freeze
+    void freeze() {
+        this.state = SystemState.Frozen;
+    }
 
-        this.state = SystemState.Disposed;
+    override protected bool onStateChanging(SystemState o, SystemState n) {
+        switch(n) {
+            case SystemState.Ticking:
+                return o == SystemState.Frozen && this.canGoTicking;
+            case SystemState.Frozen:
+                return o == SystemState.Ticking && this.canGoFreezing;
+            default: return false;
+        }
+    }
+
+    private bool canGoTicking() {
+        import std.algorithm.iteration;
+
+        synchronized(this.metaLock.reader) {
+            // running OnTicking ticks
+            foreach(e; this.meta.events.filter!(e => e.type == EventType.OnTicking)) {
+                auto t = this.meta.createTickMeta(e.tick).createTick(this);
+                if(t.checkAccept) {
+                    auto ticker = new Ticker(this, t);
+                    ticker.tick(true);
+                    ticker.join();
+                    auto thr = ticker.error;
+                    ticker.destroy();
+
+                    if(thr !is null) {
+                        // damages entity and falls back negativ
+                        this.meta.damages ~= thr.damage;
+                        return false;
+                    }
+                }
+            }
+        }
+
+        return true;
+    }
+
+    private bool canGoFreezing() {
+        import std.algorithm.iteration;
+
+        synchronized(this.metaLock.reader) {
+            // running onFreezing ticks
+            foreach(e; this.meta.events.filter!(e => e.type == EventType.OnFreezing)) {
+                auto t = this.meta.createTickMeta(e.tick).createTick(this);
+                if(t.checkAccept) {
+                    auto ticker = new Ticker(this, t);
+                    ticker.tick(true);
+                    ticker.join();
+                    auto thr = ticker.error;
+                    ticker.destroy();
+
+                    if(thr !is null) {
+                        // doesn't avoid freezing nor further execution of on freezing ticks
+                        this.meta.damages ~= thr.damage;
+                    }
+                }
+            }
+        }
+
+        // stopping and destroying all ticker and freeze next ticks
+        foreach(t; this.ticker.values.dup) {
+            t.sync = true; // first switch it to sync mode
+            t.freeze();
+            if(t.next !is null)
+                this.meta.ticks ~= t.next.meta;
+            this.ticker.remove(t.id);
+            t.destroy();
+        }
+
+        return true;
+    }
+
+    override protected void onStateChanged(SystemState o, SystemState n) {
+        switch(n) {
+            case SystemState.Ticking:
+                this.onTicking();
+                break;
+            default:
+                break;
+        }
+    }
+
+    private void onTicking() {
+        import std.algorithm.iteration;
+
+        // creating and starting ticker for all frozen ticks
+        foreach(t; this.meta.ticks) {
+            auto ticker = new Ticker(this, t.createTick(this));
+            this.ticker[ticker.id] = ticker;
+            ticker.tick();
+        }
+
+        // all frozen ticks are ticking -> empty store
+        this.meta.ticks = TickMeta[].init;
+    }
+
+    void damage(Throwable thr) {
+        // entity cannot operate in damaged state
+        this.freeze();
+
+        synchronized(this.metaLock.writer)
+            this.meta.damages ~= thr.damage;
     }
 
     /// registers a receptor if not registered
@@ -903,7 +1014,7 @@ private class Entity : StateMachine!SystemState {
                 if(this.state == SystemState.Ticking) {
                     auto ticker = new Ticker(this, t);
                     this.ticker[ticker.id] = ticker;
-                    ticker.start();
+                    ticker.tick();
                 } else {
                     synchronized(this.metaLock.writer)
                         this.meta.ticks ~= t.meta;
@@ -919,6 +1030,8 @@ private class Entity : StateMachine!SystemState {
     bool send(Unicast s) {
         import flow.core.error : EntityException;
 
+        this.ensureState(SystemState.Ticking);
+
         synchronized(this.metaLock.reader) {
             if(s.dst == this.meta.ptr)
                 new EntityException("entity cannot send signals to itself, use next or fork");
@@ -931,8 +1044,20 @@ private class Entity : StateMachine!SystemState {
     }
 
     /// send an anycast signal into own space
-    bool send(T)(T s) 
-    if(is(T : Anycast) || is(T : Multicast)) {
+    bool send(Anycast s) {
+        this.ensureState(SystemState.Ticking);
+
+        synchronized(this.metaLock.reader)
+            // ensure correct source entity pointer
+            s.src = this.meta.ptr;
+
+        return this.space.send(s);
+    }
+
+    /// send an multicast signal into own space
+    bool send(Multicast s) {
+        this.ensureState(SystemState.Ticking);
+
         synchronized(this.metaLock.reader)
             // ensure correct source entity pointer
             s.src = this.meta.ptr;
@@ -949,105 +1074,19 @@ private class Entity : StateMachine!SystemState {
             return this.meta.clone;
         }
     }
+}
 
-    override protected bool onStateChanging(SystemState o, SystemState n) {
-        switch(n) {
-            case SystemState.Ticking:
-                return o == SystemState.Created || o == SystemState.Frozen;
-            case SystemState.Frozen:
-                return o == SystemState.Ticking;
-            case SystemState.Disposed:
-                return o == SystemState.Created || o == SystemState.Frozen;
-            default: return false;
-        }
-    }
+private Damage damage(Throwable thr) {
+    import std.conv : to;
 
-    override protected void onStateChanged(SystemState o, SystemState n) {
-        import std.algorithm.iteration : filter;
+    auto dmg = new Damage;
+    dmg.msg = thr.file~":"~thr.line.to!string~" "~thr.msg;
+    dmg.type = fqn!(typeof(thr));
 
-        switch(n) {
-            case SystemState.Created:
-                synchronized(this.metaLock.reader) {
-                    // running onCreated ticks
-                    foreach(e; this.meta.events.filter!(e => e.type == EventType.OnCreated)) {
-                        auto t = this.meta.createTickMeta(e.tick).createTick(this);
+    if(thr.as!FlowException !is null)
+        dmg.data = thr.as!FlowException.data;
 
-                        if(t.checkAccept) {
-                            auto ticker = new Ticker(this, t);
-                            ticker.start(false);
-                            ticker.join();
-                            ticker.destroy();
-                        }
-                    }
-                }
-                break;
-            case SystemState.Ticking:
-                // here we need a writerlock since everyone could do that
-                synchronized(this.metaLock.reader) {
-                    // running onTicking ticks
-                    foreach(e; this.meta.events.filter!(e => e.type == EventType.OnTicking)) {
-                        auto t = this.meta.createTickMeta(e.tick).createTick(this);
-                        if(t.checkAccept) {
-                            auto ticker = new Ticker(this, t);
-                            ticker.start(false);
-                            ticker.join();
-                            ticker.destroy();
-                        }
-                    }
-                }
-
-                synchronized(this.lock.writer) {
-                    // creating and starting ticker for all frozen ticks
-                    foreach(t; this.meta.ticks) {
-                        auto ticker = new Ticker(this, t.createTick(this));
-                        this.ticker[ticker.id] = ticker;
-                        ticker.start();
-                    }
-
-                    // all frozen ticks are ticking -> empty store
-                    this.meta.ticks = [];
-                }
-                break;
-            case SystemState.Frozen: 
-                synchronized(this.lock.writer) {
-                    // stopping and destroying all ticker and freeze next ticks
-                    foreach(t; this.ticker.values.dup) {
-                        t.detaching = false;
-                        t.stop();
-                        if(t.next !is null)
-                            this.meta.ticks ~= t.next.meta;
-                        this.ticker.remove(t.id);
-                        t.destroy();
-                    }
-                }
-
-                synchronized(this.metaLock.reader) {
-                    // running onFrozen ticks
-                    foreach(e; this.meta.events.filter!(e => e.type == EventType.OnFrozen)) {
-                        auto t = this.meta.createTickMeta(e.tick).createTick(this);
-                        if(t.checkAccept) {
-                            auto ticker = new Ticker(this, t);
-                            ticker.start(false);
-                            ticker.join();
-                            ticker.destroy();
-                        }
-                    }
-                }                    
-                break;
-            case SystemState.Disposed:
-                synchronized(this.metaLock.reader) {
-                    // running onDisposed ticks
-                    foreach(e; this.meta.events.filter!(e => e.type == EventType.OnDisposed)) {
-                        auto ticker = new Ticker(this, this.meta.createTickMeta(e.tick).createTick(this));
-                        ticker.start(false);
-                        ticker.join();
-                        ticker.destroy();
-                    }
-                }
-                break;
-            default: break;
-        }
-    }
+    return dmg;
 }
 
 /// gets the string address of an entity
@@ -1090,43 +1129,19 @@ class EntityController {
     }
 }
 
-private bool matches(string id, string pattern) {
-    import std.array : array;
-    import std.range : split, retro, back;
-
-    auto ip = id.split(".").retro.array;
-    auto pp = pattern.split(".").retro.array;
-
-    if(pp.length == ip.length || (pp.length < ip.length && pp.back == "*")) {
-        foreach(i, p; pp) {
-            if(!(p == ip[i] || (p == "*")))
-                return false;
-        }
-
-        return true;
-    }
-    else return false;
-}
-
-unittest {
-    import std.stdio : writeln;
-
-    writeln("testing domain matching");
-    assert(matches("a.b.c", "a.b.c"), "1:1 matching failed");
-    assert(matches("a.b.c", "a.b.*"), "first level * matching failed");
-    assert(matches("a.b.c", "a.*.c"), "second level * matching failed");
-    assert(matches("a.b.c", "*.b.c"), "third level * matching failed");
-}
-
 private enum JunctionState {
-    Created = 0,
-    Up,
-    Down,
-    Disposed
+    Detached,
+    Attached
+}
+
+abstract class Channel {
+    abstract bool transport(JunctionPacket p);
 }
 
 /// allows signals from one space to get shipped to other spaces
 abstract class Junction : StateMachine!JunctionState {
+    private import std.parallelism : taskPool, task;
+
     private JunctionMeta _meta;
     private Space _space;
     private string[] destinations;
@@ -1138,52 +1153,32 @@ abstract class Junction : StateMachine!JunctionState {
     this() {
         super();
     }
-
-    private void start() {
-        this.state = JunctionState.Up;
+    
+    ~this() {
+        if(this.state != JunctionState.Attached)
+            this.detach();
     }
 
-    private void stop() {
-        this.state = JunctionState.Down;
+    private void attach() {
+        this.state = JunctionState.Attached;
     }
 
-    private void dispose() {
-        if(this.state == JunctionState.Up)
-            this.stop();
-        
-        this.state = JunctionState.Disposed;
+    private void detach() {
+        this.state = JunctionState.Detached;
     }
 
-    override protected bool onStateChanging(JunctionState o, JunctionState n) {
+    override protected final bool onStateChanging(JunctionState o, JunctionState n) {
         switch(n) {
-            case JunctionState.Up:
-                return o == JunctionState.Created || o == JunctionState.Down;
-            case JunctionState.Down:
-                return o == JunctionState.Up;
-            case JunctionState.Disposed:
-                return o == JunctionState.Created || o == JunctionState.Down;
+            case JunctionState.Attached:
+                return o == JunctionState.Detached && this.up();
+            case JunctionState.Detached:
+                return o == JunctionState.Attached && this.down();
             default: return false;
         }
     }
 
-    override protected void onStateChanged(JunctionState o, JunctionState n) {        
-        switch(n) {
-            case JunctionState.Created:
-                break;
-            case JunctionState.Up:
-                this.up();
-                break;
-            case JunctionState.Down:
-                this.down();
-                break;
-            case JunctionState.Disposed:
-                break;
-            default: break;
-        }
-    }
-
-    protected abstract void up();
-    protected abstract void down();
+    protected abstract bool up();
+    protected abstract bool down();
 
     /// ship an unicast through the junction
     protected abstract bool ship(Unicast s);
@@ -1194,15 +1189,102 @@ abstract class Junction : StateMachine!JunctionState {
     /// ship a multicast through the junction
     protected abstract bool ship(Multicast s);
 
-    /// deliver
-    protected bool deliver(T)(T s) if(is(T:Unicast) || is(T:Anycast) || is(T:Multicast)) {
-        if(s.as!Unicast !is null
-        || (this.meta.info.acceptsAnycast && s.as!Anycast !is null)
-        || (this.meta.info.acceptsMulticast && s.as!Multicast !is null))
-            return this._space.route(s, this.meta.level);
-        else
-            return false;
+    /// ship a signal through a transport interface
+    protected bool pack(Signal s, JunctionInfo recv, Channel c, bool function(Channel, JunctionPacket) t) {
+        if(s.allowed(this.meta.info, recv)) {
+            auto p = new JunctionPacket;
+            p.signal = s;
+            p.auth = this.meta.info.anonymous ? null : this.meta.info;
+
+            // it gets done async returns true
+            if(this.meta.info.indifferent) {
+                taskPool.put(task(t, c, p));
+                return true;
+            } else
+                return t(c, p);
+        } else return false;
     }
+
+    /** deliver signal to local space
+    !interface from transport! */
+    bool deliver(Signal s, JunctionInfo snd) {
+        if(s.allowed(snd, this.meta.info)) {     
+            // we do not tell our runtimes ==> we make the call async and dada
+            if(this.meta.info.anonymous) {
+                taskPool.put(task(&this.route, s));
+                return true;
+            } else return this.route(s);
+        } else return false;
+    }
+
+    private bool route(Signal s) {
+        if(s.as!Unicast !is null)
+            return this._space.route(s.as!Unicast, this.meta.level);
+        else if(s.as!Anycast !is null)
+            return this._space.route(s.as!Anycast, this.meta.level);
+        else if(s.as!Multicast !is null)
+            return this._space.route(s.as!Multicast, this.meta.level);
+        else return false;
+    }
+}
+
+/// evaluates if signal is allowed in that config
+bool allowed(Signal s, JunctionInfo snd, JunctionInfo recv) {
+    import flow.util : as;
+
+    if(s.as!Unicast !is null)
+        return s.as!Unicast.dst.space == recv.space;
+    else if(s.as!Anycast !is null)
+        return !snd.indifferent && !recv.anonymous && !recv.introvert && recv.space.matches(s.as!Anycast.dst);
+    else if(s.as!Multicast !is null)
+        return !recv.introvert && recv.space.matches(s.as!Multicast.dst);
+    else return false;
+}
+
+bool matches(string id, string pattern) {
+    import std.array : array;
+    import std.range : split, retro, back;
+
+    if(pattern.containsWildcard) {
+        auto ip = id.split(".").retro.array;
+        auto pp = pattern.split(".").retro.array;
+
+        if(pp.length == ip.length || (pp.length < ip.length && pp.back == "*")) {
+            foreach(i, p; pp) {
+                if(!(p == ip[i] || (p == "*")))
+                    return false;
+            }
+
+            return true;
+        }
+        else return false;
+    } else
+        return id == pattern;
+}
+
+private bool containsWildcard(string dst) {
+    import std.algorithm.searching : canFind;
+
+    return dst.canFind("*");
+}
+
+unittest {
+    assert("*".containsWildcard);
+    assert(!"a".containsWildcard);
+    assert("*.aa.bb".containsWildcard);
+    assert("aa.*.bb".containsWildcard);
+    assert("aa.bb.*".containsWildcard);
+    assert(!"aa.bb.cc".containsWildcard);
+}
+
+unittest {
+    import std.stdio : writeln;
+
+    writeln("testing domain matching");
+    assert(matches("a.b.c", "a.b.c"), "1:1 matching failed");
+    assert(matches("a.b.c", "a.b.*"), "first level * matching failed");
+    assert(matches("a.b.c", "a.*.c"), "second level * matching failed");
+    assert(matches("a.b.c", "*.b.c"), "third level * matching failed");
 }
 
 /// hosts a space which can host n entities
@@ -1222,8 +1304,20 @@ class Space : StateMachine!SystemState {
     }
 
     ~this() {
-        if(this.state != SystemState.Disposed)
-            this.state = SystemState.Disposed;
+        if(this.state == SystemState.Ticking)
+            this.freeze();
+
+        foreach(j; this.junctions)
+            j.destroy();
+
+        foreach(e; this.entities.keys)
+            this.entities[e].destroy;
+
+        this.junctions = Junction[].init;
+
+        this.tasker.stop();
+        this.tasker.destroy;
+        this.tasker = null;
     }
 
     /// makes space and all of its content freezing
@@ -1236,93 +1330,77 @@ class Space : StateMachine!SystemState {
         this.state = SystemState.Ticking;
     }
 
-    /// disposes space
-    void dispose() {
-        if(this.state == SystemState.Ticking)
-            this.freeze();
-
-        this.state = SystemState.Disposed;
-    }
-
     override protected bool onStateChanging(SystemState o, SystemState n) {
         switch(n) {
             case SystemState.Ticking:
-                return o == SystemState.Created || o == SystemState.Frozen;
+                return (o == SystemState.Frozen) && this.canGoTicking;
             case SystemState.Frozen:
                 return o == SystemState.Ticking;
-            case SystemState.Disposed:
-                return o == SystemState.Created || o == SystemState.Frozen;
             default: return false;
         }
     }
 
+    private bool canGoTicking() {
+        foreach(j; this.junctions)
+            j.attach();
+
+        foreach(e; this.entities)
+            e.tick();
+
+        return true;
+    }
+
     override protected void onStateChanged(SystemState o, SystemState n) {
         switch(n) {
-            case SystemState.Created:
-                import flow.core.error : SpaceException;
-
-                // creating tasker;
-                // default is one core
-                if(this.meta.worker < 1)
-                    this.meta.worker = 1;
-                this.tasker = new Processor(this.meta.worker);
-                this.tasker.start();
-
-                // creating entities
-                foreach(em; this.meta.entities) {
-                    if(em.ptr.id in this.entities)
-                        throw new SpaceException("entity with addr \""~em.ptr.addr~"\" already exists");
-                    else {
-                        // ensure entity belonging to this space
-                        em.ptr.space = this.meta.id;
-
-                        Entity e = new Entity(this, em);
-                        this.entities[em.ptr.id] = e;
-                    }
-                }
-
-                // creating junctions
-                foreach(jm; this.meta.junctions) {
-                    auto j = Object.factory(jm.type).as!Junction;
-                    jm.info.space = this.meta.id; // ensure junction knows correct space
-                    j._meta = jm;
-                    j._space = this;
-                    this.junctions ~= j;
-                }
-                break;
-            case SystemState.Ticking:
-                synchronized(this.lock.reader)
-                    foreach(e; this.entities)
-                        e.tick();
-
-                foreach(j; this.junctions)
-                    j.start();
-                break;
             case SystemState.Frozen:
-                foreach(j; this.junctions)
-                    j.stop();
-
-                synchronized(this.lock.reader)
-                    foreach(e; this.entities.values)
-                        e.freeze();
-                break;
-            case SystemState.Disposed:
-                foreach(j; this.junctions) {
-                    j.dispose();
-                    j.destroy();
-                }
-
-                this.junctions = Junction[].init;
-
-                synchronized(this.lock.writer)
-                    foreach(e; this.entities.keys)
-                        this.entities[e].destroy;
-
-                this.tasker.stop();
-                this.tasker.destroy;
+                if(this.tasker is null)
+                    this.onCreated();
+                else
+                    this.onFrozen();
                 break;
             default: break;
         }
+    }
+
+    private void onCreated() {
+        import flow.core.error : SpaceException;
+
+        // creating processor;
+        // default is one core
+        if(this.meta.worker < 1)
+            this.meta.worker = 1;
+        this.tasker = new Processor(this.meta.worker);
+        this.tasker.start();
+
+        // creating junctions
+        foreach(jm; this.meta.junctions) {
+            auto j = Object.factory(jm.type).as!Junction;
+            jm.info.space = this.meta.id; // ensure junction knows correct space
+            j._meta = jm;
+            j._space = this;
+            this.junctions ~= j;
+        }
+
+        // creating entities
+        foreach(em; this.meta.entities) {
+            if(em.ptr.id in this.entities)
+                throw new SpaceException("entity with addr \""~em.ptr.addr~"\" already exists");
+            else {
+                // ensure entity belonging to this space
+                em.ptr.space = this.meta.id;
+
+                Entity e = new Entity(this, em);
+                this.entities[em.ptr.id] = e;
+            }
+        }
+    }
+
+    private void onFrozen() {
+        foreach(e; this.entities.values)
+            e.freeze();
+
+        foreach(j; this.junctions)
+            j.detach();
     }
 
     /// snapshots whole space (deep clone)
@@ -1335,6 +1413,10 @@ class Space : StateMachine!SystemState {
             
             return this.meta.clone;
         }
+    }
+
+    EntityController get(EntityPtr ptr) {
+        return this.get(ptr.id);
     }
 
     /// gets a controller for an entity contained in space (null if not existing)
@@ -1376,7 +1458,7 @@ class Space : StateMachine!SystemState {
     }
     
     /// routes an unicast signal to receipting entities if its in this space
-    private bool route(Unicast s, ushort level = 0) {
+    private bool route(Unicast s, ushort level) {
         // if its a perfect match assuming process only accepted a signal for itself
         if(this.state == SystemState.Ticking && s.dst.space == this.meta.id) {
             synchronized(this.lock.reader) {
@@ -1394,7 +1476,7 @@ class Space : StateMachine!SystemState {
 
    
     /// routes an anycast signal to one receipting entity
-    private bool route(Anycast s, ushort level = 0) {
+    private bool route(Anycast s, ushort level) {
         // if its adressed to own space or parent using * wildcard or even none
         // in each case we do not want to regex search when ==
         if(this.state == SystemState.Ticking) {
@@ -1412,7 +1494,7 @@ class Space : StateMachine!SystemState {
     }
     
     /// routes a multicast signal to receipting entities if its addressed to space
-    private bool route(Multicast s, ushort level = 0) {
+    private bool route(Multicast s, ushort level) {
         auto r = false;
         // if its adressed to own space or parent using * wildcard or even none
         // in each case we do not want to regex search when ==
@@ -1429,26 +1511,34 @@ class Space : StateMachine!SystemState {
         return r;
     }
 
-    private bool send(T)(T s)
-    if(is(T : Unicast)) {
+    private bool send(Unicast s) {
         // ensure correct source space
         s.src.space = this.meta.id;
 
         auto isMe = s.dst.space == this.meta.id || this.meta.id.matches(s.dst.space);
         /* Only inside own space memory is shared,
         as soon as a signal is getting shiped to another space it is deep cloned */
-        return isMe ? this.route(s) : this.ship(s);
+        return isMe ? this.route(s, 0) : this.ship(s);
     }
 
-    private bool send(T)(T s)
-    if(is(T : Anycast) || is(T : Multicast)) {
+    private bool send(Anycast s) {
         // ensure correct source space
         s.src.space = this.meta.id;
 
         auto isMe = s.dst == this.meta.id || this.meta.id.matches(s.dst);
         /* Only inside own space memory is shared,
         as soon as a signal is getting shiped to another space it is deep cloned */
-        return isMe ? this.route(s) : this.ship(s);
+        return isMe ? this.route(s, 0) : this.ship(s);
+    }
+
+    private bool send(Multicast s) {
+        // ensure correct source space
+        s.src.space = this.meta.id;
+
+        auto isMe = s.dst == this.meta.id || this.meta.id.matches(s.dst);
+        /* Only inside own space memory is shared,
+        as soon as a signal is getting shiped to another space it is deep cloned */
+        return isMe ? this.route(s, 0) : this.ship(s);
     }
 
     private bool ship(Unicast s) {
@@ -1460,8 +1550,7 @@ class Space : StateMachine!SystemState {
 
     private bool ship(Anycast s) {
         foreach(j; this.junctions)
-            // anycasts can only be shipped via confirming junctions
-            if(j.meta.info.isConfirming && j.ship(s))
+            if(j.ship(s))
                 return true;
 
         return false;
@@ -1543,221 +1632,7 @@ class Process {
     }
 }
 
-version(unittest) {
-    private import flow.data;
-
-    class OldTestTickException : FlowException {mixin exception;}
-
-    class OldTestUnicast : Unicast {
-        mixin data;
-    }
-
-    class OldTestAnycast : Anycast {
-        mixin data;
-    }
-    class OldTestMulticast : Multicast {
-        mixin data;
-    }
-
-    class OldOldTestTickContext : Data {
-        mixin data;
-
-        mixin field!(bool, "gotOldTestUnicast");
-        mixin field!(bool, "gotOldTestAnycast");
-        mixin field!(bool, "gotOldTestMulticast");
-        mixin field!(size_t, "cnt");
-        mixin field!(string, "error");
-        mixin field!(bool, "forked");
-        mixin field!(TickInfo, "info");
-        mixin field!(OldTestTickData, "data");
-        mixin field!(OldTestUnicast, "trigger");
-        mixin field!(bool, "onCreated");
-        mixin field!(bool, "onTicking");
-        mixin field!(bool, "onFrozen");
-        mixin field!(bool, "timeOk");
-    }
-
-    class OldTestTickData : Data {
-        mixin data;
-
-        mixin field!(size_t, "cnt");
-        mixin field!(long, "lastTime");
-    }
-    
-    class OldTestTick : Tick {
-        override void run() {
-            import std.datetime.systime : Clock;
-
-            auto stdTime = Clock.currStdTime;
-
-            auto c = this.context.as!OldOldTestTickContext;
-            auto d = this.data.as!OldTestTickData !is null ?
-                this.data.as!OldTestTickData :
-                "flow.core.engine.OldTestTickData".createData().as!OldTestTickData;
-            auto t = this.trigger.as!OldTestUnicast;
-
-            c.info = this.info;
-            c.data = d;
-            c.trigger = t;
-
-            d.cnt++;
-
-            c.timeOk = d.lastTime == long.init || c.timeOk && d.cnt > 4 || (c.timeOk && d.lastTime + 100.msecs.total!"hnsecs" <= stdTime);
-            d.lastTime = stdTime;
-
-            if(d.cnt == 4) {
-                this.fork(this.info.type, data);
-                throw new OldTestTickException;
-            } else if(d.cnt > 4) {
-                c.forked = true;
-            } else {            
-                /* we do not really need to sync that beacause D
-                syncs integrals automatically but we need an example */
-                synchronized(this.sync.writer)
-                    c.cnt += d.cnt;
-
-                this.next("flow.core.engine.OldTestTick", 100.msecs, d);
-            }
-        }
-
-        override void error(Throwable thr) {
-            if(thr.as!OldTestTickException !is null) {
-                auto c = this.context.as!OldOldTestTickContext;
-                synchronized(this.sync.writer)
-                    c.error = thr.as!FlowException.type;
-            }
-        }
-    }
-
-    class UnicastReceivingOldTestTick : Tick {
-        override void run() {
-            auto c = this.context.as!OldOldTestTickContext;
-            c.gotOldTestUnicast = true;
-
-            this.next("flow.core.engine.OldTestTick");
-        }
-    }
-
-    class AnycastReceivingOldTestTick : Tick {
-        override void run() {
-            auto c = this.context.as!OldOldTestTickContext;
-            c.gotOldTestAnycast = true;
-        }
-    }
-
-    class MulticastReceivingOldTestTick : Tick {
-        override void run() {
-            auto c = this.context.as!OldOldTestTickContext;
-            c.gotOldTestMulticast = true;
-        }
-    }
-
-    class OldTestOnCreatedTick : Tick {
-        override void run() {
-            auto c = this.context.as!OldOldTestTickContext;
-            c.onCreated = true;
-        }
-    }
-
-    class OldTestOnTickingTick : Tick {
-        override void run() {
-            auto c = this.context.as!OldOldTestTickContext;
-            c.onTicking = true;
-        }
-    }
-
-    class OldTestOnFrozenTick : Tick {
-        override void run() {
-            auto c = this.context.as!OldOldTestTickContext;
-            c.onFrozen = true;
-        }
-    }
-
-
-    class OldTriggeringTestContext : Data {
-        mixin data;
-
-        mixin field!(EntityPtr, "targetEntity");
-        mixin field!(string, "targetSpace");
-        mixin field!(bool, "confirmedOldTestUnicast");
-        mixin field!(bool, "confirmedOldTestAnycast");
-        mixin field!(bool, "confirmedOldTestMulticast");
-    }
-
-    class TriggeringOldTestTick : Tick {
-        override void run() {
-            auto c = this.context.as!OldTriggeringTestContext;
-            c.confirmedOldTestUnicast = this.send(new OldTestUnicast, c.targetEntity);
-            c.confirmedOldTestAnycast = this.send(new OldTestAnycast, c.targetSpace);
-            c.confirmedOldTestMulticast = this.send(new OldTestMulticast, c.targetSpace);
-        }
-    }
-
-    SpaceMeta oldCreateTestSpace() {
-        auto s = new SpaceMeta;
-        s.worker = 1;
-        s.id = "s";
-        auto te = oldCreateTestEntity();
-        s.entities ~= te;
-        auto tte = oldCreateTriggerTestEntity(te.ptr);
-        s.entities ~= tte;
-
-        return s;
-    }
-
-    EntityMeta oldCreateTestEntity() {
-        auto e = new EntityMeta;
-        e.ptr = new EntityPtr;
-        e.ptr.id = "e";
-
-        auto onc = new Event;
-        onc.type = EventType.OnCreated;
-        onc.tick = "flow.core.engine.OldTestOnCreatedTick";
-        e.events ~= onc;
-        auto ont = new Event;
-        ont.type = EventType.OnTicking;
-        ont.tick = "flow.core.engine.OldTestOnTickingTick";
-        e.events ~= ont;
-        auto onf = new Event;
-        onf.type = EventType.OnFrozen;
-        onf.tick = "flow.core.engine.OldTestOnFrozenTick";
-        e.events ~= onf;
-
-        auto ru = new Receptor;
-        ru.signal = "flow.core.engine.OldTestUnicast";
-        ru.tick = "flow.core.engine.UnicastReceivingOldTestTick";
-        e.receptors ~= ru;
-
-        auto ra = new Receptor;
-        ra.signal = "flow.core.engine.OldTestAnycast";
-        ra.tick = "flow.core.engine.AnycastReceivingOldTestTick";
-        e.receptors ~= ra;
-
-        auto rm = new Receptor;
-        rm.signal = "flow.core.engine.OldTestMulticast";
-        rm.tick = "flow.core.engine.MulticastReceivingOldTestTick";
-        e.receptors ~= rm;
-
-        e.context = new OldOldTestTickContext;
-
-        return e;
-    }
-
-    EntityMeta oldCreateTriggerTestEntity(EntityPtr te) {
-        auto e = new EntityMeta;
-        e.ptr = new EntityPtr;
-        e.ptr.id = "te";
-        auto tc = new OldTriggeringTestContext;
-        tc.targetEntity = te;
-        tc.targetSpace = "s";
-        e.context = tc;
-        e.ticks ~= e.createTickMeta("flow.core.engine.TriggeringOldTestTick");
-
-        return e;
-    }
-}
-
-unittest {
+/*unittest {
     import std.stdio : writeln;
     import std.conv : to;
     
@@ -1802,4 +1677,374 @@ unittest {
     assert(ec.data !is null, "data was not set correctly");
     assert(ec.error == "flow.core.engine.OldTestTickException", "error was not handled");
     assert(ec.forked, "didn't fork as expected");
+}*/
+
+/// imports for tests
+version(unittest) {
+    private import flow.core.data;
+    private import flow.core.engine;
+    private import flow.data;
+    private import flow.util;
 }
+
+/// casts for testing
+version(unittest) {
+    class TestUnicast : Unicast {
+        mixin data;
+    }
+
+    class TestAnycast : Anycast {
+        mixin data;
+    }
+    class TestMulticast : Multicast {
+        mixin data;
+    }
+}
+
+/// data of entities
+version(unittest) {
+    class TestEventingContext : Data {
+        mixin data;
+
+        mixin field!(bool, "firedOnTicking");
+        mixin field!(bool, "firedOnFreezing");
+    }
+
+    class TestDelayContext : Data {
+        private import core.time : Duration;
+        private import std.datetime.systime : SysTime;
+
+        mixin data;
+
+        mixin field!(Duration, "delay");
+        mixin field!(SysTime, "startTime");
+        mixin field!(SysTime, "endTime");
+    }
+
+    class TestSendingContext : Data {
+        mixin data;
+
+        mixin field!(string, "dstEntity");
+        mixin field!(string, "dstSpace");
+        mixin field!(bool, "confirmedTestUnicast");
+        mixin field!(bool, "confirmedTestAnycast");
+        mixin field!(bool, "confirmedTestMulticast");
+    }
+
+    class TestReceivingContext : Data {
+        mixin data;
+
+        mixin field!(bool, "gotTestUnicast");
+        mixin field!(bool, "gotTestAnycast");
+        mixin field!(bool, "gotTestMulticast");
+    }
+}
+
+/// ticks
+version(unittest) {
+    class ErrorTestTick : Tick {
+        override void run() {
+            import flow.core : TickException;
+            throw new TickException("test error");
+        }
+
+        override void error(Throwable thr) {
+            this.next(fqn!ErrorHandlerErrorTestTick);
+        }
+    }
+
+    class ErrorHandlerErrorTestTick : Tick {
+        override void run() {
+            import flow.core : TickException;
+            throw new TickException("test error");
+        }
+
+        override void error(Throwable thr) {
+            import flow.core : TickException;
+            throw new TickException("test errororhandler error");
+        }
+    }
+
+    class OnTickingEventTestTick : Tick {
+        override void run() {
+            auto c = this.context.as!TestEventingContext;
+            c.firedOnTicking = true;
+        }
+    }
+
+    class OnFreezingEventTestTick : Tick {
+        override void run() {
+            auto c = this.context.as!TestEventingContext;
+            c.firedOnFreezing = true;
+        }
+    }
+
+    class DelayTestTick : Tick {
+        override void run() {
+            import std.datetime.systime : Clock;
+
+            auto c = this.context.as!TestDelayContext;
+            c.startTime = Clock.currTime;
+            this.next(fqn!DelayedTestTick, c.delay);
+        }
+    }
+
+    class DelayedTestTick : Tick {
+        override void run() {
+            import std.datetime.systime : Clock;
+
+            auto endTime = Clock.currTime;
+
+            auto c = this.context.as!TestDelayContext;
+            c.endTime = endTime;
+        }
+    }
+
+    class UnicastSendingTestTick : Tick {
+        override void run() {
+            auto c = this.context.as!TestSendingContext;
+            c.confirmedTestUnicast = this.send(new TestUnicast, c.dstEntity, c.dstSpace);
+        }
+    }
+
+    class AnycastSendingTestTick : Tick {
+        override void run() {
+            auto c = this.context.as!TestSendingContext;
+            c.confirmedTestAnycast = this.send(new TestAnycast, c.dstSpace);
+        }
+    }
+
+    class MulticastSendingTestTick : Tick {
+        override void run() {
+            auto c = this.context.as!TestSendingContext;
+            c.confirmedTestMulticast = this.send(new TestMulticast, c.dstSpace);
+        }
+    }
+
+    class UnicastReceivingTestTick : Tick {
+        override void run() {
+            auto c = this.context.as!TestReceivingContext;
+            c.gotTestUnicast = true;
+        }
+    }
+
+    class AnycastReceivingTestTick : Tick {
+        override void run() {
+            auto c = this.context.as!TestReceivingContext;
+            c.gotTestAnycast = true;
+        }
+    }
+
+    class MulticastReceivingTestTick : Tick {
+        override void run() {
+            auto c = this.context.as!TestReceivingContext;
+            c.gotTestMulticast = true;
+        }
+    }
+}
+
+unittest {
+    import core.thread;
+    import flow.core.data;
+    import flow.core.make;
+    import flow.util;
+    import std.stdio;
+
+    writeln("TEST engine: events");
+
+    auto proc = new Process;
+    scope(exit) proc.destroy;
+
+    auto spcDomain = "spc.test.engine.ipc.flow";
+
+    auto sm = createSpace(spcDomain);
+
+    auto em = sm.addEntity("test", fqn!TestEventingContext);
+    em.addEvent(EventType.OnTicking, fqn!OnTickingEventTestTick);
+    em.addEvent(EventType.OnFreezing, fqn!OnFreezingEventTestTick);
+
+    auto spc = proc.add(sm);
+
+    spc.tick();
+
+    Thread.sleep(100.msecs);
+
+    spc.freeze();
+
+    auto nsm = spc.snap();
+
+    assert(nsm.entities[0].context.as!TestEventingContext.firedOnTicking, "didn't get fired for OnTicking");
+    assert(nsm.entities[0].context.as!TestEventingContext.firedOnFreezing, "didn't get fired for OnFreezing");
+}
+
+unittest {
+    import core.thread;
+    import core.time;
+    import flow.core.data;
+    import flow.core.error;
+    import flow.core.make;
+    import flow.util;
+    import std.range;
+    import std.stdio;
+
+    writeln("TEST engine: event error handling");
+
+    auto proc = new Process;
+    scope(exit)
+        proc.destroy;
+
+    auto spcDomain = "spc.test.engine.ipc.flow";
+
+    auto sm = createSpace(spcDomain);
+    auto em = sm.addEntity("test", fqn!Data);
+    em.addEvent(EventType.OnTicking, fqn!ErrorTestTick);
+
+    auto spc = proc.add(sm);
+
+    // do not trigger test runner by writing error messages to stdout
+    auto origLL = Log.logLevel;
+    Log.logLevel = LL.Message;
+    StateRefusedException ex;
+    try {
+        spc.tick();
+    } catch(StateRefusedException exc) {
+        ex = exc;
+    }
+    Log.logLevel = origLL;
+
+    assert(ex !is null, "exception wasn't thrown");
+}
+
+unittest {
+    import core.thread;
+    import core.time;
+    import flow.core.data;
+    import flow.core.make;
+    import flow.util;
+    import std.range;
+    import std.stdio;
+
+    writeln("TEST engine: damage error handling");
+
+    auto proc = new Process;
+    scope(exit)
+        proc.destroy;
+
+    auto spcDomain = "spc.test.engine.ipc.flow";
+
+    auto sm = createSpace(spcDomain);
+    auto em = sm.addEntity("test", fqn!Data);
+    em.addTick(fqn!ErrorTestTick);
+
+    auto spc = proc.add(sm);
+    auto ec = spc.get(em.ptr);
+
+    auto origLL = Log.logLevel;
+    Log.logLevel = LL.Message;
+    spc.tick();
+
+    Thread.sleep(100.msecs);
+    Log.logLevel = origLL;
+
+    assert(ec.state == SystemState.Frozen, "entity isn't frozen");
+    assert(!ec._entity.meta.damages.empty, "entity isn't damaged at all");
+    assert(ec._entity.meta.damages.length == 1, "entity has wrong amount of damages");
+}
+
+unittest {
+    import core.thread;
+    import flow.core.data;
+    import flow.core.make;
+    import flow.util;
+    import std.stdio;
+
+    writeln("TEST engine: delayed next");
+
+    auto proc = new Process;
+    scope(exit)
+        proc.destroy;
+
+    auto spcDomain = "spc.test.engine.ipc.flow";
+    auto delay = 100.msecs;
+
+    auto sm = createSpace(spcDomain);
+    auto em = sm.addEntity("test", fqn!TestDelayContext);
+    em.context.as!TestDelayContext.delay = delay;
+    em.addEvent(EventType.OnTicking, fqn!DelayTestTick);
+
+    auto spc = proc.add(sm);
+
+    spc.tick();
+
+    Thread.sleep(300.msecs);
+
+    spc.freeze();
+
+    auto nsm = spc.snap();
+
+    auto measuredDelay = nsm.entities[0].context.as!TestDelayContext.endTime - nsm.entities[0].context.as!TestDelayContext.startTime;
+    auto hnsecs = delay.total!"hnsecs";
+    auto tolHnsecs = hnsecs * 1.05; // we allow +5% (5msecs) tolerance for passing the test
+    auto measuredHnsecs = measuredDelay.total!"hnsecs";
+    
+    writeln("delayed ", measuredHnsecs, "hnsecs; allowed ", hnsecs, "hnsecs - ", tolHnsecs, "hnsecs");
+    assert(hnsecs < measuredHnsecs , "delayed shorter than defined");
+    assert(tolHnsecs >= measuredHnsecs, "delayed longer than allowed");
+}
+
+unittest {
+    import core.thread;
+    import flow.core.data;
+    import flow.core.make;
+    import flow.util;
+    import std.stdio;
+
+    writeln("TEST engine: send and receipt of all signal types");
+
+    auto proc = new Process;
+    scope(exit)
+        proc.destroy;
+
+    auto spcDomain = "spc.test.engine.ipc.flow";
+
+    auto sm = createSpace(spcDomain);
+
+    auto ems = sm.addEntity("sending", fqn!TestSendingContext);
+    ems.context.as!TestSendingContext.dstEntity = "receiving";
+    ems.context.as!TestSendingContext.dstSpace = spcDomain;
+    ems.addTick(fqn!UnicastSendingTestTick);
+    ems.addTick(fqn!AnycastSendingTestTick);
+    ems.addTick(fqn!MulticastSendingTestTick);
+
+    auto emr = sm.addEntity("receiving", fqn!TestReceivingContext);
+    emr.addReceptor(fqn!TestUnicast, fqn!UnicastReceivingTestTick);
+    emr.addReceptor(fqn!TestAnycast, fqn!AnycastReceivingTestTick);
+    emr.addReceptor(fqn!TestMulticast, fqn!MulticastReceivingTestTick);
+
+    auto spc = proc.add(sm);
+
+    spc.tick();
+
+    Thread.sleep(100.msecs);
+
+    spc.freeze();
+
+    auto nsm = spc.snap();
+
+    assert(nsm.entities[1].context.as!TestReceivingContext.gotTestUnicast, "didn't get test unicast");
+    assert(nsm.entities[1].context.as!TestReceivingContext.gotTestAnycast, "didn't get test anycast");
+    assert(nsm.entities[1].context.as!TestReceivingContext.gotTestMulticast, "didn't get test multicast");
+
+    assert(nsm.entities[0].context.as!TestSendingContext.confirmedTestUnicast, "didn't confirm test unicast");
+    assert(nsm.entities[0].context.as!TestSendingContext.confirmedTestAnycast, "didn't confirm test anycast");
+    assert(nsm.entities[0].context.as!TestSendingContext.confirmedTestMulticast, "didn't confirm test multicast");
+}
+
+/*
+
+unittest {
+    import std.stdio;
+
+    writeln("TEST engine: ");
+}
+*/

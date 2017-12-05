@@ -9,7 +9,7 @@ JunctionMeta addInProcJunction(
     UUID id,
     ushort level = 0
 ) {
-    return sm.addInProcJunction(id, level, true, true, true);
+    return sm.addInProcJunction(id, level, false, false, false);
 }
 
 /// creates metadata for an in process junction and appeds it to a spaces metadata 
@@ -17,9 +17,9 @@ JunctionMeta addInProcJunction(
     SpaceMeta sm,
     UUID id,
     ushort level,
-    bool isConfirming,
-    bool acceptsAnycast,
-    bool acceptsMulticast
+    bool anonymous,
+    bool indifferent,
+    bool introvert
 ) {
     import flow.ipc.inproc : InProcessJunctionMeta;
     import flow.util : as;
@@ -28,9 +28,9 @@ JunctionMeta addInProcJunction(
         "flow.ipc.inproc.InProcessJunctionMeta",
         "flow.ipc.inproc.InProcessJunction",
         level,
-        isConfirming,
-        acceptsAnycast,
-        acceptsMulticast
+        anonymous,
+        indifferent,
+        introvert
     ).as!InProcessJunctionMeta;
     jm.id = id;
 

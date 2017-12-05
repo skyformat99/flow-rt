@@ -1,14 +1,13 @@
 module flow.util.log;
 
-/// available log levels (flags)
-enum LL : uint {
-    Message = 1 << 0,
-    Fatal = 1 << 1,
-    Error = 1 << 2,
-    Warning = 1 << 3,
-    Info = 1 << 4,
-    Debug = 1 << 5,
-    FDebug = 1 << 6
+enum LL {
+    Message = 0,
+    Fatal = 1,
+    Error = 2,
+    Warning = 3,
+    Info = 4,
+    Debug = 5,
+    FDebug = 6
 }
 
 /// flow system logger

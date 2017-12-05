@@ -35,54 +35,46 @@ class InProcessJunction : Junction {
         super();
     }
 
-    override void up() {
+    override bool up() {
         import flow.util : as;
 
         synchronized(lock.writer)
             junctions[this.id][this.meta.info.space] = this.as!(shared(InProcessJunction));
+
+        return true;
     }
 
-    override void down() {
+    override bool down() {
         synchronized(lock.writer)
-            junctions[this.id].remove(this.meta.info.space);
+            if(this.id in junctions)
+                junctions[this.id].remove(this.meta.info.space);
+
+        return true;
     }
 
     override bool ship(Unicast s) {
         import flow.util : as;
 
         synchronized(lock.reader)
-            if(s.dst.space != this.meta.info.space && s.dst.space in junctions[this.id])
-                if(this.meta.info.isConfirming) {
-                    return junctions[this.id][s.dst.space].as!InProcessJunction.deliver(s.clone);
-                } else {
-                    junctions[this.id][s.dst.space].as!InProcessJunction.deliver(s.clone);
-                    return true;
-                }
+            if(s.dst.space in junctions[this.id]) {
+                auto c = new InProcessChannel(this, junctions[this.id][s.dst.space]);
+                return this.pack(s, c.recv.as!InProcessJunction.meta.info, c, (chan, pkg) => chan.transport(pkg)); // !interface to transport!
+            }
         
         return false;
     }
 
     override bool ship(Anycast s) {
         import flow.util : as;
-
-        // anycasts can only be send if its a confirming junction
-        if(this.meta.info.isConfirming) {
-            auto cw = containsWildcard(s.dst);
-
-            synchronized(lock.reader)
-                if(cw) {
-                    foreach(j; junctions[this.id])
-                        if(j.as!InProcessJunction.meta.info.space != this.meta.info.space
-                        && j.as!InProcessJunction.meta.info.acceptsAnycast
-                        && j.as!InProcessJunction.deliver(s))
-                            return true;
-                } else {
-                    if(s.dst != this.meta.info.space
-                    && s.dst in junctions[this.id]
-                    && junctions[this.id][s.dst].as!InProcessJunction.meta.info.acceptsAnycast)
-                        return junctions[this.id][s.dst].as!InProcessJunction.deliver(s.clone);
-                }
-        }
+        
+        if(s.dst != this.meta.info.space) synchronized(lock.reader)
+            if(s.dst in junctions[this.id]) {
+                auto c = new InProcessChannel(this, junctions[this.id][s.dst]);
+                return this.pack(s, c.recv.as!InProcessJunction.meta.info, c, (chan, pkg) => chan.transport(pkg)); // !interface to transport!
+            } else foreach(j; junctions[this.id]) {
+                auto c = new InProcessChannel(this, j);
+                return this.pack(s, c.recv.as!InProcessJunction.meta.info, c, (chan, pkg) => chan.transport(pkg)); // !interface to transport!
+            }
                     
         return false;
     }
@@ -90,49 +82,51 @@ class InProcessJunction : Junction {
     override bool ship(Multicast s) {
         import flow.util : as;
 
-        auto cw = containsWildcard(s.dst);
-
         auto ret = false;
-        synchronized(lock.reader)
-            if(cw)
-                foreach(j; junctions[this.id])
-                    if(j.as!InProcessJunction.meta.info.space != this.meta.info.space
-                    && j.as!InProcessJunction.meta.info.acceptsMulticast) {
-                        if(this.meta.info.isConfirming) {
-                            ret = j.as!InProcessJunction.deliver(s) || ret;
-                        } else {
-                            j.as!InProcessJunction.deliver(s);
-                            ret = true;
-                        }
-                    }
-            else
-                if(s.dst != this.meta.info.space
-                && s.dst in junctions[this.id]
-                && junctions[this.id][s.dst].as!InProcessJunction.meta.info.acceptsMulticast)
-                    if(this.meta.info.isConfirming) {
-                        ret = junctions[this.id][s.dst].as!InProcessJunction.deliver(s.clone);
-                    } else {
-                        junctions[this.id][s.dst].as!InProcessJunction.deliver(s.clone);
-                        ret = true;
-                    }
+        if(s.dst != this.meta.info.space) synchronized(lock.reader)
+            if(s.dst in junctions[this.id]) {
+                auto c = new InProcessChannel(this, junctions[this.id][s.dst]);
+                ret = this.pack(s, c.recv.as!InProcessJunction.meta.info, c, (chan, pkg) => chan.transport(pkg)) || ret; // !interface to transport!
+            } else foreach(j; junctions[this.id]) {
+                auto c = new InProcessChannel(this, j);
+                ret = this.pack(s, c.recv.as!InProcessJunction.meta.info, c, (chan, pkg) => chan.transport(pkg)) || ret; // !interface to transport!
+            }
                     
         return ret;
     }
 }
 
-private bool containsWildcard(string dst) {
-    import std.algorithm.searching : any;
+class InProcessChannel : Channel {
+    private InProcessJunction snd;
+    private shared InProcessJunction recv;
 
-    return dst.any!(a => a = '*');
+    this(InProcessJunction snd, shared(InProcessJunction) recv) {
+        this.snd = snd;
+        this.recv = recv;
+    }
+
+    override bool transport(JunctionPacket p) {
+        import flow.util : as;
+
+        if(p.signal.as!Unicast !is null)
+            return this.recv.as!InProcessJunction.deliver(p.signal.as!Unicast, p.auth);
+        else if(p.signal.as!Anycast !is null)
+            return this.recv.as!InProcessJunction.deliver(p.signal.as!Anycast, p.auth);
+        else if(p.signal.as!Multicast !is null)
+            return this.recv.as!InProcessJunction.deliver(p.signal.as!Multicast, p.auth);
+        else return false;
+    }
 }
 
 unittest {
     import core.thread;
     import flow.core;
     import flow.ipc.make;
-    import flow.ipc.test;
     import flow.util;
+    import std.stdio;
     import std.uuid;
+
+    writeln("TEST inproc: fully enabled passing of signals");
 
     auto proc = new Process;
     scope(exit) proc.destroy;
@@ -143,19 +137,19 @@ unittest {
     auto junctionId = randomUUID;
 
     auto sm1 = createSpace(spc1Domain);
-    auto ems = sm1.addEntity("sending", "flow.core.test.TestSendingContext");
+    auto ems = sm1.addEntity("sending", fqn!TestSendingContext);
     ems.context.as!TestSendingContext.dstEntity = "receiving";
-    ems.context.as!TestSendingContext.dstSpace = "spc2.test.inproc.ipc.flow";
-    ems.addEvent(EventType.OnTicking, "flow.core.test.UnicastSendingTestTick");
-    ems.addEvent(EventType.OnTicking, "flow.core.test.AnycastSendingTestTick");
-    ems.addEvent(EventType.OnTicking, "flow.core.test.MulticastSendingTestTick");
+    ems.context.as!TestSendingContext.dstSpace = spc2Domain;
+    ems.addTick(fqn!UnicastSendingTestTick);
+    ems.addTick(fqn!AnycastSendingTestTick);
+    ems.addTick(fqn!MulticastSendingTestTick);
     sm1.addInProcJunction(junctionId);
 
     auto sm2 = createSpace(spc2Domain);
-    auto emr = sm2.addEntity("receiving", "flow.core.test.TestReceivingContext");
-    emr.addReceptor("flow.core.test.TestUnicast", "flow.core.test.UnicastReceivingTestTick");
-    emr.addReceptor("flow.core.test.TestAnycast", "flow.core.test.AnycastReceivingTestTick");
-    emr.addReceptor("flow.core.test.TestMulticast", "flow.core.test.MulticastReceivingTestTick");
+    auto emr = sm2.addEntity("receiving", fqn!TestReceivingContext);
+    emr.addReceptor(fqn!TestUnicast, fqn!UnicastReceivingTestTick);
+    emr.addReceptor(fqn!TestAnycast, fqn!AnycastReceivingTestTick);
+    emr.addReceptor(fqn!TestMulticast, fqn!MulticastReceivingTestTick);
     sm2.addInProcJunction(junctionId);
 
     auto spc1 = proc.add(sm1);
@@ -186,9 +180,11 @@ unittest {
     import core.thread;
     import flow.core;
     import flow.ipc.make;
-    import flow.ipc.test;
     import flow.util;
+    import std.stdio;
     import std.uuid;
+
+    writeln("TEST inproc: anonymous (not) passing of signals");
 
     auto proc = new Process;
     scope(exit) proc.destroy;
@@ -199,19 +195,19 @@ unittest {
     auto junctionId = randomUUID;
 
     auto sm1 = createSpace(spc1Domain);
-    auto ems = sm1.addEntity("sending", "flow.core.test.TestSendingContext");
+    auto ems = sm1.addEntity("sending", fqn!TestSendingContext);
     ems.context.as!TestSendingContext.dstEntity = "receiving";
-    ems.context.as!TestSendingContext.dstSpace = "spc2.test.inproc.ipc.flow";
-    ems.addEvent(EventType.OnTicking, "flow.core.test.UnicastSendingTestTick");
-    ems.addEvent(EventType.OnTicking, "flow.core.test.AnycastSendingTestTick");
-    ems.addEvent(EventType.OnTicking, "flow.core.test.MulticastSendingTestTick");
-    sm1.addInProcJunction(junctionId, 0, false, true, true);
+    ems.context.as!TestSendingContext.dstSpace = spc2Domain;
+    ems.addTick(fqn!UnicastSendingTestTick);
+    ems.addTick(fqn!AnycastSendingTestTick);
+    ems.addTick(fqn!MulticastSendingTestTick);
+    sm1.addInProcJunction(junctionId, 0, true, false, false);
 
     auto sm2 = createSpace(spc2Domain);
-    auto emr = sm2.addEntity("receiving", "flow.core.test.TestReceivingContext");
-    emr.addReceptor("flow.core.test.TestUnicast", "flow.core.test.UnicastReceivingTestTick");
-    emr.addReceptor("flow.core.test.TestAnycast", "flow.core.test.AnycastReceivingTestTick");
-    sm2.addInProcJunction(junctionId, 0, false, true, true);
+    auto emr = sm2.addEntity("receiving", fqn!TestReceivingContext);
+    emr.addReceptor(fqn!TestUnicast, fqn!UnicastReceivingTestTick);
+    emr.addReceptor(fqn!TestAnycast, fqn!AnycastReceivingTestTick);
+    sm2.addInProcJunction(junctionId, 0, true, false, false);
 
     auto spc1 = proc.add(sm1);
     auto spc2 = proc.add(sm2);
@@ -228,8 +224,8 @@ unittest {
     auto nsm1 = spc1.snap();
     auto nsm2 = spc2.snap();
 
-    // Since junctions isConfirming = false, anycast cannot work.
-    // Multicast cannot be received since it has no receiver
+    // Since junctions anonymous = true, anycast cannot work.
+    // Multicast cannot be received since it has no receiver but should be confirmed
     assert(nsm2.entities[0].context.as!TestReceivingContext.gotTestUnicast, "didn't get test unicast");
     assert(!nsm2.entities[0].context.as!TestReceivingContext.gotTestAnycast, "got test anycast but shouldn't");
     assert(!nsm2.entities[0].context.as!TestReceivingContext.gotTestMulticast, "got test multicast but shouldn't");
@@ -244,9 +240,11 @@ unittest {
     import core.thread;
     import flow.core;
     import flow.ipc.make;
-    import flow.ipc.test;
     import flow.util;
+    import std.stdio;
     import std.uuid;
+
+    writeln("TEST inproc: indifferent (not) passing of signals");
 
     auto proc = new Process;
     scope(exit) proc.destroy;
@@ -257,19 +255,19 @@ unittest {
     auto junctionId = randomUUID;
 
     auto sm1 = createSpace(spc1Domain);
-    auto ems = sm1.addEntity("sending", "flow.core.test.TestSendingContext");
+    auto ems = sm1.addEntity("sending", fqn!TestSendingContext);
     ems.context.as!TestSendingContext.dstEntity = "receiving";
-    ems.context.as!TestSendingContext.dstSpace = "spc2.test.inproc.ipc.flow";
-    ems.addEvent(EventType.OnTicking, "flow.core.test.UnicastSendingTestTick");
-    ems.addEvent(EventType.OnTicking, "flow.core.test.AnycastSendingTestTick");
-    ems.addEvent(EventType.OnTicking, "flow.core.test.MulticastSendingTestTick");
-    sm1.addInProcJunction(junctionId, 0, true, false, true);
+    ems.context.as!TestSendingContext.dstSpace = spc2Domain;
+    ems.addTick(fqn!UnicastSendingTestTick);
+    ems.addTick(fqn!AnycastSendingTestTick);
+    ems.addTick(fqn!MulticastSendingTestTick);
+    sm1.addInProcJunction(junctionId, 0, false, true, false);
 
     auto sm2 = createSpace(spc2Domain);
-    auto emr = sm2.addEntity("receiving", "flow.core.test.TestReceivingContext");
-    emr.addReceptor("flow.core.test.TestUnicast", "flow.core.test.UnicastReceivingTestTick");
-    emr.addReceptor("flow.core.test.TestAnycast", "flow.core.test.AnycastReceivingTestTick");
-    sm2.addInProcJunction(junctionId, 0, true, false, true);
+    auto emr = sm2.addEntity("receiving", fqn!TestReceivingContext);
+    emr.addReceptor(fqn!TestUnicast, fqn!UnicastReceivingTestTick);
+    emr.addReceptor(fqn!TestAnycast, fqn!AnycastReceivingTestTick);
+    sm2.addInProcJunction(junctionId, 0, false, true, false);
 
     auto spc1 = proc.add(sm1);
     auto spc2 = proc.add(sm2);
@@ -286,23 +284,26 @@ unittest {
     auto nsm1 = spc1.snap();
     auto nsm2 = spc2.snap();
 
-    // Junction supports no anycast and multicast has no receiver
+    // Since junctions indifferent = true, anycast cannot work.
+    // Multicast cannot be received since it has no receiver but should be confirmed
     assert(nsm2.entities[0].context.as!TestReceivingContext.gotTestUnicast, "didn't get test unicast");
     assert(!nsm2.entities[0].context.as!TestReceivingContext.gotTestAnycast, "got test anycast but shouldn't");
     assert(!nsm2.entities[0].context.as!TestReceivingContext.gotTestMulticast, "got test multicast but shouldn't");
 
     assert(nsm1.entities[0].context.as!TestSendingContext.confirmedTestUnicast, "didn't confirm test unicast");
     assert(!nsm1.entities[0].context.as!TestSendingContext.confirmedTestAnycast, "confirmed test anycast but shouldn't");
-    assert(!nsm1.entities[0].context.as!TestSendingContext.confirmedTestMulticast, "confirmed test multicast but shouldn't");
+    assert(nsm1.entities[0].context.as!TestSendingContext.confirmedTestMulticast, "didn't confirm test multicast");
 }
 
 unittest {
     import core.thread;
     import flow.core;
     import flow.ipc.make;
-    import flow.ipc.test;
     import flow.util;
+    import std.stdio;
     import std.uuid;
+
+    writeln("TEST inproc: !acceptsMulticast (not) passing of signals");
 
     auto proc = new Process;
     scope(exit) proc.destroy;
@@ -313,20 +314,20 @@ unittest {
     auto junctionId = randomUUID;
 
     auto sm1 = createSpace(spc1Domain);
-    auto ems = sm1.addEntity("sending", "flow.core.test.TestSendingContext");
+    auto ems = sm1.addEntity("sending", fqn!TestSendingContext);
     ems.context.as!TestSendingContext.dstEntity = "receiving";
-    ems.context.as!TestSendingContext.dstSpace = "spc2.test.inproc.ipc.flow";
-    ems.addEvent(EventType.OnTicking, "flow.core.test.UnicastSendingTestTick");
-    ems.addEvent(EventType.OnTicking, "flow.core.test.AnycastSendingTestTick");
-    ems.addEvent(EventType.OnTicking, "flow.core.test.MulticastSendingTestTick");
-    sm1.addInProcJunction(junctionId, 0, true, true, false);
+    ems.context.as!TestSendingContext.dstSpace = spc2Domain;
+    ems.addTick(fqn!UnicastSendingTestTick);
+    ems.addTick(fqn!AnycastSendingTestTick);
+    ems.addTick(fqn!MulticastSendingTestTick);
+    sm1.addInProcJunction(junctionId, 0, false, false, true);
 
     auto sm2 = createSpace(spc2Domain);
-    auto emr = sm2.addEntity("receiving", "flow.core.test.TestReceivingContext");
-    emr.addReceptor("flow.core.test.TestUnicast", "flow.core.test.UnicastReceivingTestTick");
-    emr.addReceptor("flow.core.test.TestAnycast", "flow.core.test.AnycastReceivingTestTick");
-    emr.addReceptor("flow.core.test.TestMulticast", "flow.core.test.MulticastReceivingTestTick");
-    sm2.addInProcJunction(junctionId, 0, true, true, false);
+    auto emr = sm2.addEntity("receiving", fqn!TestReceivingContext);
+    emr.addReceptor(fqn!TestUnicast, fqn!UnicastReceivingTestTick);
+    emr.addReceptor(fqn!TestAnycast, fqn!AnycastReceivingTestTick);
+    emr.addReceptor(fqn!TestMulticast, fqn!MulticastReceivingTestTick);
+    sm2.addInProcJunction(junctionId, 0, false, false, true);
 
     auto spc1 = proc.add(sm1);
     auto spc2 = proc.add(sm2);
@@ -343,12 +344,12 @@ unittest {
     auto nsm1 = spc1.snap();
     auto nsm2 = spc2.snap();
 
-    // Junction supports no anycast and multicast has no receiver
+    // Since junctions indifferent = true, it is not accepting anything but the directed unicasts.
     assert(nsm2.entities[0].context.as!TestReceivingContext.gotTestUnicast, "didn't get test unicast");
-    assert(nsm2.entities[0].context.as!TestReceivingContext.gotTestAnycast, "didn't get test anycast");
+    assert(!nsm2.entities[0].context.as!TestReceivingContext.gotTestAnycast, "got test anycast but shouldn't");
     assert(!nsm2.entities[0].context.as!TestReceivingContext.gotTestMulticast, "got test multicast but shouldn't");
 
     assert(nsm1.entities[0].context.as!TestSendingContext.confirmedTestUnicast, "didn't confirm test unicast");
-    assert(nsm1.entities[0].context.as!TestSendingContext.confirmedTestAnycast, "didn't confirm test anycast");
+    assert(!nsm1.entities[0].context.as!TestSendingContext.confirmedTestAnycast, "confirmed test anycast but shouldn't");
     assert(!nsm1.entities[0].context.as!TestSendingContext.confirmedTestMulticast, "confirmed test multicast but shouldn't");
 }

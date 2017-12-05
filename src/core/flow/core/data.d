@@ -34,14 +34,15 @@ class Multicast : Signal {
     mixin field!(string, "dst");
 }
 
-/*class Damage : Data {
+class Damage : Data {
     private import flow.data.engine : Data;
 
     mixin data;
 
     mixin field!(string, "msg");
-    mixin field!(Data, "recovery");
-}*/
+    mixin field!(string, "type");
+    mixin field!(Data, "data");
+}
 
 /// metadata of a space
 class SpaceMeta : Data {
@@ -69,10 +70,17 @@ class JunctionInfo : IdData {
     /// public RSA certificate (set by junction itself from private key)
     mixin array!(ubyte, "cert");
 
-    mixin field!(bool, "isConfirming");
+    /** this side of the junction does not inform sending side of acceptance
+    therefore it keeps internals secret
+    (cannot allow anycast) */
+    mixin field!(bool, "anonymous"); 
 
-    mixin field!(bool, "acceptsAnycast");
-    mixin field!(bool, "acceptsMulticast");
+    /** send signals into junction and do not care about acceptance
+    (cannot use anycast) */
+    mixin field!(bool, "indifferent");
+
+    /** refuse multicasts and anycasts passig through junction */
+    mixin field!(bool, "introvert");
 }
 
 /// metadata of a junction
@@ -90,6 +98,13 @@ class JunctionMeta : Data {
     mixin array!(ubyte, "key");
 }
 
+class JunctionPacket : Data {
+    mixin data;
+
+    mixin field!(Signal, "signal");
+    mixin field!(JunctionInfo, "auth");
+}
+
 /// metadata of an entity
 class EntityMeta : Data {
     mixin data;
@@ -101,6 +116,8 @@ class EntityMeta : Data {
     mixin array!(Receptor, "receptors");
 
     mixin array!(TickMeta, "ticks");
+
+    mixin array!(Damage, "damages");
 }
 
 /// referencing a specific entity 
@@ -113,10 +130,9 @@ class EntityPtr : Data {
 
 /// type of events can occur in an entity
 enum EventType {
-    OnCreated,
+    /** sending signals OnTicking leads to an InvalidStateException */
     OnTicking,
-    OnFrozen,
-    OnDisposed
+    OnFreezing
 }
 
 /// mapping a tick to an event

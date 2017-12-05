@@ -70,7 +70,7 @@ JunctionMeta addJunction(
     string junctionType,
     ushort level = 0
 ) {
-    return sm.addJunction(type, junctionType, level, true, true, true);
+    return sm.addJunction(type, junctionType, level, false, false, false);
 }
 
 /// creates metadata for an junction and appends it to a space
@@ -79,22 +79,21 @@ JunctionMeta addJunction(
     string type,
     string junctionType,
     ushort level,
-    bool isConfirming,
-    bool acceptsAnycast,
-    bool acceptsMulticast
+    bool anonymous,
+    bool indifferent,
+    bool introvert
 ) {
     import flow.data : createData;
-    import flow.ipc.inproc : InProcessJunctionMeta;
     import flow.util : as;
     
     auto jm = createData(type).as!JunctionMeta;
     jm.info = new JunctionInfo;
-    jm.type = "flow.ipc.inproc.InProcessJunction";
+    jm.type = junctionType;
     
     jm.level = level;
-    jm.info.isConfirming = isConfirming;
-    jm.info.acceptsAnycast = acceptsAnycast;
-    jm.info.acceptsMulticast = acceptsMulticast;
+    jm.info.anonymous = anonymous;
+    jm.info.indifferent = indifferent;
+    jm.info.introvert = introvert;
 
     sm.junctions ~= jm;
     return jm;
