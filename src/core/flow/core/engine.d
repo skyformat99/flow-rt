@@ -1632,53 +1632,6 @@ class Process {
     }
 }
 
-/*unittest {
-    import std.stdio : writeln;
-    import std.conv : to;
-    
-    writeln("testing engine (you should see exactly one \"[Error] tick@entity(e@s): run failed\" and one \"[Info] tick@entity(e@s): handling run error\" warning in log)");
-
-    // when there is one worker in taskpool, it has
-    // to be perfectly deterministic using limited complexity
-    auto p = new Process();
-    scope(exit) p.destroy;
-    auto s = p.add(oldCreateTestSpace());
-    auto e = s.get("e");
-    auto te = s.get("te");
-    auto g = te._entity.meta.ticks[0].info.group;
-
-    s.tick();
-
-    // TODO
-    // we have to wait for all systems to finish or we will get segfaults at the moment
-    while(e._entity.ticker.keys.length > 0 || te._entity.ticker.keys.length > 0)
-        Thread.sleep(5.msecs);
-
-    s.freeze();
-    
-    auto sm = s.snap;
-    auto ec = sm.entities[0].context.as!OldOldTestTickContext;
-    auto tec = sm.entities[1].context.as!OldTriggeringTestContext;
-    assert(sm.entities.length == 2, "space snapshot does not contain correct amount of entities");
-    assert(tec.confirmedOldTestUnicast, "trigger was not correctly notified about successful unicast send");
-    assert(tec.confirmedOldTestUnicast, "trigger was not correctly notified about successful anycast send");
-    assert(tec.confirmedOldTestUnicast, "trigger was not correctly notified about successful multicast send");
-    assert(ec.gotOldTestUnicast, "receiver didn't get test unicast");
-    assert(ec.gotOldTestAnycast, "receiver didn't get test anycast");
-    assert(ec.gotOldTestMulticast, "receiver didn't get test multicast");
-    assert(ec.onCreated, "onCreated entity event wasn't triggered");
-    assert(ec.onTicking, "onTicking entity event wasn't triggered");
-    assert(ec.onFrozen, "onFrozen entity event wasn't triggered");
-    assert(ec.timeOk, "delays were not respected in frame");
-    assert(ec.cnt == 6, "logic wasn't executed correct, got "~ec.cnt.to!string~" instead of 6");
-    assert(ec.trigger !is null, "trigger was not passed correctly");
-    assert(ec.trigger.group == g, "group was not passed correctly to signal");
-    assert(ec.info.group == g, "group was not passed correctly to tick");
-    assert(ec.data !is null, "data was not set correctly");
-    assert(ec.error == "flow.core.engine.OldTestTickException", "error was not handled");
-    assert(ec.forked, "didn't fork as expected");
-}*/
-
 /// imports for tests
 version(unittest) {
     private import flow.core.data;
@@ -1726,17 +1679,17 @@ version(unittest) {
 
         mixin field!(string, "dstEntity");
         mixin field!(string, "dstSpace");
-        mixin field!(bool, "confirmedTestUnicast");
-        mixin field!(bool, "confirmedTestAnycast");
-        mixin field!(bool, "confirmedTestMulticast");
+        mixin field!(bool, "unicast");
+        mixin field!(bool, "anycast");
+        mixin field!(bool, "multicast");
     }
 
     class TestReceivingContext : Data {
         mixin data;
 
-        mixin field!(bool, "gotTestUnicast");
-        mixin field!(bool, "gotTestAnycast");
-        mixin field!(bool, "gotTestMulticast");
+        mixin field!(Unicast, "unicast");
+        mixin field!(Anycast, "anycast");
+        mixin field!(Multicast, "multicast");
     }
 }
 
@@ -1803,42 +1756,42 @@ version(unittest) {
     class UnicastSendingTestTick : Tick {
         override void run() {
             auto c = this.context.as!TestSendingContext;
-            c.confirmedTestUnicast = this.send(new TestUnicast, c.dstEntity, c.dstSpace);
+            c.unicast = this.send(new TestUnicast, c.dstEntity, c.dstSpace);
         }
     }
 
     class AnycastSendingTestTick : Tick {
         override void run() {
             auto c = this.context.as!TestSendingContext;
-            c.confirmedTestAnycast = this.send(new TestAnycast, c.dstSpace);
+            c.anycast = this.send(new TestAnycast, c.dstSpace);
         }
     }
 
     class MulticastSendingTestTick : Tick {
         override void run() {
             auto c = this.context.as!TestSendingContext;
-            c.confirmedTestMulticast = this.send(new TestMulticast, c.dstSpace);
+            c.multicast = this.send(new TestMulticast, c.dstSpace);
         }
     }
 
     class UnicastReceivingTestTick : Tick {
         override void run() {
             auto c = this.context.as!TestReceivingContext;
-            c.gotTestUnicast = true;
+            c.unicast = this.meta.trigger.as!Unicast;
         }
     }
 
     class AnycastReceivingTestTick : Tick {
         override void run() {
             auto c = this.context.as!TestReceivingContext;
-            c.gotTestAnycast = true;
+            c.anycast = this.meta.trigger.as!Anycast;
         }
     }
 
     class MulticastReceivingTestTick : Tick {
         override void run() {
             auto c = this.context.as!TestReceivingContext;
-            c.gotTestMulticast = true;
+            c.multicast = this.meta.trigger.as!Multicast;
         }
     }
 }
@@ -1998,8 +1951,9 @@ unittest {
     import flow.core.make;
     import flow.util;
     import std.stdio;
+    import std.uuid;
 
-    writeln("TEST engine: send and receipt of all signal types");
+    writeln("TEST engine: send and receipt of all signal types and pass their group");
 
     auto proc = new Process;
     scope(exit)
@@ -2009,12 +1963,13 @@ unittest {
 
     auto sm = createSpace(spcDomain);
 
+    auto group = randomUUID;
     auto ems = sm.addEntity("sending", fqn!TestSendingContext);
     ems.context.as!TestSendingContext.dstEntity = "receiving";
     ems.context.as!TestSendingContext.dstSpace = spcDomain;
-    ems.addTick(fqn!UnicastSendingTestTick);
-    ems.addTick(fqn!AnycastSendingTestTick);
-    ems.addTick(fqn!MulticastSendingTestTick);
+    ems.addTick(fqn!UnicastSendingTestTick, group);
+    ems.addTick(fqn!AnycastSendingTestTick, group);
+    ems.addTick(fqn!MulticastSendingTestTick, group);
 
     auto emr = sm.addEntity("receiving", fqn!TestReceivingContext);
     emr.addReceptor(fqn!TestUnicast, fqn!UnicastReceivingTestTick);
@@ -2031,13 +1986,17 @@ unittest {
 
     auto nsm = spc.snap();
 
-    assert(nsm.entities[1].context.as!TestReceivingContext.gotTestUnicast, "didn't get test unicast");
-    assert(nsm.entities[1].context.as!TestReceivingContext.gotTestAnycast, "didn't get test anycast");
-    assert(nsm.entities[1].context.as!TestReceivingContext.gotTestMulticast, "didn't get test multicast");
+    assert(nsm.entities[1].context.as!TestReceivingContext.unicast !is null, "didn't get test unicast");
+    assert(nsm.entities[1].context.as!TestReceivingContext.anycast !is null, "didn't get test anycast");
+    assert(nsm.entities[1].context.as!TestReceivingContext.multicast !is null, "didn't get test multicast");
 
-    assert(nsm.entities[0].context.as!TestSendingContext.confirmedTestUnicast, "didn't confirm test unicast");
-    assert(nsm.entities[0].context.as!TestSendingContext.confirmedTestAnycast, "didn't confirm test anycast");
-    assert(nsm.entities[0].context.as!TestSendingContext.confirmedTestMulticast, "didn't confirm test multicast");
+    assert(nsm.entities[0].context.as!TestSendingContext.unicast, "didn't confirm test unicast");
+    assert(nsm.entities[0].context.as!TestSendingContext.anycast, "didn't confirm test anycast");
+    assert(nsm.entities[0].context.as!TestSendingContext.multicast, "didn't confirm test multicast");
+
+    assert(nsm.entities[1].context.as!TestReceivingContext.unicast.group == group, "unicast didn't pass group");
+    assert(nsm.entities[1].context.as!TestReceivingContext.anycast.group == group, "anycast didn't pass group");
+    assert(nsm.entities[1].context.as!TestReceivingContext.multicast.group == group, "multicast didn't pass group");
 }
 
 /*

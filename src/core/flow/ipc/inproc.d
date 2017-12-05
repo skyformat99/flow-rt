@@ -167,13 +167,13 @@ unittest {
     auto nsm1 = spc1.snap();
     auto nsm2 = spc2.snap();
 
-    assert(nsm2.entities[0].context.as!TestReceivingContext.gotTestUnicast, "didn't get test unicast");
-    assert(nsm2.entities[0].context.as!TestReceivingContext.gotTestAnycast, "didn't get test anycast");
-    assert(nsm2.entities[0].context.as!TestReceivingContext.gotTestMulticast, "didn't get test multicast");
+    assert(nsm2.entities[0].context.as!TestReceivingContext.unicast !is null, "didn't get test unicast");
+    assert(nsm2.entities[0].context.as!TestReceivingContext.anycast !is null, "didn't get test anycast");
+    assert(nsm2.entities[0].context.as!TestReceivingContext.multicast !is null, "didn't get test multicast");
 
-    assert(nsm1.entities[0].context.as!TestSendingContext.confirmedTestUnicast, "didn't confirm test unicast");
-    assert(nsm1.entities[0].context.as!TestSendingContext.confirmedTestAnycast, "didn't confirm test anycast");
-    assert(nsm1.entities[0].context.as!TestSendingContext.confirmedTestMulticast, "didn't confirm test multicast");
+    assert(nsm1.entities[0].context.as!TestSendingContext.unicast, "didn't confirm test unicast");
+    assert(nsm1.entities[0].context.as!TestSendingContext.anycast, "didn't confirm test anycast");
+    assert(nsm1.entities[0].context.as!TestSendingContext.multicast, "didn't confirm test multicast");
 }
 
 unittest {
@@ -226,14 +226,14 @@ unittest {
 
     // Since junctions anonymous = true, anycast cannot work.
     // Multicast cannot be received since it has no receiver but should be confirmed
-    assert(nsm2.entities[0].context.as!TestReceivingContext.gotTestUnicast, "didn't get test unicast");
-    assert(!nsm2.entities[0].context.as!TestReceivingContext.gotTestAnycast, "got test anycast but shouldn't");
-    assert(!nsm2.entities[0].context.as!TestReceivingContext.gotTestMulticast, "got test multicast but shouldn't");
+    assert(nsm2.entities[0].context.as!TestReceivingContext.unicast !is null, "didn't get test unicast");
+    assert(!(nsm2.entities[0].context.as!TestReceivingContext.anycast !is null), "got test anycast but shouldn't");
+    assert(!(nsm2.entities[0].context.as!TestReceivingContext.multicast !is null), "got test multicast but shouldn't");
 
     // Same for anycast. All other should get a confirmation which in this case tells it was send to destination space
-    assert(nsm1.entities[0].context.as!TestSendingContext.confirmedTestUnicast, "didn't confirm test unicast");
-    assert(!nsm1.entities[0].context.as!TestSendingContext.confirmedTestAnycast, "confirmed test anycast but shouldn't");
-    assert(nsm1.entities[0].context.as!TestSendingContext.confirmedTestMulticast, "didn't confirm test multicast");
+    assert(nsm1.entities[0].context.as!TestSendingContext.unicast, "didn't confirm test unicast");
+    assert(!nsm1.entities[0].context.as!TestSendingContext.anycast, "confirmed test anycast but shouldn't");
+    assert(nsm1.entities[0].context.as!TestSendingContext.multicast, "didn't confirm test multicast");
 }
 
 unittest {
@@ -286,13 +286,13 @@ unittest {
 
     // Since junctions indifferent = true, anycast cannot work.
     // Multicast cannot be received since it has no receiver but should be confirmed
-    assert(nsm2.entities[0].context.as!TestReceivingContext.gotTestUnicast, "didn't get test unicast");
-    assert(!nsm2.entities[0].context.as!TestReceivingContext.gotTestAnycast, "got test anycast but shouldn't");
-    assert(!nsm2.entities[0].context.as!TestReceivingContext.gotTestMulticast, "got test multicast but shouldn't");
+    assert(nsm2.entities[0].context.as!TestReceivingContext.unicast !is null, "didn't get test unicast");
+    assert(!(nsm2.entities[0].context.as!TestReceivingContext.anycast !is null), "got test anycast but shouldn't");
+    assert(!(nsm2.entities[0].context.as!TestReceivingContext.multicast !is null), "got test multicast but shouldn't");
 
-    assert(nsm1.entities[0].context.as!TestSendingContext.confirmedTestUnicast, "didn't confirm test unicast");
-    assert(!nsm1.entities[0].context.as!TestSendingContext.confirmedTestAnycast, "confirmed test anycast but shouldn't");
-    assert(nsm1.entities[0].context.as!TestSendingContext.confirmedTestMulticast, "didn't confirm test multicast");
+    assert(nsm1.entities[0].context.as!TestSendingContext.unicast, "didn't confirm test unicast");
+    assert(!nsm1.entities[0].context.as!TestSendingContext.anycast, "confirmed test anycast but shouldn't");
+    assert(nsm1.entities[0].context.as!TestSendingContext.multicast, "didn't confirm test multicast");
 }
 
 unittest {
@@ -345,11 +345,11 @@ unittest {
     auto nsm2 = spc2.snap();
 
     // Since junctions indifferent = true, it is not accepting anything but the directed unicasts.
-    assert(nsm2.entities[0].context.as!TestReceivingContext.gotTestUnicast, "didn't get test unicast");
-    assert(!nsm2.entities[0].context.as!TestReceivingContext.gotTestAnycast, "got test anycast but shouldn't");
-    assert(!nsm2.entities[0].context.as!TestReceivingContext.gotTestMulticast, "got test multicast but shouldn't");
+    assert(nsm2.entities[0].context.as!TestReceivingContext.unicast !is null, "didn't get test unicast");
+    assert(!(nsm2.entities[0].context.as!TestReceivingContext.anycast !is null), "got test anycast but shouldn't");
+    assert(!(nsm2.entities[0].context.as!TestReceivingContext.multicast !is null), "got test multicast but shouldn't");
 
-    assert(nsm1.entities[0].context.as!TestSendingContext.confirmedTestUnicast, "didn't confirm test unicast");
-    assert(!nsm1.entities[0].context.as!TestSendingContext.confirmedTestAnycast, "confirmed test anycast but shouldn't");
-    assert(!nsm1.entities[0].context.as!TestSendingContext.confirmedTestMulticast, "confirmed test multicast but shouldn't");
+    assert(nsm1.entities[0].context.as!TestSendingContext.unicast, "didn't confirm test unicast");
+    assert(!nsm1.entities[0].context.as!TestSendingContext.anycast, "confirmed test anycast but shouldn't");
+    assert(!nsm1.entities[0].context.as!TestSendingContext.multicast, "confirmed test multicast but shouldn't");
 }
