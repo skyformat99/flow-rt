@@ -11,8 +11,9 @@ Linux only
 * For Debian and derivates please see http://d-apt.sourceforge.net/ and install `sudo apt-get install dmd-bin cmake`
 * For Arch Linux and derivates `pacman -S dmd cmake`
 * Clone this Git repository and cd to it's root
+* `git submodule update --init`
 * `./build` or 
-* `cmake -DCMAKE_MODULE_PATH:PATH=util/cmake-d/cmake-d && make && make test`
+* `cmake -DCMAKE_MODULE_PATH:PATH=$(pwd)/util/cmake-d/cmake-d && make && make test`
 
 **RUN:**
 Dependent of the project you built, its binaries are located in a subfolder *bin* or *lib*

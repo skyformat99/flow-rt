@@ -16,7 +16,7 @@ Flow knows three types of signals
 Is a directed signal from entity a to entity b
 
 #### Anycast
-Is a request directed to all entities within one or more spaces receptive to that certain kind of anycast. However this request can be accepted by only one entity. Anycasts are not via working non confirming junctions.
+Is a request directed to all entities within one or more spaces receptive to that certain kind of anycast. However this request can be accepted by only one entity. Anycasts cannot pass non confirming junctions.
 
 #### Multicast
 Is a cast directed to all entities within one or more spaces receptive to that certain kind of multicast. All possible and reachable destination entities are receiving multicasts.
@@ -30,7 +30,7 @@ Offers n entities a media where signals can be exchanged and functionality can b
 
 ### Junction
 Allows signals to transparently cross borders.
-This way spaces can be connected with each other.
+This way multiple spaces can be interconnected.
 
 Junctions like entities have levels. The junction has to have a lower or equal level to reach an entity.
 
@@ -59,13 +59,16 @@ So there is an equality between data and information.
 Is change of Information.
 Discrete functionality can be change of continuous or discrete Information.
 Continuous functionality can only be change of continuous Information.
+However continuous functionality can hit a threshold which then triggers a discrete functionality.
 
 ### Definition of tick
-Is a well defined atomar change of information.
-Ticks are always discrete while contained functionality can be continuous.
+Is a well defined difference in information.
+Ticks are always discrete while contained functionality could be continuous.
 
 ### Definition of causal chain
-Is a set of consecutive discrete ticks and data/signals or one continuous functionality which can be sliced into a sequence of ticks.
+Is a set of consecutive discrete ticks on data/signals or 1 continuous functionality which can be sliced into a sequence of ticks.
+
+In theory (not in flow) you can slice continuous functionality into an infinite amount of ticks.
 
 ### Definition of causality
 Is an integral set of causal chains.
