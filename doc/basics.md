@@ -6,27 +6,36 @@ Nonetheless it is overlapping and therefore the correct classification for that 
 
 [Actor model@Wikipedia](https://en.wikipedia.org/wiki/Actor_model)
 
-![Flow actormodel overview](media/actor_model_overview.png)
+### Entity
+Equals to actor model's actor.
+It receives signals which are triggering some functionality.
+Also it can send signals to other entities.
+
+![Unicast](media/signal_unicast.png)
 
 ### Signal
 Is data which is getting exchanged between entities.
 
 Flow knows three types of signals
 #### Unicast
-Is a directed signal from entity a to entity b
+Is a directed signal from entity A to entity B
+
+![Unicast](media/signal_unicast.png)
 
 #### Anycast
 Is a request directed to all entities within one or more spaces receptive to that certain kind of anycast. However this request can be accepted by only one entity. Anycasts cannot pass non confirming junctions.
 
+![Anycast](media/signal_anycast.png)
+
 #### Multicast
 Is a cast directed to all entities within one or more spaces receptive to that certain kind of multicast. All possible and reachable destination entities are receiving multicasts.
 
-### Entity
-Equals to actor model's actor.
-It receives signals which are triggering some functionality. Also it can send signals to other entities.
+![Multicast](media/signal_multicast.png)
 
 ### Space
 Offers n entities a media where signals can be exchanged and functionality can be processed.
+
+![Flow actormodel](media/actor_model.png)
 
 ### Junction
 Allows signals to transparently cross borders.

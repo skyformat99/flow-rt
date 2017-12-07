@@ -611,7 +611,7 @@ abstract class Tick {
 
 private bool checkAccept(Tick t) {
     try {
-        return t.accept;
+        return t.accept();
     } catch(Throwable thr) {
         import flow.util : Log;
 
