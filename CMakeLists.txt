@@ -28,6 +28,16 @@ target_include_directories(nanomsg PRIVATE "${NANOMSG_SRC}")
 add_unittests_for_target(nanomsg)
 
 # EXTENSIONS
+# build libflow-std
+set (FLOW_STD_SRC "src/ext/std")
+file(GLOB _FLOW_STD_SRC RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "${FLOW_STD_SRC}/flow/*/*.d")
+add_library(flow-std SHARED ${_FLOW_STD_SRC})
+add_dependencies(flow-std flow-core)
+target_link_libraries(flow-std flow-core)
+target_include_directories(flow-std PRIVATE "${FLOW_STD_SRC}")
+target_include_directories(flow-std PRIVATE "${FLOW_CORE_SRC}")
+add_unittests_for_target(flow-std)
+
 # build libflow-ipc-nanomsg
 set (FLOW_IPC_NANOMSG_SRC "src/ext/ipc-nanomsg")
 file(GLOB _FLOW_IPC_NANOMSG_SRC RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "${FLOW_IPC_NANOMSG_SRC}/flow/*/*.d")
@@ -45,7 +55,6 @@ add_unittests_for_target(flow-ipc-nanomsg)
 set (FLOW_COMPLEX_SRC "src/ext/complex")
 file(GLOB _FLOW_COMPLEX_SRC RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "${FLOW_COMPLEX_SRC}/flow/*/*.d")
 add_library(flow-complex SHARED ${_FLOW_COMPLEX_SRC})
-add_dependencies(flow-complex nanomsg)
 add_dependencies(flow-complex flow-core)
 target_link_libraries(flow-complex flow-core)
 target_include_directories(flow-complex PRIVATE "${FLOW_COMPLEX_SRC}")

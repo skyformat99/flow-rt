@@ -94,7 +94,7 @@ int main(string[] args) {
 }
 
 void run(string confDir, string libDir) {
-    import flow.util, flow.data, flow.core, flow.std;
+    import flow.util, flow.data, flow.core;
     import core.stdc.stdlib, core.sys.posix.dlfcn, core.thread;
     import std.string, std.array, std.algorithm.iteration, std.file, std.path;
 
