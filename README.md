@@ -1,4 +1,8 @@
-[Read the docs](http://flow-rt.readthedocs.io)
+* [Overview](doc/overview.md)
+* [Basics](doc/basics.md)
+* [Introduction](doc/introduction.md)
+* [Credits](doc/credits.md)
+* [Howto file a bug](doc/howto_bug.md)
 
 The whole project is licenced by [GNU Affero General Public License, Verison 3.0](https://github.com/RalphBariz/FLOW/blob/master/LICENSE) [Please read the notes in LICENCE file.]
 
