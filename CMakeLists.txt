@@ -10,6 +10,20 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY lib)
 
 enable_testing()
 
+macro(add_doc _DOC_MODULE)
+    add_executable(doc_${_DOC_MODULE} "doc/src/${_DOC_MODULE}.d")
+    add_dependencies(doc_${_DOC_MODULE} flow-core)
+    add_dependencies(doc_${_DOC_MODULE} flow-std)
+    target_link_libraries(doc_${_DOC_MODULE} flow-core)
+    target_link_libraries(doc_${_DOC_MODULE} flow-std)
+    target_include_directories(doc_${_DOC_MODULE} PRIVATE "${FLOW_CORE_SRC}")
+    target_include_directories(doc_${_DOC_MODULE} PRIVATE "${FLOW_STD_SRC}")
+
+    add_test(NAME doc_${_DOC_MODULE}
+        COMMAND ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/doc_${_DOC_MODULE})
+    set_tests_properties(doc_${_DOC_MODULE} PROPERTIES ENVIRONMENT "LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_LIBRARY_OUTPUT_DIRECTORY}")
+endmacro()
+
 # build libflow-core
 set(FLOW_CORE_SRC "src/core")
 file(GLOB _FLOW_CORE_SRC RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "${FLOW_CORE_SRC}/flow/*/*.d")
@@ -81,3 +95,6 @@ target_link_libraries(flow-complex-gen flow-complex)
 target_include_directories(flow-complex-gen PRIVATE "${FLOW_COMPLEX_GEN_SRC}")
 target_include_directories(flow-complex-gen PRIVATE "${FLOW_CORE_SRC}")
 target_include_directories(flow-complex-gen PRIVATE "${FLOW_COMPLEX_SRC}")
+
+# DOC
+add_doc(introduction)

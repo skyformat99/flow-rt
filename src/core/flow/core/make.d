@@ -13,21 +13,23 @@ SpaceMeta createSpace(string id, size_t worker = 1) {
 }
 
 /// creates entity metadata
-EntityMeta createEntity(string id, string contextType, ushort level = 0) {
+EntityMeta createEntity(string id, string contextType, string configType = string.init, ushort level = 0) {
     import flow.data : createData;
 
     auto em = new EntityMeta;
     em.ptr = new EntityPtr;
     em.ptr.id = id;
     em.context = createData(contextType);
+    if(configType != string.init)
+        em.config = createData(configType);
     em.level = level;
 
     return em;
 }
 
 /// creates entity metadata and appends it to a spaces metadata
-EntityMeta addEntity(SpaceMeta sm, string id, string contextType, ushort level = 0) {
-    auto em = id.createEntity(contextType, level);
+EntityMeta addEntity(SpaceMeta sm, string id, string contextType, string configType = string.init, ushort level = 0) {
+    auto em = id.createEntity(contextType, configType, level);
     sm.entities ~= em;
 
     return em;

@@ -1,20 +1,7 @@
-# Introduction
-You will learn how to initialize and use the basic components in a static environment.
-For this you'll need to create a D executable which is linked against lib/libflow-core.so.
-
-[SOURCECODE](src/introduction.d)
-
-## Neccessary imports
-```D
 import flow.core;   // core functionality of flow
 import flow.data;   // everything concerning data objects
 import flow.util;   // a few little helpers
-```
 
-## Signals
-They do not contain any custom data for this scenario.
-There is one testsignal for each signal type.
-```D
 class TestUnicast : Unicast {
     mixin data;
 }
@@ -26,16 +13,7 @@ class TestAnycast : Anycast {
 class TestMulticast : Multicast {
     mixin data;
 }
-```
 
-## Data of entities
-They are kind of memory of entities.
-There is the config which is meant to store configuration data.
-And there is the context meant to store runtime information.
-However this separation is just pro forma.
-While our first entity notes if it was successfully sending the casts,
-our second one notes if it got them.
-```D
 class TestSendingConfig : Data {
     mixin data;
 
@@ -58,12 +36,7 @@ class TestReceivingContext : Data {
     mixin field!(Anycast, "anycast");
     mixin field!(Multicast, "multicast");
 }
-```
 
-## Ticks
-Half of this ticks are defining the change of a "confirmed..." field on an entities information,
-the other half are defining the change of a "got..." field on an entities information.
-```D
 class UnicastSendingTestTick : Tick {
     override void run() {
         auto cfg = this.config.as!TestSendingConfig;
@@ -108,16 +81,8 @@ class MulticastReceivingTestTick : Tick {
         c.multicast = this.trigger.as!Multicast;
     }
 }
-```
 
-## Main
-This is the content of the main function.
-First we create the systems order using helper functions, then kickstart it.
-After everything happened we stop it and get out the information we then check for correctness.
-This order generates just data which can and usually is serialized. It is the same data which falls out at the end.
-That means if you got a system you can freeze it, snapshot it, end the process and restart everything again. It will continue where it got frozen.
-
-```D
+void main() {
     // we want to bind two spaces together by an inprocess junction
     import core.thread;
     import core.time;
@@ -184,4 +149,4 @@ That means if you got a system you can freeze it, snapshot it, end the process a
     assert(nsm1.entities[0].context.as!TestSendingContext.unicast, "didn't confirm test unicast");
     assert(nsm1.entities[0].context.as!TestSendingContext.anycast, "didn't confirm test anycast");
     assert(nsm1.entities[0].context.as!TestSendingContext.multicast, "didn't confirm test multicast");
-```
+}

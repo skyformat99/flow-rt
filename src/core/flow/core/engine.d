@@ -394,6 +394,11 @@ abstract class Tick {
     /// lock to use for synchronizing entity context access across parallel casual strings
     protected @property ReadWriteMutex sync() {return this.entity.sync;}
 
+    /** config of hosting entity
+    warning you have to sync as reader when accessing it reading
+    and as writer when accessing it writing */
+    protected @property Data config() {return this.entity.meta.config;}
+
     /** context of hosting entity
     warning you have to sync as reader when accessing it reading
     and as writer when accessing it writing */
@@ -1663,22 +1668,32 @@ version(unittest) {
         mixin field!(bool, "firedOnFreezing");
     }
 
-    class TestDelayContext : Data {
+    class TestDelayConfig : Data {
         private import core.time : Duration;
+        mixin data;
+
+        mixin field!(Duration, "delay");
+    }
+
+    class TestDelayContext : Data {
         private import std.datetime.systime : SysTime;
 
         mixin data;
 
-        mixin field!(Duration, "delay");
         mixin field!(SysTime, "startTime");
         mixin field!(SysTime, "endTime");
+    }
+
+    class TestSendingConfig : Data {
+        mixin data;
+
+        mixin field!(string, "dstEntity");
+        mixin field!(string, "dstSpace");
     }
 
     class TestSendingContext : Data {
         mixin data;
 
-        mixin field!(string, "dstEntity");
-        mixin field!(string, "dstSpace");
         mixin field!(bool, "unicast");
         mixin field!(bool, "anycast");
         mixin field!(bool, "multicast");
@@ -1736,9 +1751,10 @@ version(unittest) {
         override void run() {
             import std.datetime.systime : Clock;
 
-            auto c = this.context.as!TestDelayContext;
-            c.startTime = Clock.currTime;
-            this.next(fqn!DelayedTestTick, c.delay);
+            auto cfg = this.config.as!TestDelayConfig;
+            auto ctx = this.context.as!TestDelayContext;
+            ctx.startTime = Clock.currTime;
+            this.next(fqn!DelayedTestTick, cfg.delay);
         }
     }
 
@@ -1755,43 +1771,46 @@ version(unittest) {
 
     class UnicastSendingTestTick : Tick {
         override void run() {
-            auto c = this.context.as!TestSendingContext;
-            c.unicast = this.send(new TestUnicast, c.dstEntity, c.dstSpace);
+            auto cfg = this.config.as!TestSendingConfig;
+            auto ctx = this.context.as!TestSendingContext;
+            ctx.unicast = this.send(new TestUnicast, cfg.dstEntity, cfg.dstSpace);
         }
     }
 
     class AnycastSendingTestTick : Tick {
         override void run() {
-            auto c = this.context.as!TestSendingContext;
-            c.anycast = this.send(new TestAnycast, c.dstSpace);
+            auto cfg = this.config.as!TestSendingConfig;
+            auto ctx = this.context.as!TestSendingContext;
+            ctx.anycast = this.send(new TestAnycast, cfg.dstSpace);
         }
     }
 
     class MulticastSendingTestTick : Tick {
         override void run() {
-            auto c = this.context.as!TestSendingContext;
-            c.multicast = this.send(new TestMulticast, c.dstSpace);
+            auto cfg = this.config.as!TestSendingConfig;
+            auto ctx = this.context.as!TestSendingContext;
+            ctx.multicast = this.send(new TestMulticast, cfg.dstSpace);
         }
     }
 
     class UnicastReceivingTestTick : Tick {
         override void run() {
             auto c = this.context.as!TestReceivingContext;
-            c.unicast = this.meta.trigger.as!Unicast;
+            c.unicast = this.trigger.as!Unicast;
         }
     }
 
     class AnycastReceivingTestTick : Tick {
         override void run() {
             auto c = this.context.as!TestReceivingContext;
-            c.anycast = this.meta.trigger.as!Anycast;
+            c.anycast = this.trigger.as!Anycast;
         }
     }
 
     class MulticastReceivingTestTick : Tick {
         override void run() {
             auto c = this.context.as!TestReceivingContext;
-            c.multicast = this.meta.trigger.as!Multicast;
+            c.multicast = this.trigger.as!Multicast;
         }
     }
 }
@@ -1921,8 +1940,8 @@ unittest {
     auto delay = 100.msecs;
 
     auto sm = createSpace(spcDomain);
-    auto em = sm.addEntity("test", fqn!TestDelayContext);
-    em.context.as!TestDelayContext.delay = delay;
+    auto em = sm.addEntity("test", fqn!TestDelayContext, fqn!TestDelayConfig);
+    em.config.as!TestDelayConfig.delay = delay;
     em.addEvent(EventType.OnTicking, fqn!DelayTestTick);
 
     auto spc = proc.add(sm);
@@ -1964,9 +1983,9 @@ unittest {
     auto sm = createSpace(spcDomain);
 
     auto group = randomUUID;
-    auto ems = sm.addEntity("sending", fqn!TestSendingContext);
-    ems.context.as!TestSendingContext.dstEntity = "receiving";
-    ems.context.as!TestSendingContext.dstSpace = spcDomain;
+    auto ems = sm.addEntity("sending", fqn!TestSendingContext, fqn!TestSendingConfig);
+    ems.config.as!TestSendingConfig.dstEntity = "receiving";
+    ems.config.as!TestSendingConfig.dstSpace = spcDomain;
     ems.addTick(fqn!UnicastSendingTestTick, group);
     ems.addTick(fqn!AnycastSendingTestTick, group);
     ems.addTick(fqn!MulticastSendingTestTick, group);

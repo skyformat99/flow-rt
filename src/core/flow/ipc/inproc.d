@@ -137,9 +137,9 @@ unittest {
     auto junctionId = randomUUID;
 
     auto sm1 = createSpace(spc1Domain);
-    auto ems = sm1.addEntity("sending", fqn!TestSendingContext);
-    ems.context.as!TestSendingContext.dstEntity = "receiving";
-    ems.context.as!TestSendingContext.dstSpace = spc2Domain;
+    auto ems = sm1.addEntity("sending", fqn!TestSendingContext, fqn!TestSendingConfig);
+    ems.config.as!TestSendingConfig.dstEntity = "receiving";
+    ems.config.as!TestSendingConfig.dstSpace = spc2Domain;
     ems.addTick(fqn!UnicastSendingTestTick);
     ems.addTick(fqn!AnycastSendingTestTick);
     ems.addTick(fqn!MulticastSendingTestTick);
@@ -195,9 +195,9 @@ unittest {
     auto junctionId = randomUUID;
 
     auto sm1 = createSpace(spc1Domain);
-    auto ems = sm1.addEntity("sending", fqn!TestSendingContext);
-    ems.context.as!TestSendingContext.dstEntity = "receiving";
-    ems.context.as!TestSendingContext.dstSpace = spc2Domain;
+    auto ems = sm1.addEntity("sending", fqn!TestSendingContext, fqn!TestSendingConfig);
+    ems.config.as!TestSendingConfig.dstEntity = "receiving";
+    ems.config.as!TestSendingConfig.dstSpace = spc2Domain;
     ems.addTick(fqn!UnicastSendingTestTick);
     ems.addTick(fqn!AnycastSendingTestTick);
     ems.addTick(fqn!MulticastSendingTestTick);
@@ -255,9 +255,9 @@ unittest {
     auto junctionId = randomUUID;
 
     auto sm1 = createSpace(spc1Domain);
-    auto ems = sm1.addEntity("sending", fqn!TestSendingContext);
-    ems.context.as!TestSendingContext.dstEntity = "receiving";
-    ems.context.as!TestSendingContext.dstSpace = spc2Domain;
+    auto ems = sm1.addEntity("sending", fqn!TestSendingContext, fqn!TestSendingConfig);
+    ems.config.as!TestSendingConfig.dstEntity = "receiving";
+    ems.config.as!TestSendingConfig.dstSpace = spc2Domain;
     ems.addTick(fqn!UnicastSendingTestTick);
     ems.addTick(fqn!AnycastSendingTestTick);
     ems.addTick(fqn!MulticastSendingTestTick);
@@ -314,9 +314,9 @@ unittest {
     auto junctionId = randomUUID;
 
     auto sm1 = createSpace(spc1Domain);
-    auto ems = sm1.addEntity("sending", fqn!TestSendingContext);
-    ems.context.as!TestSendingContext.dstEntity = "receiving";
-    ems.context.as!TestSendingContext.dstSpace = spc2Domain;
+    auto ems = sm1.addEntity("sending", fqn!TestSendingContext, fqn!TestSendingConfig);
+    ems.config.as!TestSendingConfig.dstEntity = "receiving";
+    ems.config.as!TestSendingConfig.dstSpace = spc2Domain;
     ems.addTick(fqn!UnicastSendingTestTick);
     ems.addTick(fqn!AnycastSendingTestTick);
     ems.addTick(fqn!MulticastSendingTestTick);
