@@ -79,10 +79,10 @@ class InProcessChannel : Channel {
         this._other = other;
     }
 
-    override bool transport(JunctionPacket p) {
+    override bool transport(ubyte[] p) {
         import flow.util : as;
 
-        return this._other.as!Junction.deliver(p);
+        return this._other.as!Junction.pull(p);
     }
 }
 

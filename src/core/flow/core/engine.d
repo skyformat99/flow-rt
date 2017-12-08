@@ -1141,7 +1141,7 @@ private enum JunctionState {
 
 abstract class Channel {
     abstract @property JunctionInfo other();
-    abstract bool transport(JunctionPacket p);
+    abstract bool transport(ubyte[] p);
 }
 
 /// allows signals from one space to get shipped to other spaces
@@ -1173,71 +1173,6 @@ abstract class Junction : StateMachine!JunctionState {
         this.state = JunctionState.Detached;
     }
 
-    /// ship a signal through a transport interface
-    private bool pack(Signal s, Channel c) {
-        if(s.allowed(this.meta.info, c.other)) {
-            auto p = new JunctionPacket;
-            p.signal = s;
-            p.auth = this.meta.info.anonymous ? null : this.meta.info;
-
-            // it gets done async returns true
-            if(this.meta.info.indifferent) {
-                taskPool.put(task(&c.transport, p));
-                return true;
-            } else
-                return c.transport(p);
-        } else return false;
-    }
-
-    /// ship an unicast through the junction
-    private bool ship(Unicast s) {
-        import flow.util : as;
-
-        synchronized(lock.reader) {
-            auto c = this.get(s.dst.space);
-            if(c !is null) {
-                return this.pack(s, c);
-            }
-        }
-
-        return false;
-    }
-
-    /// ship an anycast through the junction
-    private bool ship(Anycast s) {
-        import flow.util : as;
-        
-        if(s.dst != this.meta.info.space) synchronized(lock.reader) {
-            auto c = this.get(s.dst);
-            if(c !is null)
-                return this.pack(s, c);
-            else foreach(j; this.list) {
-                c = this.get(j);
-                return this.pack(s, c);
-            }
-        }
-                    
-        return false;
-    }
-
-    /// ship a multicast through the junction
-    private bool ship(Multicast s) {
-        import flow.util : as;
-
-        auto ret = false;
-        if(s.dst != this.meta.info.space) synchronized(lock.reader) {
-            auto c = this.get(s.dst);
-            if(c !is null)
-                ret = this.pack(s, c) || ret;
-            else foreach(j; this.list) {
-                c = this.get(j);
-                ret = this.pack(s, c) || ret;
-            }
-        }
-
-        return ret;
-    }
-
     override protected final bool onStateChanging(JunctionState o, JunctionState n) {
         switch(n) {
             case JunctionState.Attached:
@@ -1262,16 +1197,120 @@ abstract class Junction : StateMachine!JunctionState {
     protected abstract void down();
     protected abstract Channel get(string space);
 
-    /** deliver signal to local space
-    !interface from transport! */
-    bool deliver(JunctionPacket p) {
-        if(p.signal.allowed(p.auth, this.meta.info)) {     
-            // we do not tell our runtimes ==> we make the call async and dada
-            if(this.meta.info.anonymous) {
-                taskPool.put(task(&this.route, p.signal));
+    /// pushes a signal through a channel
+    bool push(Signal s, Channel c) {
+        import flow.data : bin;
+
+        if(s.allowed(this.meta.info, c.other)) {
+            auto p = new JunctionPacket;
+            p.auth = this.meta.info;
+            p.signal = s;
+
+            // it gets done async returns true
+            if(this.meta.info.indifferent) {
+                taskPool.put(task(&c.transport, this.encrypt(p.bin, c.other)));
                 return true;
-            } else return this.route(p.signal);
+            } else
+                return c.transport(this.encrypt(p.bin, c.other));
         } else return false;
+    }
+
+    /// pulls a signal from a channel
+    bool pull(ubyte[] cpb) {
+        import flow.data : unbin;
+
+        auto pb = this.decrypt(cpb);
+        auto p = pb.unbin!JunctionPacket;
+
+        if(this.auth(p) && p.signal.allowed(p.auth, this.meta.info)) {  
+            return this.deliver(p);
+        } else return false;
+    }
+
+    private ubyte[] encrypt(ubyte[] pb, JunctionInfo dst) {
+        if(this.meta.info.encrypting) {
+            auto cpb = (ubyte[]).init;
+            // TODO
+            return ubyte.max~cpb;
+        } else return ubyte.min~pb;
+
+    }
+
+    private ubyte[] decrypt(ubyte[] cpb) {
+        import flow.util : as;
+        import std.range : front;
+
+        if(cpb.front) {
+            // TODO
+            return (ubyte[]).init;
+        } else
+            return cpb[1..$];
+    }
+
+    private bool auth(JunctionPacket p) {
+        import std.range : empty;
+        // TODO
+        return this.meta.witnesses.empty
+            || this.meta.key.empty
+            /*|| TODO*/;
+    }
+
+    /// ship an unicast through the junction
+    private bool ship(Unicast s) {
+        import flow.util : as;
+
+        synchronized(lock.reader) {
+            auto c = this.get(s.dst.space);
+            if(c !is null) {
+                return this.push(s, c);
+            }
+        }
+
+        return false;
+    }
+
+    /// ship an anycast through the junction
+    private bool ship(Anycast s) {
+        import flow.util : as;
+        
+        if(s.dst != this.meta.info.space) synchronized(lock.reader) {
+            auto c = this.get(s.dst);
+            if(c !is null)
+                return this.push(s, c);
+            else foreach(j; this.list) {
+                c = this.get(j);
+                return this.push(s, c);
+            }
+        }
+                    
+        return false;
+    }
+
+    /// ship a multicast through the junction
+    private bool ship(Multicast s) {
+        import flow.util : as;
+
+        auto ret = false;
+        if(s.dst != this.meta.info.space) synchronized(lock.reader) {
+            auto c = this.get(s.dst);
+            if(c !is null)
+                ret = this.push(s, c) || ret;
+            else foreach(j; this.list) {
+                c = this.get(j);
+                ret = this.push(s, c) || ret;
+            }
+        }
+
+        return ret;
+    }
+
+    /** deliver signal to local space */
+    private bool deliver(JunctionPacket p) {
+        // we do not tell our runtimes ==> we make the call async and dada
+        if(this.meta.info.anonymous) {
+            taskPool.put(task(&this.route, p.signal));
+            return true;
+        } else return this.route(p.signal);
     }
 
     private bool route(Signal s) {

@@ -65,10 +65,14 @@ class SpaceMeta : Data {
 class JunctionInfo : IdData {
     mixin data;
 
+    /// space of junction (set by space when creating junction)
     mixin field!(string, "space");
 
     /// public RSA certificate (set by junction itself from private key)
     mixin array!(ubyte, "cert");
+
+    /// indicates if junction is only autheticating or encrypting too
+    mixin field!(bool, "encrypting");
 
     /** this side of the junction does not inform sending side of acceptance
     therefore it keeps internals secret
@@ -91,18 +95,18 @@ class JunctionMeta : Data {
     mixin field!(string, "type");
     mixin field!(ushort, "level");
 
-    /// witnesses used to approve peers (no witnesses leads to general accepteance of peer certificates)
+    /// witnesses used to approve peers (no witnesses disables authentication)
     mixin array!(Witness, "witnesses");
 
-    /// private/public RSA key (no key disables encryption)
+    /// private/public RSA key (no key disables encryption and authentication)
     mixin array!(ubyte, "key");
 }
 
 class JunctionPacket : Data {
     mixin data;
 
-    mixin field!(Signal, "signal");
     mixin field!(JunctionInfo, "auth");
+    mixin field!(Signal, "signal");
 }
 
 /// metadata of an entity

@@ -89,7 +89,7 @@ class MeshChannel : Channel {
         this._other = other;
     }
 
-    override bool transport(JunctionPacket p) {
+    override bool transport(ubyte[] p) {
         import flow.util : as;
 
         // TODO TRANSMIT

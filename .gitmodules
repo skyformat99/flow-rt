@@ -4,3 +4,6 @@
 [submodule "src/lib/nanomsg"]
 	path = src/lib/nanomsg
 	url = https://github.com/kaleidicpublic/nanomsg.git
+[submodule "src/lib/openssl"]
+	path = src/lib/openssl
+	url = https://github.com/D-Programming-Deimos/openssl.git
