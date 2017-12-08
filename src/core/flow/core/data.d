@@ -102,13 +102,6 @@ class JunctionMeta : Data {
     mixin array!(ubyte, "key");
 }
 
-class JunctionPacket : Data {
-    mixin data;
-
-    mixin field!(JunctionInfo, "auth");
-    mixin field!(Signal, "signal");
-}
-
 /// metadata of an entity
 class EntityMeta : Data {
     mixin data;

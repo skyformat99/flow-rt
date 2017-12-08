@@ -12,13 +12,59 @@ class InProcessJunctionMeta : JunctionMeta {
     mixin field!(UUID, "id");
 }
 
+class InProcessChannel : Channel {
+    private bool master;
+    private InProcessChannel peer;
+
+    override @property InProcessJunction own() {
+        import flow.util : as;
+        return super.own.as!InProcessJunction;
+    }
+
+    this(InProcessJunction own, InProcessJunction recv, InProcessChannel peer = null) {
+        if(peer is null) {
+            this.master = true;
+            this.peer = new InProcessChannel(recv, own, this);
+        } else
+            this.peer = peer;
+        
+        super(recv.meta.info.space, own);
+        
+        own.register(this);
+    }
+
+    override protected void dispose() {
+        if(this.master)
+            this.peer.destroy;
+
+        this.own.unregister(this);
+    }
+
+    override protected ubyte[] getAuth() {
+        return this.peer.auth;
+    }
+    
+    override protected bool reqAuthentication(ubyte[] auth) {
+        return this.peer.authenticate(auth);
+    }
+
+    override protected bool transport(ubyte[] pkg) {
+        import flow.util : as;
+
+        return this.peer.pull(pkg, this.own.meta.info);
+    }
+}
+
 /// junction allowing direct signalling between spaces hosted in same process
 class InProcessJunction : Junction {
     private import core.sync.rwmutex : ReadWriteMutex;
     private import std.uuid : UUID;
 
-    private static __gshared ReadWriteMutex lock;
-    private static shared InProcessJunction[string][UUID] others;
+    private static __gshared ReadWriteMutex pLock;
+    private static __gshared InProcessJunction[string][UUID] pool;
+
+    private ReadWriteMutex cLock;
+    private InProcessChannel[string] channels;
 
     override @property InProcessJunctionMeta meta() {
         import flow.util : as;
@@ -30,59 +76,74 @@ class InProcessJunction : Junction {
 
     override @property string[] list() {
         synchronized(this.lock.reader)
-            return others[this.id].keys;
+            return pool[this.id].keys;
     }
 
     shared static this() {
-        lock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
+        pLock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
     }
 
     /// ctor
     this() {
+        this.cLock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
+
         super();
+    }
+
+    /// registers a channel passing junction
+    private void register(InProcessChannel c) {
+        synchronized(pLock.reader)
+            if(this.id in pool) // if is up
+                this.channels[c.dst] = c;
+    }
+    
+    /// unregister a channel passing junction
+    private void unregister(InProcessChannel c) {
+        if(this.id in pool) // if is up
+            this.channels.remove(c.dst);
     }
 
     override bool up() {
         import flow.util : as;
 
-        synchronized(lock.writer)
-            others[this.id][this.meta.info.space] = this.as!(shared(InProcessJunction));
+        synchronized(pLock.writer)
+            if(this.id !in pool) // if is down
+                synchronized(this.cLock.writer)
+                    pool[this.id][this.meta.info.space] = this;
 
         return true;
     }
 
     override void down() {
-        synchronized(lock.writer)
-            if(this.id in others)
-                others[this.id].remove(this.meta.info.space);
+        synchronized(pLock.writer) {
+            synchronized(this.cLock.writer)
+                foreach(dst, c; this.channels)
+                    synchronized(c.writer)
+                        c.dispose();
+
+            if(this.id in pool)
+                pool[this.id].remove(this.meta.info.space);
+        }
     }
 
-    override Channel get(string space) {
-        synchronized(this.lock.reader)
-            return space in others[this.id]
-            ? new InProcessChannel(this, others[this.id][space])
-            : null;
-    }
-}
-
-class InProcessChannel : Channel {
-    private InProcessJunction own;
-    private shared InProcessJunction _other;
-
-    override @property JunctionInfo other() {
-        import flow.util : as;
-        return this._other.as!Junction.meta.info;
-    }
-
-    this(InProcessJunction own, shared(InProcessJunction) other) {
-        this.own = own;
-        this._other = other;
-    }
-
-    override bool transport(ubyte[] p) {
+    override Channel get(string dst) {
         import flow.util : as;
 
-        return this._other.as!Junction.pull(p);
+        synchronized(pLock.reader)
+            synchronized(this.lock.reader)
+                synchronized(this.cLock.reader) {
+                    if(dst in pool[this.id]) {
+                        if(dst in this.channels)
+                            return this.channels[dst];
+                        else {
+                            auto recv = pool[this.id][dst];
+                            auto chan = new InProcessChannel(this, recv);
+                            return chan.handshake() ? chan : null;
+                        }
+                    }
+                }
+
+        return null;
     }
 }
 

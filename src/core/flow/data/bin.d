@@ -181,7 +181,7 @@ if(
 
 /// deserializes binary data to a given supported type
 T unbin(T)(ref ubyte[] arr)
-if(canHandle!T) {
+if(canHandle!T || is(T:Data)) {
     import flow.data.engine : Data, createData, PropertyInfo;
     import flow.util.templates : as;
     import std.bitmanip : bigEndianToNative;

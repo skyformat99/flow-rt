@@ -1,6 +1,7 @@
 module flow.core.engine;
 
 private import core.thread;
+private import core.sync.rwmutex;
 private import flow.core.data;
 private import flow.util;
 private import std.uuid;
@@ -1139,9 +1140,131 @@ private enum JunctionState {
     Attached
 }
 
-abstract class Channel {
-    abstract @property JunctionInfo other();
-    abstract bool transport(ubyte[] p);
+abstract class Channel : ReadWriteMutex {
+    const size_t sigLength = 64;
+
+    private string _dst;
+    private Junction _own;
+    private JunctionInfo _other;
+    private ubyte[] _auth;
+
+    protected @property Junction own() {return this._own;}
+
+    @property string dst() {return this._dst;}
+    @property JunctionInfo other() {return this._other;}
+    @property ubyte[] auth() {
+        if(!this.own.meta.info.anonymous && this._auth is null) {
+            import flow.data : bin;
+
+            auto auth = this.own.meta.info.bin;
+            this._auth = this.sslSign(auth)~auth;
+        }
+
+        return this._auth;
+    }
+
+    this(string dst, Junction own) {
+        this._dst = dst;
+        this._own = own;
+
+        super(ReadWriteMutex.Policy.PREFER_WRITERS);
+    }
+
+    final bool handshake() {
+        import flow.data : unbin;
+        import std.range : empty, front;
+
+        // establish channel only if both side authenticates
+        if(this.reqAuthentication(this.auth)) { // authentication was accepted
+            auto otherAuth = this.getAuth();
+            if(this.authenticate(otherAuth)) {
+                if(otherAuth is null) { // if peer is anonymous, create dummy info
+                    this._other = new JunctionInfo;
+                    this._other.space = dst;
+                } else this._other = otherAuth.unbin!JunctionInfo;
+
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    final bool authenticate(/*w/o ref*/ ubyte[] auth) {
+        import flow.data : bin;
+        import std.range : empty;
+        
+        // own is not authenticating
+        if(auth is null) {
+            if(this.own.meta.witnesses.empty || this.own.meta.key.empty)
+                return true;
+        } else if(auth.length > sigLength) {
+            auto sig = auth[0..sigLength];
+            auto info = auth[sigLength..$];
+
+            return this.own.meta.witnesses.empty 
+            || this.own.meta.key.empty
+            || this.sslAuth(sig, info);
+        }
+        
+        return false;
+    }
+
+    /// if successful returns the deserialized JunctionInfo otherwise null 
+    private bool sslAuth(ubyte[] auth, ubyte[] data) {
+        // TODO
+        return false;
+    }
+
+    private ubyte[] sslSign(ubyte[] data) {
+        // TODO
+        return (ubyte[]).init;
+    }
+
+    /// encrypts package
+    private ubyte[] encrypt(ubyte[] pb, JunctionInfo info) {
+        if(this.own.meta.info.encrypting) {
+            auto cpb = (ubyte[]).init;
+            // TODO
+            return ubyte.max~cpb;
+        } else return ubyte.min~pb;
+    }
+
+    /// decrypts package
+    private ubyte[] decrypt(ubyte[] cpb) {
+        import flow.util : as;
+        import std.range : front;
+
+        if(cpb.front) { // if its marked as encrypted
+            // TODO
+            return (ubyte[]).init;
+        } else
+            return cpb[1..$]; // if not encrypted its clear bin
+    }
+
+    protected final bool pull(/*w/o ref*/ ubyte[] p, JunctionInfo info) {
+        import flow.data : unbin;
+
+        return this.own.pull(p.unbin!Signal, info);
+    }
+
+    private final bool push(Signal s) {
+        import flow.data : bin;
+        auto pkg = s.bin;
+        return this.transport(pkg);
+    }
+
+    /// requests other sides auth
+    abstract protected ubyte[] getAuth();
+
+    /// request authentication
+    abstract protected bool reqAuthentication(ubyte[] auth);
+
+    /// transports signal through channel
+    abstract protected bool transport(ubyte[] p);
+
+    /// clean up called in destructor
+    abstract protected void dispose();
 }
 
 /// allows signals from one space to get shipped to other spaces
@@ -1152,7 +1275,7 @@ abstract class Junction : StateMachine!JunctionState {
     private Space _space;
     private string[] destinations;
 
-    @property JunctionMeta meta() {return this._meta;}
+    protected @property JunctionMeta meta() {return this._meta;}
     @property string space() {return this._space.meta.id;}
 
     /// ctor
@@ -1204,71 +1327,43 @@ abstract class Junction : StateMachine!JunctionState {
     protected abstract void down();
 
     /// returns a transport channel to target space
-    protected abstract Channel get(string space);
+    protected abstract Channel get(string dst);
 
     /// pushes a signal through a channel
-    bool push(Signal s, Channel c) {
+    private bool push(Signal s, Channel c) {
         import flow.data : bin;
 
-        if(s.allowed(this.meta.info, c.other)) {
-            auto p = new JunctionPacket;
-            p.auth = this.meta.info;
-            p.signal = s;
-
-            // it gets done async returns true
-            if(this.meta.info.indifferent) {
-                taskPool.put(task(&c.transport, this.encrypt(p.bin, c.other)));
-                return true;
-            } else
-                return c.transport(this.encrypt(p.bin, c.other));
-        } else return false;
+        synchronized(this.lock.reader)
+            if(s.allowed(this.meta.info, c.other)) {
+                // it gets done async returns true
+                if(this.meta.info.indifferent) {
+                    taskPool.put(task(&c.push, s));
+                    return true;
+                } else {
+                    return c.push(s);
+                }
+            } else return false;
     }
 
     /// pulls a signal from a channel
-    bool pull(ubyte[] cpb) {
+    private bool pull(Signal s, JunctionInfo auth) {
         import flow.data : unbin;
 
-        auto pb = this.decrypt(cpb);
-        auto p = pb.unbin!JunctionPacket;
-
-        if(this.auth(p) && p.signal.allowed(p.auth, this.meta.info)) {  
-            return this.deliver(p);
+        if(s.allowed(auth, this.meta.info)) {
+            /* do not allow measuring of runtimes timings
+            ==> make the call async and dada */
+            if(this.meta.info.anonymous) {
+                taskPool.put(task(&this.route, s));
+                return true;
+            } else return this.route(s);
         } else return false;
-    }
-
-    private ubyte[] encrypt(ubyte[] pb, JunctionInfo dst) {
-        if(this.meta.info.encrypting) {
-            auto cpb = (ubyte[]).init;
-            // TODO
-            return ubyte.max~cpb;
-        } else return ubyte.min~pb;
-
-    }
-
-    private ubyte[] decrypt(ubyte[] cpb) {
-        import flow.util : as;
-        import std.range : front;
-
-        if(cpb.front) {
-            // TODO
-            return (ubyte[]).init;
-        } else
-            return cpb[1..$];
-    }
-
-    private bool auth(JunctionPacket p) {
-        import std.range : empty;
-        // TODO
-        return this.meta.witnesses.empty
-            || this.meta.key.empty
-            /*|| TODO*/;
     }
 
     /// ship an unicast through the junction
     private bool ship(Unicast s) {
         import flow.util : as;
 
-        synchronized(lock.reader) {
+        synchronized(this.lock.reader) {
             auto c = this.get(s.dst.space);
             if(c !is null) {
                 return this.push(s, c);
@@ -1282,15 +1377,16 @@ abstract class Junction : StateMachine!JunctionState {
     private bool ship(Anycast s) {
         import flow.util : as;
         
-        if(s.dst != this.meta.info.space) synchronized(lock.reader) {
-            auto c = this.get(s.dst);
-            if(c !is null)
-                return this.push(s, c);
-            else foreach(j; this.list) {
-                c = this.get(j);
-                return this.push(s, c);
+        synchronized(this.lock.reader)
+            if(s.dst != this.meta.info.space) {
+                auto c = this.get(s.dst);
+                if(c !is null)
+                    return this.push(s, c);
+                else foreach(j; this.list) {
+                    c = this.get(j);
+                    return this.push(s, c);
+                }
             }
-        }
                     
         return false;
     }
@@ -1300,26 +1396,18 @@ abstract class Junction : StateMachine!JunctionState {
         import flow.util : as;
 
         auto ret = false;
-        if(s.dst != this.meta.info.space) synchronized(lock.reader) {
-            auto c = this.get(s.dst);
-            if(c !is null)
-                ret = this.push(s, c) || ret;
-            else foreach(j; this.list) {
-                c = this.get(j);
-                ret = this.push(s, c) || ret;
+        synchronized(this.lock.reader)
+            if(s.dst != this.meta.info.space) {
+                auto c = this.get(s.dst);
+                if(c !is null)
+                    ret = this.push(s, c) || ret;
+                else foreach(j; this.list) {
+                    c = this.get(j);
+                    ret = this.push(s, c) || ret;
+                }
             }
-        }
 
         return ret;
-    }
-
-    /** deliver signal to local space */
-    private bool deliver(JunctionPacket p) {
-        // we do not tell our runtimes ==> we make the call async and dada
-        if(this.meta.info.anonymous) {
-            taskPool.put(task(&this.route, p.signal));
-            return true;
-        } else return this.route(p.signal);
     }
 
     private bool route(Signal s) {

@@ -12,7 +12,7 @@ import std.array;
 /// at linking something bad is happening if "Data" symbol is not used in shared library
 private static import flow.data.engine; class __Foo : flow.data.engine.Data {mixin flow.data.engine.data;}
 
-class MeshJunctionInfo : JunctionInfo {
+/*class MeshJunctionInfo : JunctionInfo {
     import flow.data;
 
     mixin data;
@@ -96,7 +96,7 @@ class MeshChannel : Channel {
 
         return false;
     }
-}
+}*/
 
 /*class NanoMsgConnector : Connector {
     private ReadWriteMutex lock;
