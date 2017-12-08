@@ -12,11 +12,91 @@ import std.array;
 /// at linking something bad is happening if "Data" symbol is not used in shared library
 private static import flow.data.engine; class __Foo : flow.data.engine.Data {mixin flow.data.engine.data;}
 
-/*class NanoMsgJunctionMeta : JunctionMeta {
+class MeshJunctionInfo : JunctionInfo {
     import flow.data;
 
     mixin data;
-}*/
+
+    mixin field!(string, "addr");
+}
+
+class MeshJunctionMeta : JunctionMeta {
+    import flow.data;
+
+    mixin data;
+
+    mixin array!(string, "known");
+}
+
+/// junction allowing direct signalling between spaces hosted in same process
+class MeshJunction : Junction {
+    private import core.sync.rwmutex : ReadWriteMutex;
+    private import std.uuid : UUID;
+
+    private ReadWriteMutex lock;
+    private MeshJunctionInfo[string] others;
+
+    override @property MeshJunctionMeta meta() {
+        import flow.util : as;
+        return super.meta.as!MeshJunctionMeta;
+    }
+
+    override @property string[] list() {
+        return others.keys;
+    }
+
+    /// ctor
+    this() {
+        this.lock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
+
+        super();
+    }
+
+    override bool up() {
+        import flow.util : as;
+
+        synchronized(lock.writer) {
+            // TODO CONNECT
+        }
+
+        return true;
+    }
+
+    override void down() {
+        synchronized(lock.writer) {
+            // TODO DISCONNECT
+
+            foreach(j; this.others.keys)
+                this.others.remove(j);
+        }
+    }
+
+    override Channel get(string space) {
+        return space in this.others
+        ? new MeshChannel(this, this.others[space])
+        : null;
+    }
+}
+
+class MeshChannel : Channel {
+    private MeshJunction own;
+    private MeshJunctionInfo _other;
+
+    override @property JunctionInfo other() {return this._other;}
+
+    this(MeshJunction own, MeshJunctionInfo other) {
+        this.own = own;
+        this._other = other;
+    }
+
+    override bool transport(JunctionPacket p) {
+        import flow.util : as;
+
+        // TODO TRANSMIT
+
+        return false;
+    }
+}
 
 /*class NanoMsgConnector : Connector {
     private ReadWriteMutex lock;
