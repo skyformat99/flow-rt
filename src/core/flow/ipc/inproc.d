@@ -61,7 +61,7 @@ class InProcessJunction : Junction {
     private import std.uuid : UUID;
 
     private static __gshared ReadWriteMutex pLock;
-    private static __gshared InProcessJunction[string][UUID] pool;
+    private static shared InProcessJunction[string][UUID] pool;
 
     private ReadWriteMutex cLock;
     private InProcessChannel[string] channels;
@@ -109,7 +109,7 @@ class InProcessJunction : Junction {
         synchronized(pLock.writer)
             if(this.id !in pool) // if is down
                 synchronized(this.cLock.writer)
-                    pool[this.id][this.meta.info.space] = this;
+                    pool[this.id][this.meta.info.space] = this.as!(shared(InProcessJunction));
 
         return true;
     }
@@ -137,7 +137,7 @@ class InProcessJunction : Junction {
                             return this.channels[dst];
                         else {
                             auto recv = pool[this.id][dst];
-                            auto chan = new InProcessChannel(this, recv);
+                            auto chan = new InProcessChannel(this.as!InProcessJunction, recv.as!InProcessJunction);
                             return chan.handshake() ? chan : null;
                         }
                     }
