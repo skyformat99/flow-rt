@@ -24,22 +24,33 @@ macro(add_doc _DOC_MODULE)
     set_tests_properties(doc_${_DOC_MODULE} PROPERTIES ENVIRONMENT "LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_LIBRARY_OUTPUT_DIRECTORY}")
 endmacro()
 
-# build libflow-core
-set(FLOW_CORE_SRC "src/core")
-file(GLOB _FLOW_CORE_SRC RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "${FLOW_CORE_SRC}/flow/*/*.d")
-add_library(flow-core SHARED "${_FLOW_CORE_SRC}")
-target_compile_options(flow-core PRIVATE "-H")
-target_compile_options(flow-core PRIVATE "-op")
-target_include_directories(flow-core PRIVATE "${FLOW_CORE_SRC}")
-add_unittests_for_target(flow-core)
-
 # LIBRARIES
+# build libopenssl static
+set (OPENSSL_SRC "src/lib/openssl")
+file(GLOB _OPENSSL_SRC RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "${OPENSSL_SRC}/deimos/openssl/*.d")
+add_library(openssl ${_OPENSSL_SRC})
+target_link_libraries(openssl ssl)
+target_include_directories(openssl PRIVATE "${OPENSSL_SRC}")
+add_unittests_for_target(openssl)
+
 # build libnanomsg static
 set (NANOMSG_SRC "src/lib/nanomsg")
 file(GLOB _NANOMSG_SRC RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "${NANOMSG_SRC}/deimos/nanomsg/*.d")
 add_library(nanomsg ${_NANOMSG_SRC})
 target_include_directories(nanomsg PRIVATE "${NANOMSG_SRC}")
 add_unittests_for_target(nanomsg)
+
+# build libflow-core
+set(FLOW_CORE_SRC "src/core")
+file(GLOB _FLOW_CORE_SRC RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "${FLOW_CORE_SRC}/flow/*/*.d")
+add_library(flow-core SHARED "${_FLOW_CORE_SRC}")
+add_dependencies(flow-core openssl)
+target_compile_options(flow-core PRIVATE "-H")
+target_compile_options(flow-core PRIVATE "-op")
+target_link_libraries(flow-core PRIVATE openssl)
+target_include_directories(flow-core PRIVATE "${FLOW_CORE_SRC}")
+target_include_directories(flow-core PRIVATE "${OPENSSL_SRC}")
+add_unittests_for_target(flow-core)
 
 # EXTENSIONS
 # build libflow-std
