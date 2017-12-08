@@ -1192,9 +1192,18 @@ abstract class Junction : StateMachine!JunctionState {
         }
     }
 
+    /** returns all known spaces, wilcards can work only for theese
+    dynamic junctions might return string[].init
+    and therefore do not support wildcards but only certain destinations */
     protected abstract @property string[] list();
+
+    /// attaches to junction
     protected abstract bool up();
+
+    /// detaches from junction
     protected abstract void down();
+
+    /// returns a transport channel to target space
     protected abstract Channel get(string space);
 
     /// pushes a signal through a channel
