@@ -40,12 +40,12 @@ class InProcessChannel : Channel {
         this.own.unregister(this);
     }
 
-    override protected ubyte[] getAuth() {
+    override protected ubyte[] reqAuth() {
         return this.peer.auth;
     }
     
-    override protected bool reqAuthentication(ubyte[] auth) {
-        return this.peer.authenticate(auth);
+    override protected bool reqVerify(ubyte[] auth) {
+        return this.peer.verify(auth);
     }
 
     override protected bool transport(ubyte[] pkg) {

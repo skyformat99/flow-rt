@@ -1174,10 +1174,10 @@ abstract class Channel : ReadWriteMutex {
         import flow.data : unbin;
         import std.range : empty, front;
 
-        // establish channel only if both side authenticates
-        if(this.reqAuthentication(this.auth)) { // authentication was accepted
-            auto otherAuth = this.getAuth();
-            if(this.authenticate(otherAuth)) {
+        // establish channel only if both side verifys
+        if(this.reqVerify(this.auth)) { // authentication was accepted
+            auto otherAuth = this.reqAuth();
+            if(this.verify(otherAuth)) {
                 if(otherAuth is null) { // if peer is anonymous, create dummy info
                     this._other = new JunctionInfo;
                     this._other.space = dst;
@@ -1190,7 +1190,7 @@ abstract class Channel : ReadWriteMutex {
         return false;
     }
 
-    final bool authenticate(/*w/o ref*/ ubyte[] auth) {
+    final bool verify(/*w/o ref*/ ubyte[] auth) {
         import flow.data : bin;
         import std.range : empty;
         
@@ -1255,10 +1255,10 @@ abstract class Channel : ReadWriteMutex {
     }
 
     /// requests other sides auth
-    abstract protected ubyte[] getAuth();
+    abstract protected ubyte[] reqAuth();
 
     /// request authentication
-    abstract protected bool reqAuthentication(ubyte[] auth);
+    abstract protected bool reqVerify(ubyte[] auth);
 
     /// transports signal through channel
     abstract protected bool transport(ubyte[] p);
