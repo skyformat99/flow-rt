@@ -18,12 +18,19 @@ class InProcessJunction : Junction {
     private import std.uuid : UUID;
 
     private static __gshared ReadWriteMutex lock;
-    private static shared InProcessJunction[string][UUID] junctions;
+    private static shared InProcessJunction[string][UUID] others;
+
+    override @property InProcessJunctionMeta meta() {
+        import flow.util : as;
+        return super.meta.as!InProcessJunctionMeta;
+    }
 
     /// instances with the same id belong to the same junction
-    @property UUID id() {
-        import flow.util : as;
-        return this.meta.as!InProcessJunctionMeta.id;
+    @property UUID id() {return this.meta.id;}
+
+    override @property string[] list() {
+        synchronized(this.lock.reader)
+            return others[this.id].keys;
     }
 
     shared static this() {
@@ -39,82 +46,43 @@ class InProcessJunction : Junction {
         import flow.util : as;
 
         synchronized(lock.writer)
-            junctions[this.id][this.meta.info.space] = this.as!(shared(InProcessJunction));
+            others[this.id][this.meta.info.space] = this.as!(shared(InProcessJunction));
 
         return true;
     }
 
-    override bool down() {
+    override void down() {
         synchronized(lock.writer)
-            if(this.id in junctions)
-                junctions[this.id].remove(this.meta.info.space);
-
-        return true;
+            if(this.id in others)
+                others[this.id].remove(this.meta.info.space);
     }
 
-    override bool ship(Unicast s) {
-        import flow.util : as;
-
-        synchronized(lock.reader)
-            if(s.dst.space in junctions[this.id]) {
-                auto c = new InProcessChannel(this, junctions[this.id][s.dst.space]);
-                return this.pack(s, c.recv.as!InProcessJunction.meta.info, c, (chan, pkg) => chan.transport(pkg)); // !interface to transport!
-            }
-        
-        return false;
-    }
-
-    override bool ship(Anycast s) {
-        import flow.util : as;
-        
-        if(s.dst != this.meta.info.space) synchronized(lock.reader)
-            if(s.dst in junctions[this.id]) {
-                auto c = new InProcessChannel(this, junctions[this.id][s.dst]);
-                return this.pack(s, c.recv.as!InProcessJunction.meta.info, c, (chan, pkg) => chan.transport(pkg)); // !interface to transport!
-            } else foreach(j; junctions[this.id]) {
-                auto c = new InProcessChannel(this, j);
-                return this.pack(s, c.recv.as!InProcessJunction.meta.info, c, (chan, pkg) => chan.transport(pkg)); // !interface to transport!
-            }
-                    
-        return false;
-    }
-
-    override bool ship(Multicast s) {
-        import flow.util : as;
-
-        auto ret = false;
-        if(s.dst != this.meta.info.space) synchronized(lock.reader)
-            if(s.dst in junctions[this.id]) {
-                auto c = new InProcessChannel(this, junctions[this.id][s.dst]);
-                ret = this.pack(s, c.recv.as!InProcessJunction.meta.info, c, (chan, pkg) => chan.transport(pkg)) || ret; // !interface to transport!
-            } else foreach(j; junctions[this.id]) {
-                auto c = new InProcessChannel(this, j);
-                ret = this.pack(s, c.recv.as!InProcessJunction.meta.info, c, (chan, pkg) => chan.transport(pkg)) || ret; // !interface to transport!
-            }
-                    
-        return ret;
+    override Channel get(string space) {
+        synchronized(this.lock.reader)
+            return space in others[this.id]
+            ? new InProcessChannel(this, others[this.id][space])
+            : null;
     }
 }
 
 class InProcessChannel : Channel {
-    private InProcessJunction snd;
-    private shared InProcessJunction recv;
+    private InProcessJunction own;
+    private shared InProcessJunction _other;
 
-    this(InProcessJunction snd, shared(InProcessJunction) recv) {
-        this.snd = snd;
-        this.recv = recv;
+    override @property JunctionInfo other() {
+        import flow.util : as;
+        return this._other.as!Junction.meta.info;
+    }
+
+    this(InProcessJunction own, shared(InProcessJunction) other) {
+        this.own = own;
+        this._other = other;
     }
 
     override bool transport(JunctionPacket p) {
         import flow.util : as;
 
-        if(p.signal.as!Unicast !is null)
-            return this.recv.as!InProcessJunction.deliver(p.signal.as!Unicast, p.auth);
-        else if(p.signal.as!Anycast !is null)
-            return this.recv.as!InProcessJunction.deliver(p.signal.as!Anycast, p.auth);
-        else if(p.signal.as!Multicast !is null)
-            return this.recv.as!InProcessJunction.deliver(p.signal.as!Multicast, p.auth);
-        else return false;
+        return this._other.as!Junction.deliver(p);
     }
 }
 

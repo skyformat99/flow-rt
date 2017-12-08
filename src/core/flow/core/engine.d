@@ -1140,6 +1140,7 @@ private enum JunctionState {
 }
 
 abstract class Channel {
+    abstract @property JunctionInfo other();
     abstract bool transport(JunctionPacket p);
 }
 
@@ -1151,8 +1152,8 @@ abstract class Junction : StateMachine!JunctionState {
     private Space _space;
     private string[] destinations;
 
-    protected @property JunctionMeta meta() {return this._meta;}
-    protected @property string space() {return this._space.meta.id;}
+    @property JunctionMeta meta() {return this._meta;}
+    @property string space() {return this._space.meta.id;}
 
     /// ctor
     this() {
@@ -1172,53 +1173,104 @@ abstract class Junction : StateMachine!JunctionState {
         this.state = JunctionState.Detached;
     }
 
-    override protected final bool onStateChanging(JunctionState o, JunctionState n) {
-        switch(n) {
-            case JunctionState.Attached:
-                return o == JunctionState.Detached && this.up();
-            case JunctionState.Detached:
-                return o == JunctionState.Attached && this.down();
-            default: return false;
-        }
-    }
-
-    protected abstract bool up();
-    protected abstract bool down();
-
-    /// ship an unicast through the junction
-    protected abstract bool ship(Unicast s);
-
-    /// ship an anycast through the junction
-    protected abstract bool ship(Anycast s);
-
-    /// ship a multicast through the junction
-    protected abstract bool ship(Multicast s);
-
     /// ship a signal through a transport interface
-    protected bool pack(Signal s, JunctionInfo recv, Channel c, bool function(Channel, JunctionPacket) t) {
-        if(s.allowed(this.meta.info, recv)) {
+    private bool pack(Signal s, Channel c) {
+        if(s.allowed(this.meta.info, c.other)) {
             auto p = new JunctionPacket;
             p.signal = s;
             p.auth = this.meta.info.anonymous ? null : this.meta.info;
 
             // it gets done async returns true
             if(this.meta.info.indifferent) {
-                taskPool.put(task(t, c, p));
+                taskPool.put(task(&c.transport, p));
                 return true;
             } else
-                return t(c, p);
+                return c.transport(p);
         } else return false;
     }
 
+    /// ship an unicast through the junction
+    private bool ship(Unicast s) {
+        import flow.util : as;
+
+        synchronized(lock.reader) {
+            auto c = this.get(s.dst.space);
+            if(c !is null) {
+                return this.pack(s, c);
+            }
+        }
+
+        return false;
+    }
+
+    /// ship an anycast through the junction
+    private bool ship(Anycast s) {
+        import flow.util : as;
+        
+        if(s.dst != this.meta.info.space) synchronized(lock.reader) {
+            auto c = this.get(s.dst);
+            if(c !is null)
+                return this.pack(s, c);
+            else foreach(j; this.list) {
+                c = this.get(j);
+                return this.pack(s, c);
+            }
+        }
+                    
+        return false;
+    }
+
+    /// ship a multicast through the junction
+    private bool ship(Multicast s) {
+        import flow.util : as;
+
+        auto ret = false;
+        if(s.dst != this.meta.info.space) synchronized(lock.reader) {
+            auto c = this.get(s.dst);
+            if(c !is null)
+                ret = this.pack(s, c) || ret;
+            else foreach(j; this.list) {
+                c = this.get(j);
+                ret = this.pack(s, c) || ret;
+            }
+        }
+
+        return ret;
+    }
+
+    override protected final bool onStateChanging(JunctionState o, JunctionState n) {
+        switch(n) {
+            case JunctionState.Attached:
+                return o == JunctionState.Detached && this.up();
+            case JunctionState.Detached:
+                return o == JunctionState.Attached;
+            default: return false;
+        }
+    }
+
+    override protected final void onStateChanged(JunctionState o, JunctionState n) {
+        switch(n) {
+            case JunctionState.Detached:
+            if(this.meta) this.down();
+            break;
+            default: break;
+        }
+    }
+
+    protected abstract @property string[] list();
+    protected abstract bool up();
+    protected abstract void down();
+    protected abstract Channel get(string space);
+
     /** deliver signal to local space
     !interface from transport! */
-    bool deliver(Signal s, JunctionInfo snd) {
-        if(s.allowed(snd, this.meta.info)) {     
+    bool deliver(JunctionPacket p) {
+        if(p.signal.allowed(p.auth, this.meta.info)) {     
             // we do not tell our runtimes ==> we make the call async and dada
             if(this.meta.info.anonymous) {
-                taskPool.put(task(&this.route, s));
+                taskPool.put(task(&this.route, p.signal));
                 return true;
-            } else return this.route(s);
+            } else return this.route(p.signal);
         } else return false;
     }
 

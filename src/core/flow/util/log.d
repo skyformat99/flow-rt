@@ -20,7 +20,7 @@ final class Log {
     public static immutable sep = newline~"--------------------------------------------------"~newline;
 
     /// chosen log level
-    public static LL logLevel = LL.Message | LL.Fatal | LL.Error | LL.Warning | LL.Info | LL.Debug;
+    public static LL logLevel = LL.Message | LL.Fatal | LL.Error | LL.Warning;
 
     private static string get(string str) {
         if(str != string.init)

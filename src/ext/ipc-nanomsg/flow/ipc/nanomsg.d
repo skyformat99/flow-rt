@@ -12,13 +12,13 @@ import std.array;
 /// at linking something bad is happening if "Data" symbol is not used in shared library
 private static import flow.data.engine; class __Foo : flow.data.engine.Data {mixin flow.data.engine.data;}
 
-/*class NanoMsgConnectorConfig : ConnectorConfig {
+/*class NanoMsgJunctionMeta : JunctionMeta {
     import flow.data;
 
     mixin data;
-}
+}*/
 
-class NanoMsgConnector : Connector {
+/*class NanoMsgConnector : Connector {
     private ReadWriteMutex lock;
     private Thread listener;
     private int pubSock;
