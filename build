@@ -5,3 +5,4 @@ rootDir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cmake -DCMAKE_MODULE_PATH:PATH=$rootDir/util/cmake-d/cmake-d $rootDir
 
 make && env CTEST_OUTPUT_ON_FAILURE=1 make test
+#make VERBOSE=1 && env CTEST_OUTPUT_ON_FAILURE=1 make test

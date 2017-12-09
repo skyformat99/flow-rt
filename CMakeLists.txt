@@ -14,13 +14,8 @@ macro(add_doc _DOC_MODULE)
     add_executable(doc_${_DOC_MODULE} "doc/src/${_DOC_MODULE}.d")
     add_dependencies(doc_${_DOC_MODULE} flow-core)
     add_dependencies(doc_${_DOC_MODULE} flow-std)
-    target_link_libraries(doc_${_DOC_MODULE} ssl)
-    target_link_libraries(doc_${_DOC_MODULE} crypto)
-    target_link_libraries(doc_${_DOC_MODULE} openssl)
     target_link_libraries(doc_${_DOC_MODULE} flow-core)
     target_link_libraries(doc_${_DOC_MODULE} flow-std)
-    target_include_directories(doc_${_DOC_MODULE} PRIVATE "${FLOW_CORE_SRC}")
-    target_include_directories(doc_${_DOC_MODULE} PRIVATE "${FLOW_STD_SRC}")
 
     add_test(NAME doc_${_DOC_MODULE}
         COMMAND ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/doc_${_DOC_MODULE})
@@ -32,16 +27,16 @@ endmacro()
 set (OPENSSL_SRC "src/lib/openssl")
 file(GLOB _OPENSSL_SRC RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "${OPENSSL_SRC}/deimos/openssl/*.d")
 add_library(openssl ${_OPENSSL_SRC})
-target_link_libraries(openssl crypto)
 target_link_libraries(openssl ssl)
-target_include_directories(openssl PRIVATE "${OPENSSL_SRC}")
+target_link_libraries(openssl crypto)
+target_include_directories(openssl PUBLIC "${OPENSSL_SRC}")
 add_unittests_for_target(openssl)
 
 # build libnanomsg static
 set (NANOMSG_SRC "src/lib/nanomsg")
 file(GLOB _NANOMSG_SRC RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "${NANOMSG_SRC}/deimos/nanomsg/*.d")
 add_library(nanomsg ${_NANOMSG_SRC})
-target_include_directories(nanomsg PRIVATE "${NANOMSG_SRC}")
+target_include_directories(nanomsg PUBLIC "${NANOMSG_SRC}")
 add_unittests_for_target(nanomsg)
 
 # CORE
@@ -52,9 +47,8 @@ add_library(flow-core SHARED "${_FLOW_CORE_SRC}")
 add_dependencies(flow-core openssl)
 target_compile_options(flow-core PRIVATE "-H")
 target_compile_options(flow-core PRIVATE "-op")
-target_link_libraries(flow-core PRIVATE openssl)
-target_include_directories(flow-core PRIVATE "${FLOW_CORE_SRC}")
-target_include_directories(flow-core PRIVATE "${OPENSSL_SRC}")
+target_link_libraries(flow-core openssl)
+target_include_directories(flow-core PUBLIC "${FLOW_CORE_SRC}")
 add_unittests_for_target(flow-core)
 
 # EXTENSIONS
@@ -64,8 +58,7 @@ file(GLOB _FLOW_STD_SRC RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "${FLOW_STD_SRC}/fl
 add_library(flow-std SHARED ${_FLOW_STD_SRC})
 add_dependencies(flow-std flow-core)
 target_link_libraries(flow-std flow-core)
-target_include_directories(flow-std PRIVATE "${FLOW_STD_SRC}")
-target_include_directories(flow-std PRIVATE "${FLOW_CORE_SRC}")
+target_include_directories(flow-std PUBLIC "${FLOW_STD_SRC}")
 add_unittests_for_target(flow-std)
 
 # build libflow-ipc-nanomsg
@@ -76,9 +69,7 @@ add_dependencies(flow-ipc-nanomsg nanomsg)
 add_dependencies(flow-ipc-nanomsg flow-core)
 target_link_libraries(flow-ipc-nanomsg nanomsg)
 target_link_libraries(flow-ipc-nanomsg flow-core)
-target_include_directories(flow-ipc-nanomsg PRIVATE "${FLOW_IPC_NANOMSG_SRC}")
-target_include_directories(flow-ipc-nanomsg PRIVATE "${NANOMSG_SRC}")
-target_include_directories(flow-ipc-nanomsg PRIVATE "${FLOW_CORE_SRC}")
+target_include_directories(flow-ipc-nanomsg PUBLIC "${FLOW_IPC_NANOMSG_SRC}")
 add_unittests_for_target(flow-ipc-nanomsg)
 
 # build libflow-complex
@@ -87,8 +78,7 @@ file(GLOB _FLOW_COMPLEX_SRC RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "${FLOW_COMPLEX
 add_library(flow-complex SHARED ${_FLOW_COMPLEX_SRC})
 add_dependencies(flow-complex flow-core)
 target_link_libraries(flow-complex flow-core)
-target_include_directories(flow-complex PRIVATE "${FLOW_COMPLEX_SRC}")
-target_include_directories(flow-complex PRIVATE "${FLOW_CORE_SRC}")
+target_include_directories(flow-complex PUBLIC "${FLOW_COMPLEX_SRC}")
 add_unittests_for_target(flow-complex)
 
 # EXECUTABLES
@@ -99,7 +89,6 @@ add_executable(flow-run ${_FLOW_RUN_SRC})
 add_dependencies(flow-run flow-core)
 target_link_libraries(flow-run flow-core)
 target_include_directories(flow-run PRIVATE "${FLOW_RUN_SRC}")
-target_include_directories(flow-run PRIVATE "${FLOW_CORE_SRC}")
 
 # build flow-complex-gen
 set (FLOW_COMPLEX_GEN_SRC "src/bin/complex-gen")
@@ -109,8 +98,6 @@ add_dependencies(flow-complex-gen flow-core)
 target_link_libraries(flow-complex-gen flow-core)
 target_link_libraries(flow-complex-gen flow-complex)
 target_include_directories(flow-complex-gen PRIVATE "${FLOW_COMPLEX_GEN_SRC}")
-target_include_directories(flow-complex-gen PRIVATE "${FLOW_CORE_SRC}")
-target_include_directories(flow-complex-gen PRIVATE "${FLOW_COMPLEX_SRC}")
 
 # DOC
 add_doc(introduction)

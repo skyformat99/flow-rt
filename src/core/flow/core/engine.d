@@ -1149,12 +1149,17 @@ struct CryptoCipher {
 
 private class Crypto {
     import core.time;
+    import deimos.openssl.conf;
+    import deimos.openssl.evp;
+    import deimos.openssl.rsa;
 
     static const size_t sigLength = 32; // SHA256
     static const Duration cipherVality = 10.minutes;
 
+    RSA* _key;
+    RSA* _cert;
+
     string path;
-    ubyte[] key;
 
     private CryptoCipher[string] ciphers;
 
@@ -1163,6 +1168,11 @@ private class Crypto {
 
     this(string path) {
         this.path = path;
+
+        // initializing ssl
+        ERR_load_CRYPTO_strings();
+        OpenSSL_add_all_algorithms();
+        OPENSSL_config(null);
 
         // TODO load key from given path if existing
     }
