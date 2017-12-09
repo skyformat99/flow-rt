@@ -707,7 +707,7 @@ private class Ticker : StateMachine!SystemState {
         import core.thread : Thread;
 
         while(this.state == SystemState.Ticking)
-            Thread.sleep(10.msecs);
+            Thread.sleep(5.msecs);
     }
 
     void freeze() {
@@ -737,7 +737,7 @@ private class Ticker : StateMachine!SystemState {
             case SystemState.Frozen:
                 // wait for executing tick to end if there is one
                 while(this.actual !is null)
-                    Thread.sleep(10.msecs);
+                    Thread.sleep(5.msecs);
                 break;
             default:
                 break;
@@ -1258,13 +1258,11 @@ abstract class Channel : ReadWriteMutex {
         import std.range : empty, front;
         
         // own is not authenticating
-        if(auth is null) {
-            if(!this.own.meta.info.verifying || this.own.meta.key.empty) {
-                this._other = new JunctionInfo;
-                this._other.space = this._dst;
-                
-                return true;
-            }
+        if(auth is null && !this.own.meta.info.verifying) {
+            this._other = new JunctionInfo;
+            this._other.space = this._dst;
+            
+            return true;
         } else if(auth.length > Crypto.sigLength) {
             auto isSigned = auth.front == ubyte.max;
             auto sig = isSigned ? auth[1..Crypto.sigLength] : null;
@@ -2107,7 +2105,7 @@ unittest {
 
     spc.tick();
 
-    Thread.sleep(10.msecs);
+    Thread.sleep(20.msecs);
 
     spc.freeze();
 
@@ -2267,7 +2265,7 @@ unittest {
 
     spc.tick();
 
-    Thread.sleep(10.msecs);
+    Thread.sleep(20.msecs);
 
     spc.freeze();
 

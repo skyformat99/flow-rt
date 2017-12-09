@@ -188,7 +188,7 @@ unittest {
     spc2.tick();
     spc1.tick();
 
-    Thread.sleep(10.msecs);
+    Thread.sleep(20.msecs);
 
     spc2.freeze();
     spc1.freeze();
@@ -245,7 +245,7 @@ unittest {
     spc2.tick();
     spc1.tick();
 
-    Thread.sleep(10.msecs);
+    Thread.sleep(20.msecs);
 
     spc2.freeze();
     spc1.freeze();
@@ -305,7 +305,7 @@ unittest {
     spc2.tick();
     spc1.tick();
 
-    Thread.sleep(10.msecs);
+    Thread.sleep(20.msecs);
 
     spc2.freeze();
     spc1.freeze();
@@ -365,7 +365,7 @@ unittest {
     spc2.tick();
     spc1.tick();
 
-    Thread.sleep(10.msecs);
+    Thread.sleep(20.msecs);
 
     spc2.freeze();
     spc1.freeze();
