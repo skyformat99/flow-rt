@@ -1167,7 +1167,13 @@ abstract class Channel : ReadWriteMutex {
         this._dst = dst;
         this._own = own;
 
+        this.sslInit();
+
         super(ReadWriteMutex.Policy.PREFER_WRITERS);
+    }
+
+    shared static this() {        
+        // TODO SSL INIT
     }
 
     final bool handshake() {
@@ -1190,7 +1196,7 @@ abstract class Channel : ReadWriteMutex {
         
         // own is not authenticating
         if(auth is null) {
-            if(this.own.meta.witnesses.empty || this.own.meta.key.empty) {
+            if(!this.own.meta.info.verifying || this.own.meta.key.empty) {
                 this._other = new JunctionInfo;
                 this._other.space = this._dst;
                 
@@ -1200,9 +1206,9 @@ abstract class Channel : ReadWriteMutex {
             auto sig = auth[0..sigLength];
             auto info = auth[sigLength..$];
 
-            if(this.own.meta.witnesses.empty 
+            if(!this.own.meta.info.verifying
             || this.own.meta.key.empty
-            || this.sslAuth(sig, info)) {
+            || this.sslVerify(sig, info)) {
                 this._other = auth.unbin!JunctionInfo;
 
                 return true;
@@ -1210,17 +1216,6 @@ abstract class Channel : ReadWriteMutex {
         }
         
         return false;
-    }
-
-    /// if successful returns the deserialized JunctionInfo otherwise null 
-    private bool sslAuth(ubyte[] auth, ubyte[] data) {
-        // TODO
-        return false;
-    }
-
-    private ubyte[] sslSign(ubyte[] data) {
-        // TODO
-        return (ubyte[]).init;
     }
 
     /// encrypts package
@@ -1259,6 +1254,29 @@ abstract class Channel : ReadWriteMutex {
             auto pkg = s.bin;
             return this.transport(pkg);
         } else return false;
+    }
+
+    private bool sslInit() {
+        import std.range : empty;
+
+        // there is a key? pubkey has to be generated
+        // it is encrypting? outgoning signals have to be encrypted using peer's pub key
+        // it is verifying? peers have to be authenticated against system's known CA's
+        if(!this.own.meta.key.empty || this.own.meta.info.encrypting || this.own.meta.info.verifying) {
+            // TODO
+            return false;
+        } else return true;
+    }
+
+    /// if successful returns the deserialized JunctionInfo otherwise null 
+    private bool sslVerify(ubyte[] sig, ubyte[] data) {
+        // TODO
+        return false;
+    }
+
+    private ubyte[] sslSign(ubyte[] data) {
+        // TODO
+        return (ubyte[]).init;
     }
 
     /// requests other sides auth

@@ -40,6 +40,7 @@ add_library(nanomsg ${_NANOMSG_SRC})
 target_include_directories(nanomsg PRIVATE "${NANOMSG_SRC}")
 add_unittests_for_target(nanomsg)
 
+# CORE
 # build libflow-core
 set(FLOW_CORE_SRC "src/core")
 file(GLOB _FLOW_CORE_SRC RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "${FLOW_CORE_SRC}/flow/*/*.d")

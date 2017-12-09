@@ -71,7 +71,10 @@ class JunctionInfo : IdData {
     /// public RSA certificate (set by junction itself from private key)
     mixin array!(ubyte, "cert");
 
-    /// indicates if junction is only autheticating or encrypting too
+    /// indicates if junction is verifying peers
+    mixin field!(bool, "verifying");
+
+    /// indicates if junction is encrypting outbound signals
     mixin field!(bool, "encrypting");
 
     /** this side of the junction does not inform sending side of acceptance
@@ -94,9 +97,6 @@ class JunctionMeta : Data {
     mixin field!(JunctionInfo, "info");
     mixin field!(string, "type");
     mixin field!(ushort, "level");
-
-    /// witnesses used to approve peers (no witnesses disables authentication)
-    mixin array!(Witness, "witnesses");
 
     /// private/public RSA key (no key disables encryption and authentication)
     mixin array!(ubyte, "key");
@@ -168,15 +168,4 @@ class Receptor : Data {
 
     mixin field!(string, "signal");
     mixin field!(string, "tick");
-}
-
-/// root certificate
-class Witness : Data {
-    mixin data;
-
-    /// name of the witness
-    mixin field!(string, "name");
-
-    /// certificate of the witness
-    mixin array!(ubyte, "cert");
 }

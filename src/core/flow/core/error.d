@@ -19,3 +19,7 @@ class ProcessException : FlowException {mixin exception;}
 
 /// exception indicating something went wrong in junction
 class JunctionException : FlowException {mixin exception;}
+
+class GnuTlsInitError : FlowError {mixin error;}
+
+class GnuTlsSessionInitException : FlowException {mixin exception;}
