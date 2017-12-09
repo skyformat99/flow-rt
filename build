@@ -3,18 +3,21 @@
 rootDir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 dc=dmd
+ld=dmd
 #dc=$rootDir/util/dmd2/linux/bin64/dmd
 #export LIBRARY_PATH=$rootDir/util/dmd2/linux/lib64
 #export LD_LIBRARY_PATH=$rootDir/util/dmd2/linux/lib64
 defaultlib="libphobos2.so" # libphobos2-ldc
 
 #params for debug
-defBuildParams="-c -op -debug -g -fPIC -vcolumns -w" # -debug=data -debug=tick
-defLinkParams="-g -L-l:$defaultlib -defaultlib=$defaultlib"
-flowBuildParams="-I$rootDir/ifc/core"
-flowLinkParams="-L-l:libflow-core.so"
+sslLinkParams="-L-l:libssl.so.1.0.0 -L-l:libcrypto.so.1.0.0"
+#sslLinkParams="-L-l:libssl.so -L-l:libcrypto.so"
+defBuildParams="-c -op -debug -g -fPIC -vcolumns -w -defaultlib=$defaultlib" # -debug=data -debug=tick
+defLinkParams="-L-l:$defaultlib"
+flowBuildParams="-I$rootDir/ifc/core -I$rootDir/ifc/lib/openssl"
+flowLinkParams="$sslLinkParams -L-l:libflow-core.so"
 testBuildParams="-unittest -main"
-testLinkParams="-unittest"
+testLinkParams="" #"-unittest"
 
 #params for release
 #defBuildParams="-release"
@@ -24,9 +27,9 @@ if [ $1 ]; then buildType=$1; else buildType=debug; fi
 buildParams=${@:2}
 
 # prepare build
-rm -fr $rootDir/bin $rootDir/tst $rootDir/ifc $rootDir/lib $rootDir/ext
+rm -fr $rootDir/bin $rootDir/test $rootDir/ifc $rootDir/lib $rootDir/ext
 mkdir -p $rootDir/bin
-mkdir -p $rootDir/tst
+mkdir -p $rootDir/test
 mkdir -p $rootDir/lib
 
 export LIBRARY_PATH=/usr/lib:$rootDir/lib:$rootDir/ext
@@ -37,10 +40,10 @@ function buildOpenSSL {
     mkdir -p build &&
 
     echo "BUILDING lib/libopenssl.so ..." &&
-    $dc $defBuildParams -ofbuild/libopenssl.o $(find ./deimos -name "*.d") &&
+    $dc -ofbuild/libopenssl.o $(find ./deimos -name "*.d") $defBuildParams -Hd=$rootDir/ifc/lib/openssl &&
 
     echo "LINKING lib/libopenssl.so ..." &&
-    $dc $defLinkParams -L-lssl -L-lcrypto -of$rootDir/lib/libopenssl.so build/libopenssl.o -shared
+    $ld -of$rootDir/lib/libopenssl.so build/libopenssl.o $sslLinkParams $defLinkParams -shared
 }
 
 function buildNanoMsg {
@@ -48,10 +51,10 @@ function buildNanoMsg {
     mkdir -p build &&
 
     echo "BUILDING lib/libnanomsg.so ..." &&
-    $dc $defBuildParams -ofbuild/libnanomsg.o $(find ./deimos -name "*.d") &&
+    $dc -ofbuild/libnanomsg.o $(find ./deimos -name "*.d") $defBuildParams &&
 
     echo "LINKING lib/libnanomsg.so ..." &&
-    $dc $defLinkParams -of$rootDir/lib/libnanomsg.so build/libnanomsg.o -shared
+    $ld -of$rootDir/lib/libnanomsg.so build/libnanomsg.o $defLinkParams -shared
 }
 
 function buildCore {
@@ -59,24 +62,28 @@ function buildCore {
     mkdir -p build &&
 
     echo "BUILDING lib/libflow-core..." &&
-    $dc $defBuildParams -Hd=$rootDir/ifc/core -I$rootDir/src/lib/openssl -ofbuild/libflow-core.o $(find ./ -name "*.d") &&
+    $dc -ofbuild/libflow-core.o $(find ./ -name "*.d") $defBuildParams -Hd=$rootDir/ifc/core -I$rootDir/ifc/lib/openssl &&
 
     echo "LINKING lib/libflow-core..." &&
-    $dc $defLinkParams -L-lssl -L-lcrypto -L-l:libopenssl.so -of$rootDir/lib/libflow-core.so build/libflow-core.o -shared
+    $ld -of$rootDir/lib/libflow-core.so build/libflow-core.o $sslLinkParams -L-l:libopenssl.so $defLinkParams -shared
 }
 
 function testCore {
+    ret=-1
     cd $rootDir/src/core &&
     mkdir -p build &&
 
-    echo "BUILDING tst/libflow-core-test..." &&
-    $dc $defBuildParams $testBuildParams -I$rootDir/src/lib/openssl -ofbuild/libflow-core-test.o $(find ./ -name "*.d") &&
+    echo "BUILDING test/test_flow-core..." &&
+    $dc -ofbuild/libflow-core-test.o $(find ./ -name "*.d") $defBuildParams $testBuildParams -I$rootDir/src/lib/openssl &&
 
-    echo "LINKING tst/libflow-core-test..." &&
-    $dc $defLinkParams $testLinkParams -L-l:libopenssl.so -of$rootDir/tst/test-libflow-core build/libflow-core-test.o &&
+    echo "LINKING test/test_flow-core..." &&
+    $ld -of$rootDir/test/test_flow-core build/libflow-core-test.o $sslLinkParams -L-l:libopenssl.so $defLinkParams $testLinkParams &&
+    ret=0 &&
 
-    echo "TESTING tst/libflow-core-test..." &&
-    $rootDir/tst/test-libflow-core
+    echo "TESTING test/test_flow-core..." &&
+    $rootDir/test/test_flow-core
+
+    return $ret
 }
 
 function buildExt {
@@ -84,24 +91,28 @@ function buildExt {
     mkdir -p build &&
 
     echo "BUILDING ext/libflow-$1..." &&
-    $dc $defBuildParams $flowBuildParams -Hd=$rootDir/ifc/ext/$1 -I$rootDir/src/lib/openssl -ofbuild/libflow-$1.o $2 $(find ./ -name "*.d") &&
+    $dc -ofbuild/libflow-$1.o $(find ./ -name "*.d") $defBuildParams $flowBuildParams -Hd=$rootDir/ifc/ext/$1 -I$rootDir/src/lib/openssl $2 &&
 
     echo "LINKING ext/libflow-$1..." &&
-    $dc $defLinkParams $flowLinkParams -of$rootDir/ext/libflow-$1.so build/libflow-$1.o -shared $3 #${@:2}
+    $ld -of$rootDir/ext/libflow-$1.so build/libflow-$1.o $defLinkParams $flowLinkParams -shared ${@:3}
 }
 
 function testExt {
+    ret=-1
     cd $rootDir/src/ext/$1 &&
     mkdir -p build &&
 
-    echo "BUILDING tst/test-libflow-$1..." &&
-    $dc $defBuildParams $flowBuildParams $testBuildParams -I$rootDir/src/lib/openssl -ofbuild/libflow-$1-test.o $2 $(find ./ -name "*.d") &&
+    echo "BUILDING test/test_flow-$1..." &&
+    $dc -ofbuild/libflow-$1-test.o $(find ./ -name "*.d") $defBuildParams $flowBuildParams $testBuildParams -I$rootDir/src/lib/openssl $2 &&
 
-    echo "LINKING tst/test-libflow-$1..." &&
-    $dc $defLinkParams $flowLinkParams $testLinkParams -of$rootDir/tst/test-libflow-$1 build/libflow-$1-test.o $3 &&#${@:2} &&
+    echo "LINKING test/test_flow-$1..." &&
+    $ld -of$rootDir/test/test_flow-$1 build/libflow-$1-test.o $defLinkParams $flowLinkParams $testLinkParams ${@:3} &&
+    ret=0 &&
 
-    echo "TESTING tst/test-libflow-$1..." &&
-    $rootDir/tst/test-libflow-$1
+    echo "TESTING test/test_flow-$1..." &&
+    $rootDir/test/test_flow-$1
+
+    return $ret
 }
 
 function buildBin {
@@ -109,24 +120,28 @@ function buildBin {
     mkdir -p build &&
 
     echo "BUILDING $1..." &&
-    $dc $defBuildParams $flowBuildParams -I$rootDir/src/lib/openssl -ofbuild/flow-$1.o $(find ./ -name "*.d") &&
+    $dc -ofbuild/flow-$1.o $(find ./ -name "*.d") $defBuildParams $flowBuildParams $2 &&
 
     echo "LINKING $1..." &&
-    $dc $defLinkParams $flowLinkParams -of$rootDir/bin/flow-$1 build/flow-$1.o ${@:2}
+    $ld -of$rootDir/bin/flow-$1 build/flow-$1.o $defLinkParams $flowLinkParams ${@:3}
 }
 
 function testBin {
+    ret=-1
     cd $rootDir/src/bin/$1 &&
     mkdir -p build &&
 
-    echo "BUILDING $1-test..." &&
-    $dc $defBuildParams $flowBuildParams $testBuildParams -I$rootDir/src/lib/openssl -ofbuild/flow-$1-test.o $(find ./ -name "*.d") &&
+    echo "BUILDING test_flow-..." &&
+    $dc -ofbuild/flow-$1-test.o $(find ./ -name "*.d") $defBuildParams $flowBuildParams $testBuildParams $2 &&
 
-    echo "LINKING $1-test..." &&
-    $dc $defLinkParams $flowLinkParams $testLinkParams -of$rootDir/tst/test-flow-$1 build/flow-$1-test.o ${@:2} &&
+    echo "LINKING test_flow-..." &&
+    $ld -of$rootDir/test/test_flow-$1 build/flow-$1-test.o $defLinkParams $flowLinkParams $testLinkParams ${@:3} &&
+    ret=0 &&
 
-    echo "TESTING $1-test......" &&
-    $rootDir/tst/test-flow-$1
+    echo "TESTING test_flow-$1..." &&
+    $rootDir/test/test_flow-$1
+
+    return $ret
 }
 
 # LIBRARIES
@@ -145,7 +160,7 @@ buildExt complex &&
 testExt complex &&
 
 # BINARIES
-buildBin complex-gen -L-l:libflow-complex.so &&
+buildBin complex-gen -I$rootDir/ifc/ext/complex -L-l:libflow-complex.so &&
 #testBin complex-gen -L-l:libflow-complex.so &&
 
 buildBin run &&

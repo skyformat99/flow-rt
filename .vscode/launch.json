@@ -13,7 +13,7 @@
                 "break onInvalidMemoryOperationError"
             ],
             "target": "test_flow-core",
-            "cwd": "${workspaceRoot}/bin"
+            "cwd": "${workspaceRoot}/test"
         },
         {
             "name": "flow-complex-gen",
@@ -26,7 +26,7 @@
                 "break onInvalidMemoryOperationError"
             ],
             "target": "flow-complex-gen",
-            "cwd": "${workspaceRoot}/complex-gen/bin",
+            "cwd": "${workspaceRoot}/bin",
             "arguments": "power -o ${workspaceRoot}/tmp/cfg/complex/power/1 -s 1 -a 200 -f"
         },
         {
@@ -40,7 +40,7 @@
                 "break onInvalidMemoryOperationError"
             ],
             "target": "flow-run",
-            "cwd": "${workspaceRoot}/run/bin",
+            "cwd": "${workspaceRoot}/bin",
             "arguments": "${workspaceRoot}/tmp/cfg/complex/power/1"
         },
         {
@@ -54,7 +54,7 @@
                 "break onInvalidMemoryOperationError"
             ],
             "target": "doc_introduction",
-            "cwd": "${workspaceRoot}/bin"
+            "cwd": "${workspaceRoot}/test"
         }
     ]
 }

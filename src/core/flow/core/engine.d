@@ -318,7 +318,6 @@ package final class Processor : StateMachine!ProcessorState {
             job.tick.exec();
         } catch (Throwable thr) {
             job.exception = thr;
-            Log.msg(LL.Fatal, "tasker failed to execute delegate", thr);
         }
 
         atomicSetUbyte(job.taskStatus, JobStatus.Done);
@@ -432,7 +431,7 @@ abstract class Tick {
                 this.ticker.run();
             } catch(Throwable thr2) {
                 // if even handling exception failes notify that an error occured
-                Log.msg(LL.Fatal, this.logPrefix~"handling error failed", thr2);
+                Log.msg(LL.Error, this.logPrefix~"handling error failed", thr2);
                 this.ticker.actual = null;
 
                 this.ticker.handle(thr2);

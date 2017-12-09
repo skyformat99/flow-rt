@@ -23,6 +23,8 @@ hive
 
 /bin
 /lib
+/ext
+/test
 
 # tmp/cfg
 tmp/cfg

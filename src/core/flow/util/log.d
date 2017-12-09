@@ -20,7 +20,7 @@ final class Log {
     public static immutable sep = newline~"--------------------------------------------------"~newline;
 
     /// chosen log level
-    public static LL logLevel = LL.Message | LL.Fatal | LL.Error | LL.Warning;
+    public shared static LL logLevel = LL.Message | LL.Fatal | LL.Error | LL.Warning;
 
     private static string get(string str) {
         if(str != string.init)
@@ -99,7 +99,7 @@ final class Log {
     public static void msg(DT)(LL level, string msg, Throwable thr, DT dIn) if(is(DT : Data) || (isArray!DT && is(ElementType!DT:Data))) {
         import std.traits : isArray;
 
-        if(level & logLevel) {
+        if(level <= logLevel) {
             string str = Log.get(msg);
             str ~= Log.get(thr);
             static if(isArray!DT) {
@@ -114,12 +114,14 @@ final class Log {
         import std.conv : to;
         import std.stdio : writeln;
 
-        auto str = "["~level.to!string~"] ";
-        str ~= msg;
+        if(level <= logLevel) {
+            auto str = "["~level.to!string~"] ";
+            str ~= msg;
 
-        synchronized {
-            writeln(str);
-            //flush();
+            synchronized {
+                writeln(str);
+                //flush();
+            }
         }
     }
 }

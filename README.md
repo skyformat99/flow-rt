@@ -12,7 +12,7 @@ Linux only
 * For Arch Linux and derivates `pacman -S dmd cmake`
 * `git clone --recursive https://github.com/RalphBariz/flow-rt.git`
 * `cd flow-rt`
-* `./build` or `cmake -DCMAKE_MODULE_PATH:PATH=$(pwd)/util/cmake-d/cmake-d && make && make test`
+* `./build`
 
 **RUN:**
 Dependent of the project you built, its binaries are located in a subfolder *bin* or *lib*
