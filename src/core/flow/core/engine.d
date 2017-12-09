@@ -708,7 +708,7 @@ private class Ticker : StateMachine!SystemState {
         import core.thread : Thread;
 
         while(this.state == SystemState.Ticking)
-            Thread.sleep(5.msecs);
+            Thread.sleep(10.msecs);
     }
 
     void freeze() {
@@ -738,7 +738,7 @@ private class Ticker : StateMachine!SystemState {
             case SystemState.Frozen:
                 // wait for executing tick to end if there is one
                 while(this.actual !is null)
-                    Thread.sleep(5.msecs);
+                    Thread.sleep(10.msecs);
                 break;
             default:
                 break;
@@ -1171,18 +1171,12 @@ abstract class Channel : ReadWriteMutex {
     }
 
     final bool handshake() {
-        import flow.data : unbin;
         import std.range : empty, front;
 
         // establish channel only if both side verifys
         if(this.reqVerify(this.auth)) { // authentication was accepted
             auto otherAuth = this.reqAuth();
             if(this.verify(otherAuth)) {
-                if(otherAuth is null) { // if peer is anonymous, create dummy info
-                    this._other = new JunctionInfo;
-                    this._other.space = dst;
-                } else this._other = otherAuth.unbin!JunctionInfo;
-
                 return true;
             }
         }
@@ -1191,20 +1185,28 @@ abstract class Channel : ReadWriteMutex {
     }
 
     final bool verify(/*w/o ref*/ ubyte[] auth) {
-        import flow.data : bin;
+        import flow.data : unbin;
         import std.range : empty;
         
         // own is not authenticating
         if(auth is null) {
-            if(this.own.meta.witnesses.empty || this.own.meta.key.empty)
+            if(this.own.meta.witnesses.empty || this.own.meta.key.empty) {
+                this._other = new JunctionInfo;
+                this._other.space = this._dst;
+                
                 return true;
+            }
         } else if(auth.length > sigLength) {
             auto sig = auth[0..sigLength];
             auto info = auth[sigLength..$];
 
-            return this.own.meta.witnesses.empty 
+            if(this.own.meta.witnesses.empty 
             || this.own.meta.key.empty
-            || this.sslAuth(sig, info);
+            || this.sslAuth(sig, info)) {
+                this._other = auth.unbin!JunctionInfo;
+
+                return true;
+            }
         }
         
         return false;
@@ -1245,13 +1247,18 @@ abstract class Channel : ReadWriteMutex {
     protected final bool pull(/*w/o ref*/ ubyte[] p, JunctionInfo info) {
         import flow.data : unbin;
 
-        return this.own.pull(p.unbin!Signal, info);
+        if(this._other !is null) // only if verified
+            return this.own.pull(p.unbin!Signal, info);
+        else return false;
     }
 
     private final bool push(Signal s) {
         import flow.data : bin;
-        auto pkg = s.bin;
-        return this.transport(pkg);
+
+        if(this._other !is null) { // only if verified
+            auto pkg = s.bin;
+            return this.transport(pkg);
+        } else return false;
     }
 
     /// requests other sides auth
@@ -2027,7 +2034,7 @@ unittest {
 
     spc.tick();
 
-    Thread.sleep(100.msecs);
+    Thread.sleep(10.msecs);
 
     spc.freeze();
 
@@ -2103,7 +2110,7 @@ unittest {
     Log.logLevel = LL.Message;
     spc.tick();
 
-    Thread.sleep(100.msecs);
+    Thread.sleep(50.msecs); // exceptionhandling takes quite a while
     Log.logLevel = origLL;
 
     assert(ec.state == SystemState.Frozen, "entity isn't frozen");
@@ -2187,7 +2194,7 @@ unittest {
 
     spc.tick();
 
-    Thread.sleep(100.msecs);
+    Thread.sleep(10.msecs);
 
     spc.freeze();
 

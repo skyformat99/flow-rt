@@ -253,9 +253,9 @@ void main() {
     rSpc.tick();
     sSpc.tick();
 
-    // wait 100 miliseconds it to finish
+    // wait 10 miliseconds it to finish
     // (it could wait for one or more spaces to freeze)
-    Thread.sleep(100.msecs);
+    Thread.sleep(10.msecs);
 
     // causes the processes to freeze
     rSpc.freeze();
