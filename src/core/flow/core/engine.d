@@ -1733,16 +1733,16 @@ class Space : StateMachine!SystemState {
     /// routes an unicast signal to receipting entities if its in this space
     private bool route(Unicast s, ushort level) {
         // if its a perfect match assuming process only accepted a signal for itself
-        if(this.state == SystemState.Ticking && s.dst.space == this.meta.id) {
-            synchronized(this.lock.reader) {
-                foreach(e; this.entities.values) {
-                    if(e.meta.level >= level) { // only accept if entities level is equal or higher the one of the junction
-                        if(e.meta.ptr == s.dst)
-                            return e.receipt(s);
+        synchronized(this.lock.reader)
+            if(this.state == SystemState.Ticking)
+                if(s.dst.space == this.meta.id) {
+                    foreach(e; this.entities.values) {
+                        if(e.meta.level >= level) { // only accept if entities level is equal or higher the one of the junction
+                            if(e.meta.ptr == s.dst)
+                                return e.receipt(s);
+                        }
                     }
                 }
-            }
-        }
         
         return false;
     }
@@ -2252,16 +2252,20 @@ unittest {
 
     auto group = randomUUID;
     auto ems = sm.addEntity("sending", fqn!TestSendingContext, fqn!TestSendingConfig);
+
+    /* first the receiving entity should come up
+    (order of entries in space equals order of starting ticking) */
+    auto emr = sm.addEntity("receiving", fqn!TestReceivingContext);
+    emr.addReceptor(fqn!TestUnicast, fqn!UnicastReceivingTestTick);
+    emr.addReceptor(fqn!TestAnycast, fqn!AnycastReceivingTestTick);
+    emr.addReceptor(fqn!TestMulticast, fqn!MulticastReceivingTestTick);
+
+    // then it can send
     ems.config.as!TestSendingConfig.dstEntity = "receiving";
     ems.config.as!TestSendingConfig.dstSpace = spcDomain;
     ems.addTick(fqn!UnicastSendingTestTick, group);
     ems.addTick(fqn!AnycastSendingTestTick, group);
     ems.addTick(fqn!MulticastSendingTestTick, group);
-
-    auto emr = sm.addEntity("receiving", fqn!TestReceivingContext);
-    emr.addReceptor(fqn!TestUnicast, fqn!UnicastReceivingTestTick);
-    emr.addReceptor(fqn!TestAnycast, fqn!AnycastReceivingTestTick);
-    emr.addReceptor(fqn!TestMulticast, fqn!MulticastReceivingTestTick);
 
     auto spc = proc.add(sm);
 
@@ -2273,17 +2277,19 @@ unittest {
 
     auto nsm = spc.snap();
 
-    assert(nsm.entities[1].context.as!TestReceivingContext.unicast !is null, "didn't get test unicast");
-    assert(nsm.entities[1].context.as!TestReceivingContext.anycast !is null, "didn't get test anycast");
-    assert(nsm.entities[1].context.as!TestReceivingContext.multicast !is null, "didn't get test multicast");
+    auto rCtx = nsm.entities[1].context.as!TestReceivingContext;
+    assert(rCtx.unicast !is null, "didn't get test unicast");
+    assert(rCtx.anycast !is null, "didn't get test anycast");
+    assert(rCtx.multicast !is null, "didn't get test multicast");
 
-    assert(nsm.entities[0].context.as!TestSendingContext.unicast, "didn't confirm test unicast");
-    assert(nsm.entities[0].context.as!TestSendingContext.anycast, "didn't confirm test anycast");
-    assert(nsm.entities[0].context.as!TestSendingContext.multicast, "didn't confirm test multicast");
+    auto sCtx = nsm.entities[0].context.as!TestSendingContext;
+    assert(sCtx.unicast, "didn't confirm test unicast");
+    assert(sCtx.anycast, "didn't confirm test anycast");
+    assert(sCtx.multicast, "didn't confirm test multicast");
 
-    assert(nsm.entities[1].context.as!TestReceivingContext.unicast.group == group, "unicast didn't pass group");
-    assert(nsm.entities[1].context.as!TestReceivingContext.anycast.group == group, "anycast didn't pass group");
-    assert(nsm.entities[1].context.as!TestReceivingContext.multicast.group == group, "multicast didn't pass group");
+    assert(rCtx.unicast.group == group, "unicast didn't pass group");
+    assert(rCtx.anycast.group == group, "anycast didn't pass group");
+    assert(rCtx.multicast.group == group, "multicast didn't pass group");
 }
 
 /*
