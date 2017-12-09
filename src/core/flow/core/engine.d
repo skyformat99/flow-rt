@@ -1172,6 +1172,11 @@ private class Crypto {
         OPENSSL_config(null);
     }
 
+    /* shared static ~this {
+        EVP_cleanup();
+        ERR_free_strings();
+    }*/
+
     this(string path) {
         this.path = path;
 
