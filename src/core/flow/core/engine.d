@@ -1140,9 +1140,66 @@ private enum JunctionState {
     Attached
 }
 
-abstract class Channel : ReadWriteMutex {
-    const size_t sigLength = 64;
+struct CryptoCipher {
+    import std.datetime.systime : SysTime;
 
+    SysTime until;
+    ubyte[] data;
+}
+
+private class Crypto {
+    import core.time;
+
+    static const size_t sigLength = 32; // SHA256
+    static const Duration cipherVality = 10.minutes;
+
+    string path;
+    ubyte[] key;
+
+    private CryptoCipher[string] ciphers;
+
+    /// get public key from private key
+    @property ubyte[] cert() {return null;}
+
+    this(string path) {
+        this.path = path;
+
+        // TODO load key from given path if existing
+    }
+
+    /// check certificate against authorities
+    bool check(ubyte[] cert) {return false;}
+
+    /** signs data using private key
+    returns signature if there is a key */
+    ubyte[] sign(ubyte[] data) {return null;}
+
+    /** verifies sig of data using given certificate
+    returns contained data or null */
+    bool verify(ubyte[] data, ubyte[] sig, ubyte[] cert) {return false;}
+
+    /** encrypting by symmetric cipher for cert
+    whichs key is encrypted using public key
+    returns [encrypted symkey]~[encrypted data]*/
+    ubyte[] encrypt(ubyte[] data, ubyte[] cert, string dst) {return null;}
+
+    /// decrypts encrypted data returning its plain bytes unless there is a key
+    ubyte[] decrypt(ubyte[] data) {return null;}
+
+    /// get cipher for destination
+    private ubyte[] get(string dst) {
+        import std.datetime.systime : Clock;
+
+        if(dst in this.ciphers && this.ciphers[dst].until > Clock.currTime)
+            return this.ciphers[dst].data;
+        else {
+            // TODO create a cipher 
+            return null;
+        }
+    }
+}
+
+abstract class Channel : ReadWriteMutex {
     private string _dst;
     private Junction _own;
     private JunctionInfo _other;
@@ -1157,7 +1214,10 @@ abstract class Channel : ReadWriteMutex {
             import flow.data : bin;
 
             auto auth = this.own.meta.info.bin;
-            this._auth = this.sslSign(auth)~auth;
+            if(this.own.meta.key == string.init)
+                this._auth = ubyte.min~auth;
+            else
+                this._auth = ubyte.max~this.own.crypto.sign(auth)~auth;
         }
 
         return this._auth;
@@ -1167,13 +1227,7 @@ abstract class Channel : ReadWriteMutex {
         this._dst = dst;
         this._own = own;
 
-        this.sslInit();
-
         super(ReadWriteMutex.Policy.PREFER_WRITERS);
-    }
-
-    shared static this() {        
-        // TODO SSL INIT
     }
 
     final bool handshake() {
@@ -1192,7 +1246,7 @@ abstract class Channel : ReadWriteMutex {
 
     final bool verify(/*w/o ref*/ ubyte[] auth) {
         import flow.data : unbin;
-        import std.range : empty;
+        import std.range : empty, front;
         
         // own is not authenticating
         if(auth is null) {
@@ -1202,15 +1256,16 @@ abstract class Channel : ReadWriteMutex {
                 
                 return true;
             }
-        } else if(auth.length > sigLength) {
-            auto sig = auth[0..sigLength];
-            auto info = auth[sigLength..$];
+        } else if(auth.length > Crypto.sigLength) {
+            auto isSigned = auth.front == ubyte.max;
+            auto sig = isSigned ? auth[1..Crypto.sigLength] : null;
+            auto infoData = auth[(isSigned ? Crypto.sigLength : 0)+1..$];
+            auto info = infoData.unbin!JunctionInfo;
+            auto sigOk = isSigned ? this.own.crypto.verify(infoData, sig, info.cert) : true;
+            auto checkOk = !info.cert.empty ? this.own.crypto.check(info.cert) : false;
 
-            if(!this.own.meta.info.verifying
-            || this.own.meta.key.empty
-            || this.sslVerify(sig, info)) {
-                this._other = auth.unbin!JunctionInfo;
-
+            if(sigOk && (!this.own.meta.info.verifying || checkOk)){
+                this._other = info;
                 return true;
             }
         }
@@ -1220,11 +1275,10 @@ abstract class Channel : ReadWriteMutex {
 
     /// encrypts package
     private ubyte[] encrypt(ubyte[] pb, JunctionInfo info) {
-        if(this.own.meta.info.encrypting) {
-            auto cpb = (ubyte[]).init;
-            // TODO
-            return ubyte.max~cpb;
-        } else return ubyte.min~pb;
+        if(this.own.meta.info.encrypting)
+            return ubyte.max~this.own.crypto.encrypt(pb, info.cert, info.space);
+        else
+            return ubyte.min~pb;
     }
 
     /// decrypts package
@@ -1232,10 +1286,9 @@ abstract class Channel : ReadWriteMutex {
         import flow.util : as;
         import std.range : front;
 
-        if(cpb.front) { // if its marked as encrypted
-            // TODO
-            return (ubyte[]).init;
-        } else
+        if(cpb.front) // if its marked as encrypted
+            return this.own.crypto.decrypt(cpb[1..$]);
+        else
             return cpb[1..$]; // if not encrypted its clear bin
     }
 
@@ -1254,29 +1307,6 @@ abstract class Channel : ReadWriteMutex {
             auto pkg = s.bin;
             return this.transport(pkg);
         } else return false;
-    }
-
-    private bool sslInit() {
-        import std.range : empty;
-
-        // there is a key? pubkey has to be generated
-        // it is encrypting? outgoning signals have to be encrypted using peer's pub key
-        // it is verifying? peers have to be authenticated against system's known CA's
-        if(!this.own.meta.key.empty || this.own.meta.info.encrypting || this.own.meta.info.verifying) {
-            // TODO
-            return false;
-        } else return true;
-    }
-
-    /// if successful returns the deserialized JunctionInfo otherwise null 
-    private bool sslVerify(ubyte[] sig, ubyte[] data) {
-        // TODO
-        return false;
-    }
-
-    private ubyte[] sslSign(ubyte[] data) {
-        // TODO
-        return (ubyte[]).init;
     }
 
     /// requests other sides auth
@@ -1299,6 +1329,7 @@ abstract class Junction : StateMachine!JunctionState {
     private JunctionMeta _meta;
     private Space _space;
     private string[] destinations;
+    private Crypto crypto;
 
     protected @property JunctionMeta meta() {return this._meta;}
     @property string space() {return this._space.meta.id;}
@@ -1313,6 +1344,18 @@ abstract class Junction : StateMachine!JunctionState {
             this.detach();
     }
 
+    private bool initCrypto() {
+        this.crypto = new Crypto(this.meta.key);
+        return true;
+    }
+
+    private void deinitCrypto() {
+        if(this.crypto !is null) {
+            this.crypto.destroy;
+            this.crypto = null;
+        }
+    }
+
     private void attach() {
         this.state = JunctionState.Attached;
     }
@@ -1324,7 +1367,7 @@ abstract class Junction : StateMachine!JunctionState {
     override protected final bool onStateChanging(JunctionState o, JunctionState n) {
         switch(n) {
             case JunctionState.Attached:
-                return o == JunctionState.Detached && this.up();
+                return o == JunctionState.Detached && this.initCrypto() && this.up();
             case JunctionState.Detached:
                 return o == JunctionState.Attached;
             default: return false;
@@ -1334,7 +1377,10 @@ abstract class Junction : StateMachine!JunctionState {
     override protected final void onStateChanged(JunctionState o, JunctionState n) {
         switch(n) {
             case JunctionState.Detached:
-            if(this.meta) this.down();
+            if(this.meta) {
+                this.down();
+                this.deinitCrypto();
+            }
             break;
             default: break;
         }

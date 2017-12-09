@@ -98,8 +98,8 @@ class JunctionMeta : Data {
     mixin field!(string, "type");
     mixin field!(ushort, "level");
 
-    /// private/public RSA key (no key disables encryption and authentication)
-    mixin array!(ubyte, "key");
+    /// path to private RSA key (no key disables encryption and authentication)
+    mixin field!(string, "key");
 }
 
 /// metadata of an entity
