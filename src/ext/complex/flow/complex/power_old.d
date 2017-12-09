@@ -15,7 +15,7 @@ class Actuality : Data {
     mixin data;
 
     mixin field!(double, "power");
-    mixin array!(Relation, "relations");
+    mixin field!(Relation[], "relations");
 }
 
 /// signals an act of power

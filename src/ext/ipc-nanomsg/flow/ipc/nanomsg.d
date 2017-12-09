@@ -25,7 +25,7 @@ class MeshJunctionMeta : JunctionMeta {
 
     mixin data;
 
-    mixin array!(string, "known");
+    mixin field!(string[], "known");
 }
 
 /// junction allowing direct signalling between spaces hosted in same process

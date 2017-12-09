@@ -1158,7 +1158,7 @@ private class Crypto {
     RSA* _key;
     RSA* _cert;
 
-    string path;
+    ubyte[] key;
 
     private CryptoCipher[string] ciphers;
 
@@ -1177,8 +1177,8 @@ private class Crypto {
         ERR_free_strings();
     }*/
 
-    this(string path) {
-        this.path = path;
+    this(ubyte[] key) {
+        this.key = key;
 
         // TODO load key from given path if existing
     }

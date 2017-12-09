@@ -55,10 +55,10 @@ class SpaceMeta : Data {
     mixin field!(size_t, "worker");
 
     /// junctions allow signals to get shipped across spaces
-    mixin array!(JunctionMeta, "junctions");
+    mixin field!(JunctionMeta[], "junctions");
 
     /// entities of space
-    mixin array!(EntityMeta, "entities");
+    mixin field!(EntityMeta[], "entities");
 }
 
 /// info of a junction
@@ -69,7 +69,7 @@ class JunctionInfo : IdData {
     mixin field!(string, "space");
 
     /// public RSA certificate (set by junction itself from private key)
-    mixin array!(ubyte, "cert");
+    mixin field!(ubyte[], "cert");
 
     /// indicates if junction is verifying peers
     mixin field!(bool, "verifying");
@@ -99,7 +99,7 @@ class JunctionMeta : Data {
     mixin field!(ushort, "level");
 
     /// path to private RSA key (no key disables encryption and authentication)
-    mixin array!(ubyte, "key");
+    mixin field!(ubyte[], "key");
 }
 
 /// metadata of an entity
@@ -110,12 +110,12 @@ class EntityMeta : Data {
     mixin field!(Data, "config");
     mixin field!(Data, "context");
     mixin field!(ushort, "level");
-    mixin array!(Event, "events");
-    mixin array!(Receptor, "receptors");
+    mixin field!(Event[], "events");
+    mixin field!(Receptor[], "receptors");
 
-    mixin array!(TickMeta, "ticks");
+    mixin field!(TickMeta[], "ticks");
 
-    mixin array!(Damage, "damages");
+    mixin field!(Damage[], "damages");
 }
 
 /// referencing a specific entity 

@@ -30,7 +30,7 @@ class TestSendingConfig : Data {
     /* creates an array "foo" of string[] type
     however is is not required for this certain scenario */
     /// for sure you should document the array too
-    mixin array!(string, "foo");
+    mixin field!(string[], "foo");
 }
 
 /// context/memory of the sending entity

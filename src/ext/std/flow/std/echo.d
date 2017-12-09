@@ -23,5 +23,5 @@ class Pong : Unicast {
     mixin data;
 
     mixin field!(EntityPtr, "ptr");
-    mixin array!(string, "signals");
+    mixin field!(string[], "signals");
 }

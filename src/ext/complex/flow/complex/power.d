@@ -23,7 +23,7 @@ class Actuality : Data {
     mixin field!(size_t, "power");
 
     /// relations of entity
-    mixin array!(Relation, "relations");
+    mixin field!(Relation[], "relations");
 }
 
 /// signals an act of power

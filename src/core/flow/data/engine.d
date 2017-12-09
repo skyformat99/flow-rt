@@ -180,7 +180,7 @@ mixin template data() {
 
 /// mixin creating a data field
 mixin template field(T, string __name)
-if (canHandle!T) {
+if (canHandle!T && (!isArray!T || is(T==string))) {
     debug(data) pragma(msg, "\t\t"~T.stringof~" "~__name);
 
     shared static this() {
@@ -222,10 +222,15 @@ if (canHandle!T) {
     mixin(T.stringof~" "~__name~";");
 }
 
+import std.range : ElementType;
 /// mixin creating a data array
-mixin template array(T, string __name)
-if (canHandle!T) {
-    debug(data) pragma(msg, "\t\t"~T.stringof~"[] "~__name);
+mixin template field(AT, string __name,  T = ElementType!AT)
+if(
+    isArray!AT &&
+    canHandle!(ElementType!AT) &&
+    !is(AT == string)
+) {
+    debug(data) pragma(msg, "\t\t"~AT.stringof~" "~__name);
 
     shared static this() {
         import flow.data.engine : Data, PropertyInfo, TPropertyHelper;
@@ -457,17 +462,17 @@ version (unittest) class TestData : Data {
     mixin field!(string, "text");
 
     // testing array fields
-    mixin array!(TestData, "innerA");
-    mixin array!(bool, "booleanA");
-    mixin array!(long, "integerA");
-    mixin array!(ulong, "uintegerA");
-    mixin array!(double, "floatingA");
-    mixin array!(TestEnum, "enumerationA");
-    mixin array!(UUID, "uuidA");
-    mixin array!(SysTime, "sysTimeA");
-    mixin array!(DateTime, "dateTimeA");
-    mixin array!(Duration, "durationA");
-    mixin array!(string, "textA");
+    mixin field!(TestData[], "innerA");
+    mixin field!(bool[], "booleanA");
+    mixin field!(long[], "integerA");
+    mixin field!(ulong[], "uintegerA");
+    mixin field!(double[], "floatingA");
+    mixin field!(TestEnum[], "enumerationA");
+    mixin field!(UUID[], "uuidA");
+    mixin field!(SysTime[], "sysTimeA");
+    mixin field!(DateTime[], "dateTimeA");
+    mixin field!(Duration[], "durationA");
+    mixin field!(string[], "textA");
 
     // testing for module name conflicts
     mixin field!(string, "name");
@@ -475,10 +480,10 @@ version (unittest) class TestData : Data {
 
     // nan != nan
     mixin field!(double, "nan");
-    mixin array!(double, "nanA");
+    mixin field!(double[], "nanA");
 
     // ubyte[] json as base64
-    mixin array!(ubyte, "ubyteA");
+    mixin field!(ubyte[], "ubyteA");
 }
 
 version(unittest) class InheritedTestData : TestData {
