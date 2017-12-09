@@ -1,5 +1,8 @@
 module flow.core.engine;
 
+pragma(lib, "ssl");
+pragma(lib, "crypto");
+
 private import core.thread;
 private import core.sync.rwmutex;
 private import flow.core.data;
