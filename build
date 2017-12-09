@@ -29,8 +29,8 @@ mkdir -p $rootDir/bin
 mkdir -p $rootDir/tst
 mkdir -p $rootDir/lib
 
-export LIBRARY_PATH=$rootDir/lib:$rootDir/ext:LIBRARY_PATH
-export LD_LIBRARY_PATH=$rootDir/lib:$rootDir/ext:LD_LIBRARY_PATH
+export LIBRARY_PATH=/usr/lib:$rootDir/lib:$rootDir/ext
+export LD_LIBRARY_PATH=/usr/lib:$rootDir/lib:$rootDir/ext
 
 function buildOpenSSL {
     cd $rootDir/src/lib/openssl &&
@@ -39,8 +39,8 @@ function buildOpenSSL {
     echo "BUILDING lib/libopenssl.so ..." &&
     $dc $defBuildParams -ofbuild/libopenssl.o $(find ./deimos -name "*.d") &&
 
-    echo "LINKING lib/libnanomsg-wrapper.so ..." &&
-    $dc $defLinkParams -L-L/usr/lib -of$rootDir/lib/libopenssl.so build/libopenssl.o -shared
+    echo "LINKING lib/libopenssl.so ..." &&
+    $dc $defLinkParams -L-lssl -L-lcrypto -of$rootDir/lib/libopenssl.so build/libopenssl.o -shared
 }
 
 function buildNanoMsg {
@@ -62,7 +62,7 @@ function buildCore {
     $dc $defBuildParams -Hd=$rootDir/ifc/core -I$rootDir/src/lib/openssl -ofbuild/libflow-core.o $(find ./ -name "*.d") &&
 
     echo "LINKING lib/libflow-core..." &&
-    $dc $defLinkParams -L-l:libopenssl.so -of$rootDir/lib/libflow-core.so build/libflow-core.o -shared
+    $dc $defLinkParams -L-lssl -L-lcrypto -L-l:libopenssl.so -of$rootDir/lib/libflow-core.so build/libflow-core.o -shared
 }
 
 function testCore {
@@ -75,6 +75,7 @@ function testCore {
     echo "LINKING tst/libflow-core-test..." &&
     $dc $defLinkParams $testLinkParams -L-l:libopenssl.so -of$rootDir/tst/test-libflow-core build/libflow-core-test.o &&
 
+    echo "TESTING tst/libflow-core-test..." &&
     $rootDir/tst/test-libflow-core
 }
 
@@ -99,6 +100,7 @@ function testExt {
     echo "LINKING tst/test-libflow-$1..." &&
     $dc $defLinkParams $flowLinkParams $testLinkParams -of$rootDir/tst/test-libflow-$1 build/libflow-$1-test.o $3 &&#${@:2} &&
 
+    echo "TESTING tst/test-libflow-$1..." &&
     $rootDir/tst/test-libflow-$1
 }
 
@@ -123,22 +125,30 @@ function testBin {
     echo "LINKING $1-test..." &&
     $dc $defLinkParams $flowLinkParams $testLinkParams -of$rootDir/tst/test-flow-$1 build/flow-$1-test.o ${@:2} &&
 
+    echo "TESTING $1-test......" &&
     $rootDir/tst/test-flow-$1
 }
 
+# LIBRARIES
 buildOpenSSL &&
 buildNanoMsg &&
 
+# CORE
 buildCore &&
+testCore &&
+
+# EXTENSIONS
 buildExt ipc-nanomsg -I$rootDir/src/lib/nanomsg -L-l:libnanomsg.so &&
-#buildBin run &&
+testExt ipc-nanomsg -I$rootDir/src/lib/nanomsg -L-l:libnanomsg.so &&
 
 buildExt complex &&
-#buildBin complex-gen -L-l:libflow-complex.so &&
+testExt complex &&
 
-testCore &&
-testExt ipc-nanomsg -I$rootDir/src/lib/nanomsg -L-l:libnanomsg.so &&
+# BINARIES
+buildBin complex-gen -L-l:libflow-complex.so &&
+#testBin complex-gen -L-l:libflow-complex.so &&
+
+buildBin run &&
 #testBin run &&
 
-testExt complex #&&
-#testBin complex-gen -L-l:libflow-complex.so
+exit
