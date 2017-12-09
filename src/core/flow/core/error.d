@@ -20,4 +20,6 @@ class ProcessException : FlowException {mixin exception;}
 /// exception indicating something went wrong in junction
 class JunctionException : FlowException {mixin exception;}
 
-class SslContextInitException : FlowException {mixin exception;}
+class CryptoInitException : FlowException {mixin exception;}
+
+class CryptoException : FlowException {mixin exception;}

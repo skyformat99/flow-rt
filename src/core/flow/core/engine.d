@@ -1139,14 +1139,14 @@ private enum JunctionState {
     Attached
 }
 
-struct CryptoCipher {
+struct Cipher {
     import std.datetime.systime : SysTime;
 
     SysTime until;
     ubyte[] data;
 }
 
-private class Crypto {
+private final class Crypto {
     import core.time;
     import deimos.openssl.conf;
     import deimos.openssl.evp;
@@ -1155,15 +1155,13 @@ private class Crypto {
     static const size_t sigLength = 32; // SHA256
     static const Duration cipherVality = 10.minutes;
 
-    RSA* _key;
-    RSA* _cert;
+    private RSA* _key;
+    private RSA* _crt;
 
-    ubyte[] key;
+    private ubyte[] crt;
+    private ubyte[] key;
 
-    private CryptoCipher[string] ciphers;
-
-    /// get public key from private key
-    @property ubyte[] cert() {return null;}
+    private Cipher[string] ciphers;
 
     shared static this() {
         // initializing ssl
@@ -1177,14 +1175,49 @@ private class Crypto {
         ERR_free_strings();
     }*/
 
-    this(ubyte[] key) {
-        this.key = key;
+    this(ubyte[] key, ubyte[] crt) {
+        import flow.core.error : CryptoInitException;
 
-        // TODO load key from given path if existing
+        this.key = key;
+        this.crt = crt;
+
+        this._key = this.loadKey(key);
+        this._crt = this.loadCrt(crt);
+    }
+
+    RSA* loadKey(ubyte[] key) {
+        import deimos.openssl.pem;
+        import std.conv : to;
+
+        if(key !is null) {
+            BIO* bio = BIO_new_mem_buf(key.ptr.as!(void*), key.length.to!int);
+            //BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL);
+            scope(exit) BIO_free(bio);
+
+            return PEM_read_bio_RSAPrivateKey(bio, null, null, null);
+        }
+
+        return null;
+    }
+
+    RSA* loadCrt(ubyte[] crt) {
+        import deimos.openssl.pem;
+        import std.conv : to;
+
+        // for security reasons certificate first
+        if(crt !is null) {
+            BIO* bio = BIO_new_mem_buf(crt.ptr.as!(void*), crt.length.to!int);
+            //BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL);
+            scope(exit) BIO_free(bio);
+
+            return PEM_read_bio_RSAPublicKey(bio, null, null, null);
+        }
+
+        return null;
     }
 
     /// check certificate against authorities
-    bool check(ubyte[] cert) {return false;}
+    bool check(ubyte[] crt) {return false;}
 
     /** signs data using private key
     returns signature if there is a key */
@@ -1192,18 +1225,39 @@ private class Crypto {
 
     /** verifies sig of data using given certificate
     returns contained data or null */
-    bool verify(ubyte[] data, ubyte[] sig, ubyte[] cert) {return false;}
+    bool verify(ubyte[] data, ubyte[] sig, ubyte[] crt) {return false;}
 
-    /** encrypting by symmetric cipher for cert
+    /// encrypts a cipher for receiver
+    ubyte[] encryptCipher(Cipher c, ubyte[] crtData) {
+        import flow.core.error : CryptoException;
+        import std.conv : to;
+
+        RSA* crt = this.loadCrt(crtData);
+        scope(exit) RSA_free(crt);
+        if(crt !is null) {
+            ubyte[] cc = new ubyte[c.data.length];
+            if(RSA_public_encrypt(c.data.length.to!int, c.data.ptr, cc.ptr, crt, RSA_NO_PADDING) == -1)
+                throw new CryptoException("couldn't encrypt cipher");
+
+            return cc;
+        } else throw new CryptoException("couldn't load receivers certificate");
+    }
+
+    Cipher decryptCipher(ubyte[] cc) {
+        // TODO https://www.youtube.com/watch?v=uwzWVG_LDGA 25:58
+        return Cipher();
+    }
+
+    /** encrypting by symmetric cipher for certificate
     whichs key is encrypted using public key
     returns [encrypted symkey]~[encrypted data]*/
-    ubyte[] encrypt(ubyte[] data, ubyte[] cert, string dst) {return null;}
+    ubyte[] encrypt(ubyte[] data, ubyte[] crt, string dst) {return null;}
 
     /// decrypts encrypted data returning its plain bytes unless there is a key
     ubyte[] decrypt(ubyte[] data) {return null;}
 
     /// get cipher for destination
-    private ubyte[] get(string dst) {
+    ubyte[] get(string dst) {
         import std.datetime.systime : Clock;
 
         if(dst in this.ciphers && this.ciphers[dst].until > Clock.currTime)
@@ -1275,8 +1329,8 @@ abstract class Channel : ReadWriteMutex {
             auto sig = isSigned ? auth[1..Crypto.sigLength] : null;
             auto infoData = auth[(isSigned ? Crypto.sigLength : 0)+1..$];
             auto info = infoData.unbin!JunctionInfo;
-            auto sigOk = isSigned ? this.own.crypto.verify(infoData, sig, info.cert) : true;
-            auto checkOk = !info.cert.empty ? this.own.crypto.check(info.cert) : false;
+            auto sigOk = isSigned ? this.own.crypto.verify(infoData, sig, info.crt) : true;
+            auto checkOk = !info.crt.empty ? this.own.crypto.check(info.crt) : false;
 
             if(sigOk && (!this.own.meta.info.verifying || checkOk)){
                 this._other = info;
@@ -1290,7 +1344,7 @@ abstract class Channel : ReadWriteMutex {
     /// encrypts package
     private ubyte[] encrypt(ubyte[] pb, JunctionInfo info) {
         if(this.own.meta.info.encrypting)
-            return ubyte.max~this.own.crypto.encrypt(pb, info.cert, info.space);
+            return ubyte.max~this.own.crypto.encrypt(pb, info.crt, info.space);
         else
             return ubyte.min~pb;
     }
@@ -1359,7 +1413,7 @@ abstract class Junction : StateMachine!JunctionState {
     }
 
     private bool initCrypto() {
-        this.crypto = new Crypto(this.meta.key);
+        this.crypto = new Crypto(this.meta.key, this.meta.crt);
         return true;
     }
 
