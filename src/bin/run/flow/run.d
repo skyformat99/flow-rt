@@ -138,7 +138,7 @@ void run(string confDir, string libDir) {
     //auto cnt = 0;
     // watiting for sigint (ctrl+c)
     while(!stopped/* && cnt < 100*/) {
-        Thread.sleep(100.msecs);
+        Thread.sleep(5.msecs);
         //cnt++;
     }
 

@@ -1165,13 +1165,15 @@ private class Crypto {
     /// get public key from private key
     @property ubyte[] cert() {return null;}
 
-    this(string path) {
-        this.path = path;
-
+    shared static this() {
         // initializing ssl
         ERR_load_CRYPTO_strings();
         OpenSSL_add_all_algorithms();
         OPENSSL_config(null);
+    }
+
+    this(string path) {
+        this.path = path;
 
         // TODO load key from given path if existing
     }
@@ -2105,7 +2107,7 @@ unittest {
 
     spc.tick();
 
-    Thread.sleep(20.msecs);
+    Thread.sleep(5.msecs);
 
     spc.freeze();
 
@@ -2181,7 +2183,7 @@ unittest {
     Log.logLevel = LL.Message;
     spc.tick();
 
-    Thread.sleep(50.msecs); // exceptionhandling takes quite a while
+    Thread.sleep(5.msecs); // exceptionhandling takes quite a while
     Log.logLevel = origLL;
 
     assert(ec.state == SystemState.Frozen, "entity isn't frozen");
@@ -2265,7 +2267,7 @@ unittest {
 
     spc.tick();
 
-    Thread.sleep(20.msecs);
+    Thread.sleep(5.msecs);
 
     spc.freeze();
 

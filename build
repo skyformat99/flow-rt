@@ -144,6 +144,24 @@ function testBin {
     return $ret
 }
 
+function testDoc {
+    ret=-1
+    cd $rootDir/doc/src/ &&
+    mkdir -p build &&
+
+    echo "BUILDING doc_$1..." &&
+    $dc -ofbuild/doc_$1.o $1 $defBuildParams $flowBuildParams $2 &&
+
+    echo "LINKING doc_$1..." &&
+    $ld -of$rootDir/test/doc_$1 build/doc_$1.o $defLinkParams $flowLinkParams ${@:3} &&
+    ret=0 &&
+
+    echo "TESTING doc_$1..." &&
+    $rootDir/test/doc_$1
+
+    return $ret
+}
+
 # LIBRARIES
 buildOpenSSL &&
 buildNanoMsg &&
@@ -165,5 +183,7 @@ buildBin complex-gen -I$rootDir/ifc/ext/complex -L-l:libflow-complex.so &&
 
 buildBin run &&
 #testBin run &&
+
+testDoc introduction.d &&
 
 exit

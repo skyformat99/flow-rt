@@ -122,7 +122,7 @@ class Exist : Tick {
 
         if(sleep) {
             debug(tick) this.msg(LL.Debug, "Exist::run: sleeping");
-            Thread.sleep(20.msecs);
+            Thread.sleep(5.msecs);
         }
         else
             debug(tick) this.msg(LL.Debug, "Exist::run: not sleeping");
