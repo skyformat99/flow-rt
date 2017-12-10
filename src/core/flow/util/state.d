@@ -1,6 +1,7 @@
 module flow.util.state;
 
 private import flow.util.error;
+version(unittest) private static import test = flow.util.test;
 private import std.traits;
 
 /// thrown when state machine detects an invalid state for operation
@@ -175,10 +176,7 @@ version(unittest) {
     }
 }
 
-unittest {
-    import std.stdio : writeln;
-    writeln("testing state machine");
-
+unittest { test.header("TEST util.state: state machine");
     auto t = new TestStateMachine;
     assert(t.state1Set, "initial state change wasn't executed");
     
@@ -209,4 +207,4 @@ unittest {
     assert(t.checkIllegalState(TestState.State1), "illegal state check didn't cause expected exception");
     assert(t.checkIllegalState(TestState.State2), "illegal state check didn't cause expected exception");
     assert(t.checkState(TestState.State3), "couldn't check for valid state");
-}
+test.footer(); }

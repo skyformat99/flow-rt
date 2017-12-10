@@ -3,6 +3,7 @@ module flow.data.engine;
 private import std.variant;
 private import std.range;
 private import std.traits;
+private import flow.util;
 
 /// checks if data engine can handle a certain data type
 template canHandle(T) {
@@ -492,11 +493,8 @@ version(unittest) class InheritedTestData : TestData {
     mixin field!(string, "additional");
 }
 
-unittest {
+unittest { test.header("TEST data.engine: static data usage");
     import std.range : empty;
-    import std.stdio : writeln;
-
-    writeln("testing static data usage");
     
     auto d = new InheritedTestData;
     assert(d !is null, "could not statically create instance of data");
@@ -518,12 +516,10 @@ unittest {
     d.enumerationA = [TestEnum.Bar]; assert(d.enumerationA.length == 1 && d.enumerationA[0] == TestEnum.Bar, "could not set array enum value");
     d.additional = "ble"; assert(d.additional == "ble", "could not set second level basic scalar");
     d.nanA ~= double.nan; assert(d.nanA.length == 1 && d.nanA[0] is double.nan, "could not set second level basic scalar");
-}
+test.footer(); }
 
-unittest {
+unittest { test.header("TEST data.engine: clone and == of data and member");
     import flow.util.templates : as;
-    import std.stdio : writeln;
-    writeln("testing clone and == of data and member");
 
     auto d = new InheritedTestData;
     d.uinteger = 5;
@@ -553,4 +549,4 @@ unittest {
     assert(d2.additional == "ble", "could not clone basic scalar value");
 
     assert(d == d2, "clones don't ==");
-}
+test.footer(); }

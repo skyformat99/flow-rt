@@ -1,6 +1,7 @@
 module flow.data.dynamic;
 
 private import flow.data.engine;
+private import flow.util;
 private import std.range;
 private import std.traits;
 private import std.variant;
@@ -127,13 +128,10 @@ if(
     return d.set(name, Variant(cast(OriginalType!(ElementType!T)[])val));
 }
 
-unittest {
+unittest { test.header("TEST data.dynamic: dynamic data usage");
     import flow.data.engine : createData, TestData, InheritedTestData, TestEnum;
     import flow.util.templates : as;
     import std.range : empty;
-    import std.stdio : writeln;
-
-    writeln("testing dynamic data usage");
 
     auto d = "flow.data.engine.InheritedTestData".createData().as!InheritedTestData;
     assert(d !is null, "could not dynamically create instance of data");
@@ -173,4 +171,4 @@ unittest {
     
     assert(d.set("nanA", [double.nan]) && d.nanA.length == 1 && d.nanA[0] is double.nan, "could not set array data value");
     assert(d.get!(double[])("nanA")[0] is double.nan, "could not get array data value");
-}
+test.footer(); }

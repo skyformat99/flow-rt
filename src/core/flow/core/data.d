@@ -104,8 +104,20 @@ class JunctionMeta : Data {
     /// path to private RSA key (no key disables encryption and authentication)
     mixin field!(string, "key");
 
-    /// type of cipher to use for encryption
+    /** type of cipher to use for encryption
+    default AES256
+    available
+    - AES128
+    - AES256
+    - AESGCM*/
     mixin field!(string, "cipher");
+
+    /** type of cipher to use for encryption
+    default SHA256
+    available
+    - SHA
+    - SHA256*/
+    mixin field!(string, "hash");
 }
 
 /// metadata of an entity

@@ -2,6 +2,31 @@
     "version": "0.2.0",
 
     "configurations": [
+
+        /*{
+            "name": "flow-core",
+            "type": "cppdbg",
+            "request": "launch",
+            "targetArchitecture": "x64",
+            "program": "${workspaceRoot}/test/test_flow-core",
+            "args": [ ],
+            "cwd": "${workspaceRoot}/test",
+            "stopAtEntry": false,
+            "externalConsole": true,
+            "linux": {
+                "MIMode": "gdb",
+                "environment": [{
+                    "name":"LD_LIBRARY_FLAGS", "value":"/usr/lib:${workspaceRoot}/lib:${workspaceRoot}/ext"
+                }],
+                "setupCommands": [
+                    {
+                        "description": "Enable pretty-printing for gdb",
+                        "text": "-enable-pretty-printing",
+                        "ignoreFailures": true
+                    }
+                ]
+            }
+        },*/
         {
             "name": "flow-core",
             "type": "gdb",

@@ -1139,19 +1139,23 @@ private enum JunctionState {
     Attached
 }
 
-struct OutCipher {
-    import std.datetime.systime : SysTime;
-
-    SysTime until;
+private mixin template cipher() {
     ubyte[] plain;
     ubyte[] crypt;
 }
 
-struct InCipher {
+private struct OutCipher {
     import std.datetime.systime : SysTime;
 
-    ubyte[] plain;
-    ubyte[] crypt;
+    mixin cipher;
+
+    SysTime until;
+}
+
+private struct InCipher {
+    import std.datetime.systime : SysTime;
+
+    mixin cipher;
 }
 
 private ubyte[] pack(ref ubyte[] data) {
@@ -1174,16 +1178,15 @@ private final class Crypto {
     import deimos.openssl.conf;
     import deimos.openssl.evp;
     import deimos.openssl.rsa;
-
-    static const size_t sigLength = 32; // SHA256
+    import deimos.openssl.x509;
 
     RSA* _key;
-    RSA* _crt;
+    X509* _crt;
 
     string crt;
     string key;
 
-    string cipher;
+    string cipher, hash;
     Duration cipherValidity;
 
     OutCipher[string] outCiphers;
@@ -1203,13 +1206,17 @@ private final class Crypto {
 
     //https://www.youtube.com/watch?v=uwzWVG_LDGA
 
-    this(string key, string crt, string cipher, Duration cipherValidity = 10.minutes) {
+    this(string key, string crt, string cipher, string hash, Duration cipherValidity = 10.minutes) {
+        import deimos.openssl.ssl : SSL_TXT_AES256, SSL_TXT_SHA256;
         import flow.core.error : CryptoInitException;
 
         this.key = key;
         this.crt = crt;
         
-        this.cipher = cipher;
+        /* aes-256 in combination with sha256 is
+        the default cipher and hash pair to use */
+        this.cipher = cipher != string.init ? cipher : SSL_TXT_AES256;
+        this.hash = hash != string.init ? hash : SSL_TXT_SHA256;
         this.cipherValidity = cipherValidity;
 
         this._key = this.loadKey(key);
@@ -1231,7 +1238,7 @@ private final class Crypto {
         return null;
     }
 
-    RSA* loadCrt(string crt) {
+    X509* loadCrt(string crt) {
         import deimos.openssl.pem;
         import std.conv : to;
 
@@ -1241,40 +1248,68 @@ private final class Crypto {
             BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL);
             scope(exit) BIO_free(bio);
 
-            return PEM_read_bio_RSAPublicKey(bio, null, null, null);
+            return PEM_read_bio_X509(bio, null, null, null);
         }
 
         return null;
     }
 
-    /** check certificate against authorities
-    and destination against cn of certificate*/
-    bool check(string crt, string dst) {return false;}
-
-    /** signs data using private key
-    returns signature if there is a key */
-    ubyte[] sign(ref ubyte[] data) {return null;}
-
-    /** verifies sig of data using given certificate
-    returns contained data or null */
-    bool verify(ref ubyte[] data, ref ubyte[] sig, string crt) {return false;}
-
     /// generates cipher for receiver
-    OutCipher genCipher(string crtData, string dst) {
+    OutCipher genCipher(string crt) {
+        import deimos.openssl.ssl : SSL_TXT_AES256, SSL_TXT_SHA256;
         import std.datetime.systime;
 
-        auto ciph = OutCipher();
+        // chooses the right cipher generator function
+        OutCipher ciph;
+        switch(this.cipher~this.hash) {
+            case SSL_TXT_AES256~SSL_TXT_SHA256:
+                ciph = this.genCipherAes256Sha256();
+                break;
+            default: break;
+        }
+        
+        // encrypts and signs generated key
+        auto crypt = this.encryptRsa(ciph.plain, crt);
+        auto sig = this.sign(crypt);
+        ciph.crypt = sig.pack~crypt.pack;
+
+        // set ciphers lifetime
         ciph.until = Clock.currTime + this.cipherValidity;
-        ciph.plain = (ubyte[]).init; /// TODO generate cipher data
-        ciph.crypt = this.encryptRsa(ciph.plain, crtData);
 
         return ciph;
     }
 
+    OutCipher genCipherAes256Sha256() {
+        import deimos.openssl.rand;
+        import deimos.openssl.ssl : SSL_TXT_AES256, SSL_TXT_SHA256;
+        import flow.core.error : CryptoException;
+
+        immutable ks = 256/8;
+        immutable rounds = 3;
+
+        auto pass = new ubyte[ks]; RAND_bytes(pass.ptr, ks);
+        auto key = new ubyte[ks];
+        auto iv = new ubyte[ks];
+        
+        auto ret = EVP_BytesToKey(EVP_aes_256_cbc(), EVP_sha256(), null, pass.ptr, ks, rounds, key.ptr, iv.ptr);
+
+        if(ret != ks)
+            new CryptoException("couldn't generate "~SSL_TXT_AES256~"+"~SSL_TXT_SHA256~" cipher");
+
+        auto ciph = OutCipher();
+        ciph.plain = key.pack~iv.pack;
+
+        return ciph;
+    }
+    
     /// gets cipher from cipher data
-    void takeCipher(ref ubyte[] cc, string dst) {
+    void takeCipher(ref ubyte[] cc, string crt, string dst) {
         import flow.core.error : CryptoException;
         import std.conv : to;
+
+        auto sig = cc.unpack;
+        auto crypt = cc.unpack;
+        auto sigOk = sig !is null && this.verify(crypt, sig, crt);
 
         auto ciph = InCipher();
         ciph.crypt = cc;
@@ -1283,25 +1318,51 @@ private final class Crypto {
         this.inCiphers[dst] = ciph;
     }
 
+    /** check certificate against authorities
+    and destination against cn of certificate*/
+    bool check(string crt, string dst) {return false;}
+
+    /** signs data using private key
+    returns signature if there is a key else null */
+    ubyte[] sign(ref ubyte[] data) {return null;}
+
+    /** verifies sig of data using given certificate
+    returns contained data or null */
+    bool verify(ref ubyte[] data, ref ubyte[] sig, string crt) {return false;}
+
     /// encrypts data via RSA for crt
-    ubyte[] encryptRsa(ref ubyte[] data, string crtData) {
+    ubyte[] encryptRsa(ref ubyte[] data, string crt) {
+        import deimos.openssl.err;
         import flow.core.error : CryptoException;
         import std.conv : to;
 
-        RSA* crt = this.loadCrt(crtData);
-        scope(exit) RSA_free(crt);
-        if(crt !is null) {
-            auto bs = RSA_size(crt);
+        X509* oCrt = this.loadCrt(crt);
+        if(oCrt !is null) {
+            scope(exit) X509_free(oCrt);
+            EVP_PKEY* pub = X509_get_pubkey(oCrt);
+            scope(exit) EVP_PKEY_free(pub);
+            RSA* key = EVP_PKEY_get1_RSA(pub);
+            scope(exit) RSA_free(key);
+
+            auto bs = RSA_size(key);
             auto ds = data.length;
-            auto cnt = ds%bs==0 ? ds/bs : (ds/bs)+1;
 
-            ubyte[] crypt = new ubyte[bs*cnt];
-            for(size_t i; i < cnt; i++) {
-                auto begin = i*bs;
-                auto end = begin+bs < data.length ? begin+bs : data.length;
+            ubyte[] crypt;
+            auto buffer = new ubyte[bs];
+            int ret;
+            size_t i = 0;
+            while(i < ds) {
+                auto end = (i+bs)-RSA_PKCS1_PADDING_SIZE < ds ? (i+bs)-RSA_PKCS1_PADDING_SIZE : ds;
 
-                if(RSA_public_encrypt((end-begin).to!int, data[begin..end].ptr, crypt[begin..begin+bs].ptr, crt, RSA_NO_PADDING) == -1)
-                    throw new CryptoException("couldn't rsa encrypt data");
+                auto len = (end-i).to!int;
+                auto from = data[i..end];
+
+                ret = RSA_public_encrypt(len, from.ptr, buffer.ptr, key, RSA_PKCS1_PADDING);
+                if(ret == -1)
+                    throw new CryptoException("rsa encryption error: "~ERR_error_string(ERR_get_error(), null).to!string);
+
+                i = end;
+                crypt ~= buffer[0..ret];
             }
 
             return crypt;
@@ -1309,25 +1370,31 @@ private final class Crypto {
     }
 
     ubyte[] decryptRsa(ref ubyte[] crypt) {
+        import deimos.openssl.err;
         import flow.core.error : CryptoException;
         import std.conv : to;
 
         if(this._key !is null) {
             auto bs = RSA_size(this._key);
             auto ds = crypt.length;
-            auto cnt = ds/bs;
 
-            ubyte[] data = new ubyte[ds];
+            ubyte[] data;
+            auto buffer = new ubyte[bs-RSA_PKCS1_PADDING_SIZE];
             int ret;
-            for(size_t i; i < cnt; i++) {
-                auto begin = i*bs;
-                auto end = begin+bs;
+            size_t i = 0;
+            while(i < ds) {
+                auto end = i+bs < ds ? i+bs : ds;
 
-                ret = RSA_private_decrypt((end-begin).to!int, crypt[begin..end].ptr, data[begin..end].ptr, this._key, RSA_NO_PADDING);
+                auto len = (end-i).to!int;
+                auto from = crypt[i..end];
+                
+                ret = RSA_private_decrypt(len, from.ptr, buffer.ptr, this._key, RSA_PKCS1_PADDING);
                 if(ret == -1)
-                    throw new CryptoException("couldn't rsa decrypt data");
+                    throw new CryptoException("rsa decryption error: "~ERR_error_string(ERR_get_error(), null).to!string);
+
+                i = end;
+                data ~= buffer[0..ret]; // trim data to real size
             }
-            data.length = ds - bs + ret; // trim data to real size
 
             return data;
         } else throw new CryptoException("couldn't load own private key");
@@ -1343,8 +1410,9 @@ private final class Crypto {
         ubyte[] crypt = (ubyte[]).init;
         OutCipher ciph;
 
+        // if there is no cipher for that destination create one
         if(dst !in this.outCiphers || this.outCiphers[dst].until < Clock.currTime) {
-            ciph = this.genCipher(crt, dst);
+            ciph = this.genCipher(crt);
             this.outCiphers[dst] = ciph;
             // mark there is a new cipher and append it's length and crypt
             crypt ~= ubyte.max~ciph.crypt.length.bin~ciph.crypt;
@@ -1361,10 +1429,70 @@ private final class Crypto {
     ubyte[] decrypt(ref ubyte[] data, string src) {return null;}
 }
 
-unittest {
-    auto key1 = [];
-    //auto crypto = new Crypto();
+version(unittest) {
+    class TestKeys {
+        shared static string selfKey, selfCrt;
+        shared static string signedKey, signedCrt;
+        shared static string invalidKey, invalidCrt;
+        shared static string revokedKey, revokedCrt;
+
+        shared static this() {
+            import std.file : readText, thisExePath;
+            import std.path : buildPath, dirName;
+
+            string base = thisExePath.dirName.buildPath("..", "util", "ssl");
+
+            selfKey = base.buildPath("self.key").readText;
+            selfCrt = base.buildPath("self.crt").readText;
+            
+            signedKey = base.buildPath("signed.key").readText;
+            signedCrt = base.buildPath("signed.crt").readText;
+
+            invalidKey = base.buildPath("invalid.key").readText;
+            invalidCrt = base.buildPath("invalid.crt").readText;
+
+            revokedKey = base.buildPath("revoked.key").readText;
+            revokedCrt = base.buildPath("revoked.crt").readText;
+        }
+
+        @property static bool loaded() {
+            return selfKey != string.init
+                && selfCrt != string.init
+                && signedKey != string.init
+                && signedCrt != string.init
+                && invalidKey != string.init
+                && invalidCrt != string.init
+                && revokedKey != string.init
+                && revokedCrt != string.init;
+        }
+    }
 }
+
+unittest { test.header("TEST engine.core: rsa encrypt/decrypt, sign/verify");
+    import deimos.openssl.ssl;
+    import flow.data : bin, unbin;
+    import std.conv;
+
+    assert(TestKeys.loaded, "keys were not loaded! did you execute util/ssl/gen.sh on a CA free host?");
+
+    auto selfC = new Crypto(TestKeys.selfKey, TestKeys.selfCrt, SSL_TXT_AES256, SSL_TXT_SHA256);
+    auto signedC = new Crypto(TestKeys.signedKey, TestKeys.signedCrt, SSL_TXT_AES256, SSL_TXT_SHA256);
+
+    auto orig = "CRYPTED MESSAGE: hello world, I'm coming".bin;
+    
+    auto signedCrypt = signedC.encryptRsa(orig, TestKeys.selfCrt);
+    auto selfDecrypt = selfC.decryptRsa(signedCrypt);
+    assert(orig == selfDecrypt, "original message and decrypt of self crypto mismatch");
+    
+    auto selfCrypt = selfC.encryptRsa(orig, TestKeys.signedCrt);
+    auto signedDecrypt = signedC.decryptRsa(selfCrypt);
+    assert(orig == signedDecrypt, "original message and decrypt of signed crypto mismatch");
+test.footer; }
+
+//unittest { test.header("TEST engine.core: self signed certificates check behavior"); test.footer(); }
+//unittest { test.header("TEST engine.core: signed certificates check behavior"); test.footer(); }
+//unittest { test.header("TEST engine.core: invalid certificates check behavior"); test.footer(); }
+//unittest { test.header("TEST engine.core: revoked certificates check behavior"); test.footer(); }
 
 abstract class Channel : ReadWriteMutex {
     private string _dst;
@@ -1514,7 +1642,7 @@ abstract class Junction : StateMachine!JunctionState {
     }
 
     private bool initCrypto() {
-        this.crypto = new Crypto(this.meta.key, this.meta.crt, this.meta.cipher);
+        this.crypto = new Crypto(this.meta.key, this.meta.crt, this.meta.cipher, this.meta.hash);
         return true;
     }
 
@@ -1701,24 +1829,21 @@ private bool containsWildcard(string dst) {
     return dst.canFind("*");
 }
 
-unittest {
+unittest { test.header("TEST engine.core: wildcards checker");
     assert("*".containsWildcard);
     assert(!"a".containsWildcard);
     assert("*.aa.bb".containsWildcard);
     assert("aa.*.bb".containsWildcard);
     assert("aa.bb.*".containsWildcard);
     assert(!"aa.bb.cc".containsWildcard);
-}
+test.footer(); }
 
-unittest {
-    import std.stdio : writeln;
-
-    writeln("testing domain matching");
+unittest { test.header("TEST core.engine: domain matching");    
     assert(matches("a.b.c", "a.b.c"), "1:1 matching failed");
     assert(matches("a.b.c", "a.b.*"), "first level * matching failed");
     assert(matches("a.b.c", "a.*.c"), "second level * matching failed");
     assert(matches("a.b.c", "*.b.c"), "third level * matching failed");
-}
+test.footer(); }
 
 /// hosts a space which can host n entities
 class Space : StateMachine!SystemState {
@@ -2243,14 +2368,11 @@ version(unittest) {
     }
 }
 
-unittest {
+unittest { test.header("TEST core.engine: events");    
     import core.thread;
     import flow.core.data;
     import flow.core.make;
     import flow.util;
-    import std.stdio;
-
-    writeln("TEST engine: events");
 
     auto proc = new Process;
     scope(exit) proc.destroy;
@@ -2275,19 +2397,16 @@ unittest {
 
     assert(nsm.entities[0].context.as!TestEventingContext.firedOnTicking, "didn't get fired for OnTicking");
     assert(nsm.entities[0].context.as!TestEventingContext.firedOnFreezing, "didn't get fired for OnFreezing");
-}
+test.footer(); }
 
-unittest {
+unittest { test.header("TEST core.engine: event error handling");
     import core.thread;
     import core.time;
     import flow.core.data;
     import flow.core.error;
     import flow.core.make;
     import flow.util;
-    import std.range;
-    import std.stdio;
-
-    writeln("TEST engine: event error handling");
+    import std.range;   
 
     auto proc = new Process;
     scope(exit)
@@ -2313,18 +2432,16 @@ unittest {
     Log.logLevel = origLL;
 
     assert(ex !is null, "exception wasn't thrown");
-}
+test.footer(); }
 
-unittest {
+unittest { test.header("TEST core.engine: damage error handling");
     import core.thread;
     import core.time;
     import flow.core.data;
     import flow.core.make;
     import flow.util;
     import std.range;
-    import std.stdio;
-
-    writeln("TEST engine: damage error handling");
+    
 
     auto proc = new Process;
     scope(exit)
@@ -2349,16 +2466,13 @@ unittest {
     assert(ec.state == SystemState.Frozen, "entity isn't frozen");
     assert(!ec._entity.meta.damages.empty, "entity isn't damaged at all");
     assert(ec._entity.meta.damages.length == 1, "entity has wrong amount of damages");
-}
+test.footer(); }
 
-unittest {
+unittest { test.header("TEST core.engine: delayed next");
     import core.thread;
     import flow.core.data;
     import flow.core.make;
     import flow.util;
-    import std.stdio;
-
-    writeln("TEST engine: delayed next");
 
     auto proc = new Process;
     scope(exit)
@@ -2387,20 +2501,18 @@ unittest {
     auto tolHnsecs = hnsecs * 1.05; // we allow +5% (5msecs) tolerance for passing the test
     auto measuredHnsecs = measuredDelay.total!"hnsecs";
     
-    writeln("delayed ", measuredHnsecs, "hnsecs; allowed ", hnsecs, "hnsecs - ", tolHnsecs, "hnsecs");
+    test.write("delayed ", measuredHnsecs, "hnsecs; allowed ", hnsecs, "hnsecs - ", tolHnsecs, "hnsecs");
     assert(hnsecs < measuredHnsecs , "delayed shorter than defined");
     assert(tolHnsecs >= measuredHnsecs, "delayed longer than allowed");
-}
+test.footer(); }
 
-unittest {
+unittest { test.header("TEST core.engine: send and receipt of all signal types and pass their group");
     import core.thread;
     import flow.core.data;
     import flow.core.make;
     import flow.util;
-    import std.stdio;
     import std.uuid;
 
-    writeln("TEST engine: send and receipt of all signal types and pass their group");
 
     auto proc = new Process;
     scope(exit)
@@ -2450,13 +2562,6 @@ unittest {
     assert(rCtx.unicast.group == group, "unicast didn't pass group");
     assert(rCtx.anycast.group == group, "anycast didn't pass group");
     assert(rCtx.multicast.group == group, "multicast didn't pass group");
-}
+test.footer(); }
 
-/*
-
-unittest {
-    import std.stdio;
-
-    writeln("TEST engine: ");
-}
-*/
+//unittest { test.header("TEST engine: "); test.footer(); }

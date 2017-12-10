@@ -2,6 +2,7 @@ module flow.ipc.inproc;
 
 private import flow.data;
 private import flow.core;
+private import flow.util;
 
 /// metadata of in process junction
 class InProcessJunctionMeta : JunctionMeta {
@@ -147,15 +148,12 @@ class InProcessJunction : Junction {
     }
 }
 
-unittest {
+unittest { test.header("TEST inproc: fully enabled passing of signals");
     import core.thread;
     import flow.core;
     import flow.ipc.make;
     import flow.util;
-    import std.stdio;
     import std.uuid;
-
-    writeln("TEST inproc: fully enabled passing of signals");
 
     auto proc = new Process;
     scope(exit) proc.destroy;
@@ -203,17 +201,14 @@ unittest {
     assert(nsm1.entities[0].context.as!TestSendingContext.unicast, "didn't confirm test unicast");
     assert(nsm1.entities[0].context.as!TestSendingContext.anycast, "didn't confirm test anycast");
     assert(nsm1.entities[0].context.as!TestSendingContext.multicast, "didn't confirm test multicast");
-}
+test.footer(); }
 
-unittest {
+unittest { test.header("TEST inproc: anonymous (not) passing of signals");
     import core.thread;
     import flow.core;
     import flow.ipc.make;
     import flow.util;
-    import std.stdio;
     import std.uuid;
-
-    writeln("TEST inproc: anonymous (not) passing of signals");
 
     auto proc = new Process;
     scope(exit) proc.destroy;
@@ -263,17 +258,14 @@ unittest {
     assert(nsm1.entities[0].context.as!TestSendingContext.unicast, "didn't confirm test unicast");
     assert(!nsm1.entities[0].context.as!TestSendingContext.anycast, "confirmed test anycast but shouldn't");
     assert(nsm1.entities[0].context.as!TestSendingContext.multicast, "didn't confirm test multicast");
-}
+test.footer(); }
 
-unittest {
+unittest { test.header("TEST inproc: indifferent (not) passing of signals");
     import core.thread;
     import flow.core;
     import flow.ipc.make;
     import flow.util;
-    import std.stdio;
     import std.uuid;
-
-    writeln("TEST inproc: indifferent (not) passing of signals");
 
     auto proc = new Process;
     scope(exit) proc.destroy;
@@ -322,17 +314,14 @@ unittest {
     assert(nsm1.entities[0].context.as!TestSendingContext.unicast, "didn't confirm test unicast");
     assert(!nsm1.entities[0].context.as!TestSendingContext.anycast, "confirmed test anycast but shouldn't");
     assert(nsm1.entities[0].context.as!TestSendingContext.multicast, "didn't confirm test multicast");
-}
+test.footer(); }
 
-unittest {
+unittest { test.header("TEST inproc: !acceptsMulticast (not) passing of signals");
     import core.thread;
     import flow.core;
     import flow.ipc.make;
     import flow.util;
-    import std.stdio;
     import std.uuid;
-
-    writeln("TEST inproc: !acceptsMulticast (not) passing of signals");
 
     auto proc = new Process;
     scope(exit) proc.destroy;
@@ -381,4 +370,4 @@ unittest {
     assert(nsm1.entities[0].context.as!TestSendingContext.unicast, "didn't confirm test unicast");
     assert(!nsm1.entities[0].context.as!TestSendingContext.anycast, "confirmed test anycast but shouldn't");
     assert(!nsm1.entities[0].context.as!TestSendingContext.multicast, "confirmed test multicast but shouldn't");
-}
+test.footer(); }

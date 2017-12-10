@@ -1,6 +1,7 @@
 module flow.data.json;
 
 private import flow.data.engine;
+private import flow.util;
 private import std.json;
 private import std.range;
 private import std.traits;
@@ -411,14 +412,11 @@ if(is(T : Data)) {
     } else return Variant();
 }
 
-unittest {
+unittest { test.header("TEST data.json: json serialization of data and member");
     import flow.data.engine : TestData, InheritedTestData, TestEnum;
     import flow.util.templates : as;
     import std.json : parseJSON;
-    import std.stdio : writeln;
     import std.uuid : parseUUID;
-    
-    writeln("testing json serialization of data and member");
 
     auto d = new InheritedTestData;
     d.boolean = true;
@@ -475,4 +473,4 @@ unittest {
     assert(d2.enumerationA.length == 2 && d2.enumerationA[0] == TestEnum.Bar && d2.enumerationA[1] == TestEnum.Foo, "could not deserialize array enum value");
 
     assert(d2.additional == "ble", "could not deserialize basic scalar value");
-}
+test.footer(); }
