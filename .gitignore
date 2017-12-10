@@ -18,6 +18,11 @@ hive
 # Executables
 *.exe
 
+# Crypto
+*.crt
+*.csr
+*.key
+
 # Build
 */build
 

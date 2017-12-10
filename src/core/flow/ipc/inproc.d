@@ -41,14 +41,14 @@ class InProcessChannel : Channel {
     }
 
     override protected ubyte[] reqAuth() {
-        return this.peer.auth;
+        return this.peer.getAuth();
     }
     
-    override protected bool reqVerify(ubyte[] auth) {
+    override protected bool reqVerify(ref ubyte[] auth) {
         return this.peer.verify(auth);
     }
 
-    override protected bool transport(ubyte[] pkg) {
+    override protected bool transport(ref ubyte[] pkg) {
         import flow.util : as;
 
         return this.peer.pull(pkg, this.own.meta.info);

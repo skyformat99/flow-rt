@@ -1139,29 +1139,55 @@ private enum JunctionState {
     Attached
 }
 
-struct Cipher {
+struct OutCipher {
     import std.datetime.systime : SysTime;
 
     SysTime until;
-    ubyte[] data;
+    ubyte[] plain;
+    ubyte[] crypt;
+}
+
+struct InCipher {
+    import std.datetime.systime : SysTime;
+
+    ubyte[] plain;
+    ubyte[] crypt;
+}
+
+private ubyte[] pack(ref ubyte[] data) {
+    import flow.data : bin;
+    import std.range : empty;
+    
+    return data !is null && !data.empty ? [ubyte.max]~data.bin : [ubyte.min];
+}
+
+private ubyte[] unpack(ref ubyte[] data) {
+    import flow.data : unbin;
+    import std.range : front, popFront, popFrontN;
+
+    auto hasByte = data.unbin!ubyte;
+    return hasByte ? data.unbin!(ubyte[]) : null;
 }
 
 private final class Crypto {
-    import core.time;
+    import core.time : Duration, minutes;
     import deimos.openssl.conf;
     import deimos.openssl.evp;
     import deimos.openssl.rsa;
 
     static const size_t sigLength = 32; // SHA256
-    static const Duration cipherVality = 10.minutes;
 
-    private RSA* _key;
-    private RSA* _crt;
+    RSA* _key;
+    RSA* _crt;
 
-    private ubyte[] crt;
-    private ubyte[] key;
+    string crt;
+    string key;
 
-    private Cipher[string] ciphers;
+    string cipher;
+    Duration cipherValidity;
+
+    OutCipher[string] outCiphers;
+    InCipher[string] inCiphers;
 
     shared static this() {
         // initializing ssl
@@ -1175,23 +1201,28 @@ private final class Crypto {
         ERR_free_strings();
     }*/
 
-    this(ubyte[] key, ubyte[] crt) {
+    //https://www.youtube.com/watch?v=uwzWVG_LDGA
+
+    this(string key, string crt, string cipher, Duration cipherValidity = 10.minutes) {
         import flow.core.error : CryptoInitException;
 
         this.key = key;
         this.crt = crt;
+        
+        this.cipher = cipher;
+        this.cipherValidity = cipherValidity;
 
         this._key = this.loadKey(key);
         this._crt = this.loadCrt(crt);
     }
 
-    RSA* loadKey(ubyte[] key) {
+    RSA* loadKey(string key) {
         import deimos.openssl.pem;
         import std.conv : to;
 
         if(key !is null) {
             BIO* bio = BIO_new_mem_buf(key.ptr.as!(void*), key.length.to!int);
-            //BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL);
+            BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL);
             scope(exit) BIO_free(bio);
 
             return PEM_read_bio_RSAPrivateKey(bio, null, null, null);
@@ -1200,14 +1231,14 @@ private final class Crypto {
         return null;
     }
 
-    RSA* loadCrt(ubyte[] crt) {
+    RSA* loadCrt(string crt) {
         import deimos.openssl.pem;
         import std.conv : to;
 
         // for security reasons certificate first
         if(crt !is null) {
             BIO* bio = BIO_new_mem_buf(crt.ptr.as!(void*), crt.length.to!int);
-            //BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL);
+            BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL);
             scope(exit) BIO_free(bio);
 
             return PEM_read_bio_RSAPublicKey(bio, null, null, null);
@@ -1216,83 +1247,135 @@ private final class Crypto {
         return null;
     }
 
-    /// check certificate against authorities
-    bool check(ubyte[] crt) {return false;}
+    /** check certificate against authorities
+    and destination against cn of certificate*/
+    bool check(string crt, string dst) {return false;}
 
     /** signs data using private key
     returns signature if there is a key */
-    ubyte[] sign(ubyte[] data) {return null;}
+    ubyte[] sign(ref ubyte[] data) {return null;}
 
     /** verifies sig of data using given certificate
     returns contained data or null */
-    bool verify(ubyte[] data, ubyte[] sig, ubyte[] crt) {return false;}
+    bool verify(ref ubyte[] data, ref ubyte[] sig, string crt) {return false;}
 
-    /// encrypts a cipher for receiver
-    ubyte[] encryptCipher(Cipher c, ubyte[] crtData) {
+    /// generates cipher for receiver
+    OutCipher genCipher(string crtData, string dst) {
+        import std.datetime.systime;
+
+        auto ciph = OutCipher();
+        ciph.until = Clock.currTime + this.cipherValidity;
+        ciph.plain = (ubyte[]).init; /// TODO generate cipher data
+        ciph.crypt = this.encryptRsa(ciph.plain, crtData);
+
+        return ciph;
+    }
+
+    /// gets cipher from cipher data
+    void takeCipher(ref ubyte[] cc, string dst) {
+        import flow.core.error : CryptoException;
+        import std.conv : to;
+
+        auto ciph = InCipher();
+        ciph.crypt = cc;
+        ciph.plain = this.decryptRsa(cc);
+
+        this.inCiphers[dst] = ciph;
+    }
+
+    /// encrypts data via RSA for crt
+    ubyte[] encryptRsa(ref ubyte[] data, string crtData) {
         import flow.core.error : CryptoException;
         import std.conv : to;
 
         RSA* crt = this.loadCrt(crtData);
         scope(exit) RSA_free(crt);
         if(crt !is null) {
-            ubyte[] cc = new ubyte[c.data.length];
-            if(RSA_public_encrypt(c.data.length.to!int, c.data.ptr, cc.ptr, crt, RSA_NO_PADDING) == -1)
-                throw new CryptoException("couldn't encrypt cipher");
+            auto bs = RSA_size(crt);
+            auto ds = data.length;
+            auto cnt = ds%bs==0 ? ds/bs : (ds/bs)+1;
 
-            return cc;
+            ubyte[] crypt = new ubyte[bs*cnt];
+            for(size_t i; i < cnt; i++) {
+                auto begin = i*bs;
+                auto end = begin+bs < data.length ? begin+bs : data.length;
+
+                if(RSA_public_encrypt((end-begin).to!int, data[begin..end].ptr, crypt[begin..begin+bs].ptr, crt, RSA_NO_PADDING) == -1)
+                    throw new CryptoException("couldn't rsa encrypt data");
+            }
+
+            return crypt;
         } else throw new CryptoException("couldn't load receivers certificate");
     }
 
-    Cipher decryptCipher(ubyte[] cc) {
-        // TODO https://www.youtube.com/watch?v=uwzWVG_LDGA 25:58
-        return Cipher();
+    ubyte[] decryptRsa(ref ubyte[] crypt) {
+        import flow.core.error : CryptoException;
+        import std.conv : to;
+
+        if(this._key !is null) {
+            auto bs = RSA_size(this._key);
+            auto ds = crypt.length;
+            auto cnt = ds/bs;
+
+            ubyte[] data = new ubyte[ds];
+            int ret;
+            for(size_t i; i < cnt; i++) {
+                auto begin = i*bs;
+                auto end = begin+bs;
+
+                ret = RSA_private_decrypt((end-begin).to!int, crypt[begin..end].ptr, data[begin..end].ptr, this._key, RSA_NO_PADDING);
+                if(ret == -1)
+                    throw new CryptoException("couldn't rsa decrypt data");
+            }
+            data.length = ds - bs + ret; // trim data to real size
+
+            return data;
+        } else throw new CryptoException("couldn't load own private key");
     }
 
     /** encrypting by symmetric cipher for certificate
     whichs key is encrypted using public key
     returns [encrypted symkey]~[encrypted data]*/
-    ubyte[] encrypt(ubyte[] data, ubyte[] crt, string dst) {return null;}
-
-    /// decrypts encrypted data returning its plain bytes unless there is a key
-    ubyte[] decrypt(ubyte[] data) {return null;}
-
-    /// get cipher for destination
-    ubyte[] get(string dst) {
+    ubyte[] encrypt(ref ubyte[] data, string crt, string dst) {
+        import flow.data : bin;
         import std.datetime.systime : Clock;
 
-        if(dst in this.ciphers && this.ciphers[dst].until > Clock.currTime)
-            return this.ciphers[dst].data;
-        else {
-            // TODO create a cipher 
-            return null;
+        ubyte[] crypt = (ubyte[]).init;
+        OutCipher ciph;
+
+        if(dst !in this.outCiphers || this.outCiphers[dst].until < Clock.currTime) {
+            ciph = this.genCipher(crt, dst);
+            this.outCiphers[dst] = ciph;
+            // mark there is a new cipher and append it's length and crypt
+            crypt ~= ubyte.max~ciph.crypt.length.bin~ciph.crypt;
+        } else {
+            ciph = this.outCiphers[dst];
+            crypt ~= ubyte.min;
         }
+
+
+        return null;
     }
+
+    /// decrypts encrypted data returning its plain bytes unless there is a key
+    ubyte[] decrypt(ref ubyte[] data, string src) {return null;}
+}
+
+unittest {
+    auto key1 = [];
+    //auto crypto = new Crypto();
 }
 
 abstract class Channel : ReadWriteMutex {
     private string _dst;
     private Junction _own;
     private JunctionInfo _other;
-    private ubyte[] _auth;
 
     protected @property Junction own() {return this._own;}
 
     @property string dst() {return this._dst;}
     @property JunctionInfo other() {return this._other;}
-    @property ubyte[] auth() {
-        if(!this.own.meta.info.anonymous && this._auth is null) {
-            import flow.data : bin;
-
-            auto auth = this.own.meta.info.bin;
-            if(this.own.meta.key == string.init)
-                this._auth = ubyte.min~auth;
-            else
-                this._auth = ubyte.max~this.own.crypto.sign(auth)~auth;
-        }
-
-        return this._auth;
-    }
-
+    
     this(string dst, Junction own) {
         this._dst = dst;
         this._own = own;
@@ -1300,15 +1383,32 @@ abstract class Channel : ReadWriteMutex {
         super(ReadWriteMutex.Policy.PREFER_WRITERS);
     }
 
+    final protected ubyte[] getAuth() {
+        ubyte[] auth = null;
+        if(!this.own.meta.info.anonymous) {
+            import flow.data : bin;
+
+            if(this.own.meta.key != string.init) {
+                auto info = this.own.meta.info.bin;
+                auto sig = this.own.crypto.sign(info);
+                // indicate it's signed, append signature and data
+                auth = sig.pack~info.pack;
+            }
+        }
+        return auth;
+    }
+
     final bool handshake() {
         import std.range : empty, front;
 
-        // establish channel only if both side verifys
-        if(this.reqVerify(this.auth)) { // authentication was accepted
+        auto auth = this.getAuth();
+
+        // establish channel only if both side verifies
+        if(this.reqVerify(auth)) {
+            // authentication was accepted so authenticate the peer
             auto otherAuth = this.reqAuth();
-            if(this.verify(otherAuth)) {
+            if(this.verify(otherAuth))
                 return true;
-            }
         }
 
         return false;
@@ -1319,20 +1419,20 @@ abstract class Channel : ReadWriteMutex {
         import std.range : empty, front;
         
         // own is not authenticating
-        if(auth is null && !this.own.meta.info.verifying) {
+        if((auth is null || auth.empty) && !this.own.meta.info.verifying) {
             this._other = new JunctionInfo;
             this._other.space = this._dst;
             
             return true;
-        } else if(auth.length > Crypto.sigLength) {
-            auto isSigned = auth.front == ubyte.max;
-            auto sig = isSigned ? auth[1..Crypto.sigLength] : null;
-            auto infoData = auth[(isSigned ? Crypto.sigLength : 0)+1..$];
+        } else {
+            auto sig = auth.unpack;
+            auto infoData = auth.unpack;
             auto info = infoData.unbin!JunctionInfo;
-            auto sigOk = isSigned ? this.own.crypto.verify(infoData, sig, info.crt) : true;
-            auto checkOk = !info.crt.empty ? this.own.crypto.check(info.crt) : false;
+            // if peer signed then there has to be a crt there too
+            auto sigOk = sig !is null && this.own.crypto.verify(infoData, sig, info.crt);
+            auto checkOk = !info.crt.empty && this.own.crypto.check(info.crt, info.space);
 
-            if(sigOk && (!this.own.meta.info.verifying || checkOk)){
+            if((sig is null || sigOk) && (!this.own.meta.info.verifying || checkOk)){
                 this._other = info;
                 return true;
             }
@@ -1342,7 +1442,7 @@ abstract class Channel : ReadWriteMutex {
     }
 
     /// encrypts package
-    private ubyte[] encrypt(ubyte[] pb, JunctionInfo info) {
+    private ubyte[] encrypt(ref ubyte[] pb, JunctionInfo info) {
         if(this.own.meta.info.encrypting)
             return ubyte.max~this.own.crypto.encrypt(pb, info.crt, info.space);
         else
@@ -1350,14 +1450,15 @@ abstract class Channel : ReadWriteMutex {
     }
 
     /// decrypts package
-    private ubyte[] decrypt(ubyte[] cpb) {
+    private ubyte[] decrypt(ref ubyte[] pb, string src) {
         import flow.util : as;
         import std.range : front;
 
-        if(cpb.front) // if its marked as encrypted
-            return this.own.crypto.decrypt(cpb[1..$]);
-        else
-            return cpb[1..$]; // if not encrypted its clear bin
+        if(pb.front) { // if its marked as encrypted
+            auto cpb = pb[1..$];
+            return this.own.crypto.decrypt(cpb, src);
+        } else
+            return pb[1..$]; // if not encrypted its clear bin
     }
 
     protected final bool pull(/*w/o ref*/ ubyte[] p, JunctionInfo info) {
@@ -1381,10 +1482,10 @@ abstract class Channel : ReadWriteMutex {
     abstract protected ubyte[] reqAuth();
 
     /// request authentication
-    abstract protected bool reqVerify(ubyte[] auth);
+    abstract protected bool reqVerify(ref ubyte[] auth);
 
     /// transports signal through channel
-    abstract protected bool transport(ubyte[] p);
+    abstract protected bool transport(ref ubyte[] p);
 
     /// clean up called in destructor
     abstract protected void dispose();
@@ -1413,7 +1514,7 @@ abstract class Junction : StateMachine!JunctionState {
     }
 
     private bool initCrypto() {
-        this.crypto = new Crypto(this.meta.key, this.meta.crt);
+        this.crypto = new Crypto(this.meta.key, this.meta.crt, this.meta.cipher);
         return true;
     }
 

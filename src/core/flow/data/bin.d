@@ -148,7 +148,12 @@ if(canHandle!T) {
 
 /// serializes data to binary
 ubyte[] bin(T)(T data)
-if(is(T: Data)) {
+if(
+    canHandle!T || (
+        isArray!T &&
+        canHandle!(ElementType!T)
+    )
+) {
     import std.range : appender;
     
     auto a = appender!(ubyte[]);

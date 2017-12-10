@@ -69,7 +69,7 @@ class JunctionInfo : IdData {
     mixin field!(string, "space");
 
     /// public RSA certificate (set by junction)
-    mixin field!(ubyte[], "crt");
+    mixin field!(string, "crt");
 
     /// indicates if junction is verifying peers
     mixin field!(bool, "verifying");
@@ -99,10 +99,13 @@ class JunctionMeta : Data {
     mixin field!(ushort, "level");
 
     /// public RSA certificate
-    mixin field!(ubyte[], "crt");
+    mixin field!(string, "crt");
 
     /// path to private RSA key (no key disables encryption and authentication)
-    mixin field!(ubyte[], "key");
+    mixin field!(string, "key");
+
+    /// type of cipher to use for encryption
+    mixin field!(string, "cipher");
 }
 
 /// metadata of an entity
