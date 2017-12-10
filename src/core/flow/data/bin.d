@@ -378,3 +378,20 @@ unittest { test.header("TEST data.bin: binary serialization of data and member")
 
     assert(d2.additional == "ble", "could not deserialize basic scalar value");
 test.footer(); }
+
+/// packs ubyte[] so you can put it into a package
+ubyte[] pack(ref ubyte[] data) {
+    import flow.data : bin;
+    import std.range : empty;
+    
+    return data !is null && !data.empty ? [ubyte.max]~data.bin : [ubyte.min];
+}
+
+/// unpacks ubyte[] from package
+ubyte[] unpack(ref ubyte[] data) {
+    import flow.data : unbin;
+    import std.range : front, popFront, popFrontN;
+
+    auto hasByte = data.unbin!ubyte;
+    return hasByte ? data.unbin!(ubyte[]) : null;
+}

@@ -71,6 +71,21 @@ class JunctionInfo : IdData {
     /// public RSA certificate (set by junction)
     mixin field!(string, "crt");
 
+    /** type of cipher to use for encryption
+    default AESGCM
+    available
+    - AES128
+    - AES256
+    - AESGCM*/
+    mixin field!(string, "cipher");
+
+    /** type of cipher to use for encryption
+    default SHA160
+    available
+    - SHA160
+    - SHA256*/
+    mixin field!(string, "hash");
+
     /// indicates if junction is verifying peers
     mixin field!(bool, "verifying");
 
@@ -98,26 +113,8 @@ class JunctionMeta : Data {
     mixin field!(string, "type");
     mixin field!(ushort, "level");
 
-    /// public RSA certificate
-    mixin field!(string, "crt");
-
     /// path to private RSA key (no key disables encryption and authentication)
     mixin field!(string, "key");
-
-    /** type of cipher to use for encryption
-    default AES256
-    available
-    - AES128
-    - AES256
-    - AESGCM*/
-    mixin field!(string, "cipher");
-
-    /** type of cipher to use for encryption
-    default SHA256
-    available
-    - SHA
-    - SHA256*/
-    mixin field!(string, "hash");
 }
 
 /// metadata of an entity
