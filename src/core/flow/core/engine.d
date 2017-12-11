@@ -1204,8 +1204,8 @@ abstract class Channel : ReadWriteMutex {
             auto infoData = auth.unpack;
             auto info = infoData.unbin!JunctionInfo;
             // if peer signed then there has to be a crt there too
-            auto sigOk = sig !is null && this.own.crypto.verify(infoData, sig, info.crt);
-            auto checkOk = !info.crt.empty && this.own.crypto.check(info.crt, info.space);
+            auto sigOk = sig !is null && this.own.crypto.verify(infoData, sig, this._dst);
+            auto checkOk = !info.crt.empty && this.own.crypto.check(info.space);
 
             if((sig is null || sigOk) && (!this.own.meta.info.verifying || checkOk)){
                 this._other = info;
@@ -1219,7 +1219,7 @@ abstract class Channel : ReadWriteMutex {
     /// encrypts package
     private ubyte[] encrypt(ref ubyte[] pb, JunctionInfo info) {
         if(this.own.meta.info.encrypting)
-            return ubyte.max~this.own.crypto.encrypt(pb, info.crt, info.space);
+            return ubyte.max~this.own.crypto.encrypt(pb, info.space);
         else
             return ubyte.min~pb;
     }
@@ -1231,7 +1231,7 @@ abstract class Channel : ReadWriteMutex {
 
         if(pb.front) { // if its marked as encrypted
             auto cpb = pb[1..$];
-            return this.own.crypto.decrypt(cpb, src, this.other.crt);
+            return this.own.crypto.decrypt(cpb, src);
         } else
             return pb[1..$]; // if not encrypted its clear bin
     }
@@ -1290,7 +1290,7 @@ abstract class Junction : StateMachine!JunctionState {
     }
 
     private bool initCrypto() {
-        this.crypto = new Crypto(this.meta.key, this.meta.info.crt, this.meta.info.cipher, this.meta.info.hash);
+        this.crypto = new Crypto(this.meta.info.space, this.meta.key, this.meta.info.crt, this.meta.info.cipher, this.meta.info.hash);
         return true;
     }
 
@@ -1477,7 +1477,7 @@ private bool containsWildcard(string dst) {
     return dst.canFind("*");
 }
 
-unittest { test.header("TEST engine.core: wildcards checker");
+unittest { test.header("TEST core.engine: wildcards checker");
     assert("*".containsWildcard);
     assert(!"a".containsWildcard);
     assert("*.aa.bb".containsWildcard);

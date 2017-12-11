@@ -80,9 +80,9 @@ class JunctionInfo : IdData {
     mixin field!(string, "cipher");
 
     /** type of cipher to use for encryption
-    default SHA160
+    default SHA
     available
-    - SHA160
+    - SHA
     - SHA256*/
     mixin field!(string, "hash");
 

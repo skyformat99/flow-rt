@@ -168,8 +168,17 @@ class InvalidBinException : Exception {
     this(string msg){super(msg);}
 }
 
+/// deserializes binary data
+T unbin(T)(ubyte[] arr)
+if(
+    (canHandle!T || is(T:Data)) ||
+    (isArray!T && canHandle!(ElementType!T))
+) {
+    return arr._unbin!T;
+}
+
 /// deserializes binary data to a given suppoerted array type
-T unbin(T)(ref ubyte[] arr)
+private T _unbin(T)(ref ubyte[] arr)
 if(
     isArray!T &&
     canHandle!(ElementType!T) &&
@@ -178,15 +187,15 @@ if(
     import std.range : ElementType;
 
     T uArr;
-    auto length = arr.unbin!size_t;
+    auto length = arr._unbin!size_t;
     for(size_t i; i < length; i++)
-        uArr ~= arr.unbin!(ElementType!T);
+        uArr ~= arr._unbin!(ElementType!T);
 
     return uArr;
 }
 
 /// deserializes binary data to a given supported type
-T unbin(T)(ref ubyte[] arr)
+private T _unbin(T)(ref ubyte[] arr)
 if(canHandle!T || is(T:Data)) {
     import flow.data.engine : Data, createData, PropertyInfo;
     import flow.util.templates : as;
@@ -196,7 +205,7 @@ if(canHandle!T || is(T:Data)) {
     import std.uuid : UUID;
 
     static if(is(T == string)) {
-        auto length = arr.unbin!size_t;
+        auto length = arr._unbin!size_t;
         auto val = cast(string)arr[0..length];
         arr.popFrontN(length);
         return val;
@@ -205,15 +214,15 @@ if(canHandle!T || is(T:Data)) {
         arr.popFrontN(16);
         return val;
     } else static if(is(T == SysTime)) {
-        auto ut = arr.unbin!long;
+        auto ut = arr._unbin!long;
         return SysTime.fromUnixTime(ut);
     }
     else static if(is(T == DateTime) || is(T == Date)) {
-        auto str = arr.unbin!string;
+        auto str = arr._unbin!string;
         return T.fromISOString(str);
     }
     else static if(is(T == Duration)) {
-        auto hns = arr.unbin!long;
+        auto hns = arr._unbin!long;
         return dur!"hnsecs"(hns);
     }
     else static if(is(T : Data)) {
@@ -221,12 +230,12 @@ if(canHandle!T || is(T:Data)) {
         arr.popFront;
 
         if(!isNull) {
-            auto dataType = arr.unbin!string;
+            auto dataType = arr._unbin!string;
             auto val = createData(dataType);
 
             if(val !is null) {
                 foreach(pi; val.properties) {
-                    arr.unbin(val, pi.as!PropertyInfo);
+                    arr._unbin(val, pi.as!PropertyInfo);
                 }
                 
                 return val.as!T;
@@ -240,7 +249,7 @@ if(canHandle!T || is(T:Data)) {
     }
 }
 
-private void unbin(ref ubyte[] arr, Data d, PropertyInfo pi) {
+private void _unbin(ref ubyte[] arr, Data d, PropertyInfo pi) {
     import flow.data.engine : Data, TypeDesc;
     import std.datetime : SysTime, DateTime, Duration, Date;
     import std.uuid : UUID;
@@ -248,91 +257,91 @@ private void unbin(ref ubyte[] arr, Data d, PropertyInfo pi) {
 
     if(pi.array) {
         if(pi.desc == TypeDesc.Scalar && pi.info == typeid(bool))
-            pi.set(d, Variant(arr.unbin!(bool[])));
+            pi.set(d, Variant(arr._unbin!(bool[])));
         else if(pi.desc == TypeDesc.Scalar && pi.info == typeid(byte))
-            pi.set(d, Variant(arr.unbin!(byte[])));
+            pi.set(d, Variant(arr._unbin!(byte[])));
         else if(pi.desc == TypeDesc.Scalar && pi.info == typeid(ubyte))
-            pi.set(d, Variant(arr.unbin!(ubyte[])));
+            pi.set(d, Variant(arr._unbin!(ubyte[])));
         else if(pi.desc == TypeDesc.Scalar && pi.info == typeid(short))
-            pi.set(d, Variant(arr.unbin!(short[])));
+            pi.set(d, Variant(arr._unbin!(short[])));
         else if(pi.desc == TypeDesc.Scalar && pi.info == typeid(ushort))
-            pi.set(d, Variant(arr.unbin!(ushort[])));
+            pi.set(d, Variant(arr._unbin!(ushort[])));
         else if(pi.desc == TypeDesc.Scalar && pi.info == typeid(int))
-            pi.set(d, Variant(arr.unbin!(int[])));
+            pi.set(d, Variant(arr._unbin!(int[])));
         else if(pi.desc == TypeDesc.Scalar && pi.info == typeid(uint))
-            pi.set(d, Variant(arr.unbin!(uint[])));
+            pi.set(d, Variant(arr._unbin!(uint[])));
         else if(pi.desc == TypeDesc.Scalar && pi.info == typeid(long))
-            pi.set(d, Variant(arr.unbin!(long[])));
+            pi.set(d, Variant(arr._unbin!(long[])));
         else if(pi.desc == TypeDesc.Scalar && pi.info == typeid(ulong))
-            pi.set(d, Variant(arr.unbin!(ulong[])));
+            pi.set(d, Variant(arr._unbin!(ulong[])));
         else if(pi.desc == TypeDesc.Scalar && pi.info == typeid(float))
-            pi.set(d, Variant(arr.unbin!(float[])));
+            pi.set(d, Variant(arr._unbin!(float[])));
         else if(pi.desc == TypeDesc.Scalar && pi.info == typeid(double))
-            pi.set(d, Variant(arr.unbin!(double[])));
+            pi.set(d, Variant(arr._unbin!(double[])));
         else if(pi.desc == TypeDesc.Scalar && pi.info == typeid(char))
-            pi.set(d, Variant(arr.unbin!(char[])));
+            pi.set(d, Variant(arr._unbin!(char[])));
         else if(pi.desc == TypeDesc.Scalar && pi.info == typeid(wchar))
-            pi.set(d, Variant(arr.unbin!(wchar[])));
+            pi.set(d, Variant(arr._unbin!(wchar[])));
         else if(pi.desc == TypeDesc.Scalar && pi.info == typeid(dchar))
-            pi.set(d, Variant(arr.unbin!(dchar[])));
+            pi.set(d, Variant(arr._unbin!(dchar[])));
         else if(pi.desc == TypeDesc.UUID)
-            pi.set(d, Variant(arr.unbin!(UUID[])));
+            pi.set(d, Variant(arr._unbin!(UUID[])));
         else if(pi.desc == TypeDesc.SysTime)
-            pi.set(d, Variant(arr.unbin!(SysTime[])));
+            pi.set(d, Variant(arr._unbin!(SysTime[])));
         else if(pi.desc == TypeDesc.DateTime)
-            pi.set(d, Variant(arr.unbin!(DateTime[])));
+            pi.set(d, Variant(arr._unbin!(DateTime[])));
         else if(pi.desc == TypeDesc.Date)
-            pi.set(d, Variant(arr.unbin!(Date[])));
+            pi.set(d, Variant(arr._unbin!(Date[])));
         else if(pi.desc == TypeDesc.Duration)
-            pi.set(d, Variant(arr.unbin!(Duration[])));
+            pi.set(d, Variant(arr._unbin!(Duration[])));
         else if(pi.desc == TypeDesc.String)
-            pi.set(d, Variant(arr.unbin!(string[])));
+            pi.set(d, Variant(arr._unbin!(string[])));
         else if(pi.desc == TypeDesc.Data)
-            pi.set(d, Variant(arr.unbin!(Data[])));
+            pi.set(d, Variant(arr._unbin!(Data[])));
         else assert(false, "this is an impossible situation");
     } else {
         if(pi.desc == TypeDesc.Scalar && pi.info == typeid(bool))
-            pi.set(d, Variant(arr.unbin!(bool)));
+            pi.set(d, Variant(arr._unbin!(bool)));
         else if(pi.desc == TypeDesc.Scalar && pi.info == typeid(byte))
-            pi.set(d, Variant(arr.unbin!(byte)));
+            pi.set(d, Variant(arr._unbin!(byte)));
         else if(pi.desc == TypeDesc.Scalar && pi.info == typeid(ubyte))
-            pi.set(d, Variant(arr.unbin!(ubyte)));
+            pi.set(d, Variant(arr._unbin!(ubyte)));
         else if(pi.desc == TypeDesc.Scalar && pi.info == typeid(short))
-            pi.set(d, Variant(arr.unbin!(short)));
+            pi.set(d, Variant(arr._unbin!(short)));
         else if(pi.desc == TypeDesc.Scalar && pi.info == typeid(ushort))
-            pi.set(d, Variant(arr.unbin!(ushort)));
+            pi.set(d, Variant(arr._unbin!(ushort)));
         else if(pi.desc == TypeDesc.Scalar && pi.info == typeid(int))
-            pi.set(d, Variant(arr.unbin!(int)));
+            pi.set(d, Variant(arr._unbin!(int)));
         else if(pi.desc == TypeDesc.Scalar && pi.info == typeid(uint))
-            pi.set(d, Variant(arr.unbin!(uint)));
+            pi.set(d, Variant(arr._unbin!(uint)));
         else if(pi.desc == TypeDesc.Scalar && pi.info == typeid(long))
-            pi.set(d, Variant(arr.unbin!(long)));
+            pi.set(d, Variant(arr._unbin!(long)));
         else if(pi.desc == TypeDesc.Scalar && pi.info == typeid(ulong))
-            pi.set(d, Variant(arr.unbin!(ulong)));
+            pi.set(d, Variant(arr._unbin!(ulong)));
         else if(pi.desc == TypeDesc.Scalar && pi.info == typeid(float))
-            pi.set(d, Variant(arr.unbin!(float)));
+            pi.set(d, Variant(arr._unbin!(float)));
         else if(pi.desc == TypeDesc.Scalar && pi.info == typeid(double))
-            pi.set(d, Variant(arr.unbin!(double)));
+            pi.set(d, Variant(arr._unbin!(double)));
         else if(pi.desc == TypeDesc.Scalar && pi.info == typeid(char))
-            pi.set(d, Variant(arr.unbin!(char)));
+            pi.set(d, Variant(arr._unbin!(char)));
         else if(pi.desc == TypeDesc.Scalar && pi.info == typeid(wchar))
-            pi.set(d, Variant(arr.unbin!(wchar)));
+            pi.set(d, Variant(arr._unbin!(wchar)));
         else if(pi.desc == TypeDesc.Scalar && pi.info == typeid(dchar))
-            pi.set(d, Variant(arr.unbin!(dchar)));
+            pi.set(d, Variant(arr._unbin!(dchar)));
         else if(pi.desc == TypeDesc.UUID)
-            pi.set(d, Variant(arr.unbin!(UUID)));
+            pi.set(d, Variant(arr._unbin!(UUID)));
         else if(pi.desc == TypeDesc.SysTime)
-            pi.set(d, Variant(arr.unbin!(SysTime)));
+            pi.set(d, Variant(arr._unbin!(SysTime)));
         else if(pi.desc == TypeDesc.DateTime)
-            pi.set(d, Variant(arr.unbin!(DateTime)));
+            pi.set(d, Variant(arr._unbin!(DateTime)));
         else if(pi.desc == TypeDesc.Date)
-            pi.set(d, Variant(arr.unbin!(Date)));
+            pi.set(d, Variant(arr._unbin!(Date)));
         else if(pi.desc == TypeDesc.Duration)
-            pi.set(d, Variant(arr.unbin!(Duration)));
+            pi.set(d, Variant(arr._unbin!(Duration)));
         else if(pi.desc == TypeDesc.String)
-            pi.set(d, Variant(arr.unbin!(string)));
+            pi.set(d, Variant(arr._unbin!(string)));
         else if(pi.desc == TypeDesc.Data)
-            pi.set(d, Variant(arr.unbin!(Data)));
+            pi.set(d, Variant(arr._unbin!(Data)));
         else assert(false, "this is an impossible situation");
     }
 }
@@ -362,7 +371,7 @@ unittest { test.header("TEST data.bin: binary serialization of data and member")
     //debug(data) writeln(arr);
     //assert(arr == cArr, "could not serialize data to bin");
     
-    auto d2 = arr.unbin!InheritedTestData;
+    auto d2 = arr._unbin!InheritedTestData;
     assert(d2 !is null, "could not deserialize data");
     assert(d2.boolean, "could not deserialize basic scalar value");
     assert(d2.uinteger == 5, "could not deserialize basic scalar value");
@@ -379,19 +388,17 @@ unittest { test.header("TEST data.bin: binary serialization of data and member")
     assert(d2.additional == "ble", "could not deserialize basic scalar value");
 test.footer(); }
 
-/// packs ubyte[] so you can put it into a package
+/// packs ubyte[] so you can add it to a package
 ubyte[] pack(ref ubyte[] data) {
-    import flow.data : bin;
     import std.range : empty;
     
     return data !is null && !data.empty ? [ubyte.max]~data.bin : [ubyte.min];
 }
 
-/// unpacks ubyte[] from package
+/// removes a packet from package and returns it
 ubyte[] unpack(ref ubyte[] data) {
-    import flow.data : unbin;
     import std.range : front, popFront, popFrontN;
 
-    auto hasByte = data.unbin!ubyte;
-    return hasByte ? data.unbin!(ubyte[]) : null;
+    auto hasByte = data._unbin!ubyte;
+    return hasByte ? data._unbin!(ubyte[]) : null;
 }
