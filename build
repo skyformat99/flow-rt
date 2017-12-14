@@ -50,10 +50,10 @@ function buildOpenSSL {
     mkdir -p build &&
 
     echo "BUILDING lib/libopenssl.so ..." &&
-    $dc -ofbuild/libopenssl.o $(find ./deimos -name "*.d") $defBuildParams -Hd=$rootDir/ifc/lib/openssl &&
+    $dc -of$rootDir/src/lib/build/libopenssl.o $(find ./deimos -name "*.d") $defBuildParams -Hd=$rootDir/ifc/lib/openssl &&
 
     echo "LINKING lib/libopenssl.so ..." &&
-    $ld -of$rootDir/lib/libopenssl.so build/libopenssl.o $sslLinkParams $defLinkParams -shared &&
+    $ld -of$rootDir/lib/libopenssl.so $rootDir/src/lib/build/libopenssl.o $sslLinkParams $defLinkParams -shared &&
 
     footer
 }
@@ -65,10 +65,10 @@ function buildNanoMsg {
     mkdir -p build &&
 
     echo "BUILDING lib/libnanomsg.so ..." &&
-    $dc -ofbuild/libnanomsg.o $(find ./deimos -name "*.d") $defBuildParams &&
+    $dc -of$rootDir/src/lib/build/libnanomsg.o $(find ./deimos -name "*.d") $defBuildParams &&
 
     echo "LINKING lib/libnanomsg.so ..." &&
-    $ld -of$rootDir/lib/libnanomsg.so build/libnanomsg.o $defLinkParams -shared &&
+    $ld -of$rootDir/lib/libnanomsg.so $rootDir/src/lib/build/libnanomsg.o $defLinkParams -shared &&
 
     footer
 }
