@@ -177,10 +177,10 @@ private class Cipher {
     }
 
     this(string cipher, string hash) {
+        this.lock = new RwMutex;
+
         this.cipher = cipher;
         this.hash = hash;
-        
-        this.lock = new RwMutex;
     }
 
     this(string cipher, string hash, ref ubyte[] data) {
@@ -189,11 +189,14 @@ private class Cipher {
         this(cipher, hash);
     }
 
-    ~this() {
+    void dispose() {
         synchronized(this.lock) {
             foreach(c; this._ctx.values)
                 EVP_CIPHER_CTX_cleanup(&c);
         }
+
+        this.lock.dispose;
+        this.destroy;
     }
 
     ubyte[] encrypt(ref ubyte[] data) {
@@ -285,7 +288,7 @@ private class Peer {
                     throw new CryptoException("couldn't load peers certificate", null, [exc]);
                 }
 
-                if(this.ctx.crt is null || this.ctx.pub == null || this.ctx.rsa is null && this.ctx.bs > 0)
+                if(ctx.crt is null || ctx.pub == null || ctx.rsa is null && ctx.bs > 0)
                     throw new CryptoException("couldn't load peers certificate");
                 
                 this._ctx[Thread.getThis] = ctx;
@@ -306,21 +309,22 @@ private class Peer {
     private void createOutgoing() {
         import flow.data.bin : pack;
 
-        this._outgoing = new Cipher(this.cipher, this.hash);
+        Cipher ciph = new Cipher(this.cipher, this.hash);
         
         // encrypts and signs generated cipher
-        auto data = this.outgoing.data;
+        auto data = ciph.data;
         auto crypt = this.encryptRsa(data);
         auto sig = this.crypto.sign(crypt);
         this.outCrypt = sig.pack~crypt.pack;
         this.outValidity = Clock.currTime + this.validity;
+        this._outgoing = ciph;
     }
 
     private Cipher outgoing() @property {
         synchronized(this.lock.reader)  {
                 if(this.outValidity < Clock.currTime) {
                     synchronized(this.lock) {
-                        this._outgoing.destroy;
+                        this._outgoing.dispose;
                         this.createOutgoing();
                     }
             }
@@ -334,6 +338,8 @@ private class Peer {
     private SysTime[ulong] inValidity;
 
     this(Crypto crypto, string crt, string cipher, string hash, Duration outValidity, bool check = true) {
+        this.lock = new RwMutex;
+
         this.crypto = crypto;
         this._crt = crt;
         this.cipher = cipher;
@@ -346,14 +352,15 @@ private class Peer {
         }
 
         this.createOutgoing();
-
-        this.lock = new RwMutex;
     }
 
-    ~this() {
+    void dispose() {
         synchronized(this.lock)
             foreach(ctx; this._ctx.values)
                 ctx.free;
+
+        this.lock.dispose;
+        this.destroy;
     }
 
     bool check() {
@@ -410,7 +417,7 @@ private class Peer {
         foreach(h, c; this.incoming)
             if(this.inValidity[h] < Clock.currTime) {
                 this.incoming.remove(h);
-                c.destroy;
+                c.dispose;
             }
     }
 
@@ -514,7 +521,7 @@ package final class Crypto {
                     throw new CryptoException("couldn't load own rsa key", null, [exc]);
                 }
 
-                if(this.ctx.rsa is null && this.ctx.bs > 0)
+                if(ctx.rsa is null && ctx.bs > 0)
                     throw new CryptoException("couldn't load own rsa key");
                 
                 this._ctx[Thread.getThis] = ctx;
@@ -545,14 +552,18 @@ package final class Crypto {
         OPENSSL_config(null);
     }
 
-    /* shared static ~this {
+    static dispose() {
+        import deimos.openssl.err;
+
         EVP_cleanup();
         ERR_free_strings();
-    }*/
+    }
 
     //https://www.youtube.com/watch?v=uwzWVG_LDGA
 
     this(string addr, string key, string crt, string cipher, string hash, bool check = true, Duration cipherValidity = 10.minutes) {
+        this.lock = new RwMutex;
+
         this.addr = addr;
         this.key = key;
         this.crt = crt;
@@ -563,14 +574,15 @@ package final class Crypto {
         this.hash = hash != string.init ? hash : SSL_TXT_SHA;
         this._check = check;
         this.cipherValidity = cipherValidity;
-
-        this.lock = new RwMutex;
     }
 
-    ~this() {
+    void dispose() {
         synchronized(this.lock)
             foreach(ctx; this._ctx.values)
                 ctx.free;
+        
+        this.lock.dispose;
+        this.destroy;
     }
 
     /// add peer
@@ -587,7 +599,7 @@ package final class Crypto {
             if(p in this.peers)            
                 synchronized(this.lock) {
                     auto peer = this.peers[p];
-                    peer.destroy;
+                    peer.dispose;
                     this.peers.remove(p);
                 }
     }
@@ -707,17 +719,26 @@ unittest { test.header("TEST core.crypt: rsa encrypt/decrypt, sign/verify");
     assert(TestKeys.loaded, "keys were not loaded! did you execute util/ssl/gen.sh on a CA free host?");
 
     auto selfC = new Crypto("self", TestKeys.selfKey, TestKeys.selfCrt, SSL_TXT_AES_GCM, SSL_TXT_SHA, false);
+    selfC.add("signed", TestKeys.signedCrt);
+
     auto signedC = new Crypto("signed", TestKeys.signedKey, TestKeys.signedCrt, SSL_TXT_AES_GCM, SSL_TXT_SHA, false);
+    signedC.add("self", TestKeys.selfCrt);
 
     auto orig = "CRYPTED MESSAGE: hello world, I'm coming".bin;
     
-    auto signedCrypt = signedC.encryptRsa(orig, TestKeys.selfCrt);
+    auto signedCrypt = signedC.encryptRsa(orig, "self");
     auto selfDecrypt = selfC.decryptRsa(signedCrypt);
     assert(orig == selfDecrypt, "original message and decrypt of self crypto mismatch");
     
-    auto selfCrypt = selfC.encryptRsa(orig, TestKeys.signedCrt);
+    auto selfCrypt = selfC.encryptRsa(orig, "signed");
     auto signedDecrypt = signedC.decryptRsa(selfCrypt);
     assert(orig == signedDecrypt, "original message and decrypt of signed crypto mismatch");
+
+    selfC.remove("signed");
+    signedC.remove("self");
+
+    selfC.dispose;
+    signedC.dispose;
 test.footer; }
 
 /*version(unittest) {

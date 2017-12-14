@@ -18,12 +18,14 @@ class RwMutex : Mutex {
 
 	this() { }
 
-	~this() {
+	void dispose() {
 		synchronized(this) {
 			this.lockReader();
 			foreach(t, m; this._reader)
 				m.destroy;
 		}
+
+		this.destroy;
 	}
 
 	override @trusted void lock() {
