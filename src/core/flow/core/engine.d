@@ -1,8 +1,8 @@
 module flow.core.engine;
 
-private import core.thread;
 private import core.sync.rwmutex;
 private import flow.core.data;
+private import flow.core.proc;
 private import flow.util;
 private import std.uuid;
 
@@ -11,373 +11,10 @@ private enum SystemState {
     Ticking
 }
 
-package enum ProcessorState {
-    Stopped = 0,
-    Started
-}
-
-private enum JobStatus : ubyte
-{
-    NotStarted,
-    InProgress,
-    Done
-}
-
-private struct Job {
-    this(Tick t) {
-        tick = t;
-    }
-
-    Job* prev;
-    Job* next;
-
-    Throwable exception;
-    ubyte taskStatus = JobStatus.NotStarted;
-
-    @property bool done() {
-        import flow.util : atomicReadUbyte;
-        if (atomicReadUbyte(taskStatus) == JobStatus.Done)
-        {
-            if (exception)
-            {
-                throw exception;
-            }
-
-            return true;
-        }
-
-        return false;
-    }
-
-    Tick tick;
-}
-
-private final class Pipe : Thread
-{
-    this(void delegate() dg)
-    {
-        super(dg);
-    }
-
-    Processor processor;
-}
-
-package final class Processor : StateMachine!ProcessorState {
-    private import core.sync.condition : Condition;
-    private import core.sync.rwmutex : ReadWriteMutex;
-    private import core.sync.mutex : Mutex;
-
-    private Pipe[] pipes;
-
-    private Job* head;
-    private Job* tail;
-    private PoolState status = PoolState.running;
-    private long nextTime;
-    private Condition workerCondition;
-    private Condition waiterCondition;
-    private Mutex queueMutex;
-    private Mutex waiterMutex; // For waiterCondition
-
-    /// The instanceStartIndex of the next instance that will be created.
-    __gshared static size_t nextInstanceIndex = 1;
-
-    /// The index of the current thread.
-    private static size_t threadIndex;
-
-    /// The index of the first thread in this instance.
-    immutable size_t instanceStartIndex;
-    
-    /// The index that the next thread to be initialized in this pool will have.
-    private size_t nextThreadIndex;
-
-    private enum PoolState : ubyte {
-        running,
-        finishing,
-        stopNow
-    }
-
-    this(size_t nWorkers = 1) {
-
-        synchronized(typeid(Processor))
-        {
-            instanceStartIndex = nextInstanceIndex;
-
-            // The first worker thread to be initialized will have this index,
-            // and will increment it.  The second worker to be initialized will
-            // have this index plus 1.
-            nextThreadIndex = instanceStartIndex;
-            nextInstanceIndex += nWorkers;
-        }
-
-        this.queueMutex = new Mutex(this);
-        this.waiterMutex = new Mutex();
-        workerCondition = new Condition(queueMutex);
-        waiterCondition = new Condition(waiterMutex);
-        
-        this.pipes = new Pipe[nWorkers];
-    }
-
-    override protected bool onStateChanging(ProcessorState o, ProcessorState n) {
-        switch(n) {
-            case ProcessorState.Started:
-                return o == ProcessorState.Stopped;
-            case ProcessorState.Stopped:
-                return o == ProcessorState.Started;
-            default: return false;
-        }
-    }
-
-    override protected void onStateChanged(ProcessorState o, ProcessorState n) {
-        switch(n) {
-            case ProcessorState.Started:
-                // creating worker threads
-                foreach (ref poolThread; this.pipes) {
-                    poolThread = new Pipe(&startWorkLoop);
-                    poolThread.processor = this;
-                    poolThread.start();
-                }
-                break;
-            case ProcessorState.Stopped:
-                if(o == ProcessorState.Started) { // stop only if it is started
-                    {
-                        import flow.util : atomicCasUbyte;
-
-                        this.queueLock();
-                        scope(exit) this.queueUnlock();
-                        atomicCasUbyte(this.status, PoolState.running, PoolState.finishing);
-                        this.notifyAll();
-                    }
-                    // Use this thread as a worker until everything is finished.
-                    this.executeWorkLoop();
-
-                    foreach (t; this.pipes)
-                        t.join();
-                }
-                break;
-            default:
-                break;
-        }
-    }
-
-    void start() {
-        this.state = ProcessorState.Started;
-    }
-
-    void stop() {
-        this.state = ProcessorState.Stopped;
-    }
-
-    /** This function performs initialization for each thread that affects
-    thread local storage and therefore must be done from within the
-    worker thread.  It then calls executeWorkLoop(). */
-    private void startWorkLoop() {
-        // Initialize thread index.
-        {
-            this.queueLock();
-            scope(exit) this.queueUnlock();
-            this.threadIndex = this.nextThreadIndex;
-            this.nextThreadIndex++;
-        }
-
-        this.executeWorkLoop();
-    }
-
-    /** This is the main work loop that worker threads spend their time in
-    until they terminate.  It's also entered by non-worker threads when
-    finish() is called with the blocking variable set to true. */
-    private void executeWorkLoop() {    
-        import flow.util : atomicReadUbyte, atomicSetUbyte;
-
-        while (atomicReadUbyte(this.status) != PoolState.stopNow) {
-            Job* task = pop();
-            if (task is null) {
-                if (atomicReadUbyte(this.status) == PoolState.finishing) {
-                    atomicSetUbyte(this.status, PoolState.stopNow);
-                    return;
-                }
-            } else {
-                this.doJob(task);
-            }
-        }
-    }
-
-    private void wait() {
-        import std.datetime.systime : Clock;
-
-        auto stdTime = Clock.currStdTime;
-
-        // if there is nothing enqueued wait for notification
-        if(this.nextTime == long.max)
-            this.workerCondition.wait();
-        else if(this.nextTime - stdTime > 0) // otherwise wait for schedule or notification
-            this.workerCondition.wait((this.nextTime - stdTime).hnsecs);
-    }
-
-    private void notify() {
-        this.workerCondition.notify();
-    }
-
-    private void notifyAll() {
-        this.workerCondition.notifyAll();
-    }
-
-    private void notifyWaiters()
-    {
-        waiterCondition.notifyAll();
-    }
-
-    private void queueLock() {
-        assert(this.queueMutex);
-        this.queueMutex.lock();
-    }
-
-    private void queueUnlock() {
-        assert(this.queueMutex);
-        this.queueMutex.unlock();
-    }
-
-    private void waiterLock() {
-        this.waiterMutex.lock();
-    }
-
-    private void waiterUnlock() {
-        this.waiterMutex.unlock();
-    }
-
-    /// Pop a task off the queue.
-    private Job* pop()
-    {
-        this.queueLock();
-        scope(exit) this.queueUnlock();
-        auto ret = this.popNoSync();
-        while (ret is null && this.status == PoolState.running)
-        {
-            this.wait();
-            ret = this.popNoSync();
-        }
-        return ret;
-    }
-
-    private Job* popNoSync()
-    out(ret) {
-        /* If task.prev and task.next aren't null, then another thread
-         * can try to delete this task from the pool after it's
-         * alreadly been deleted/popped.
-         */
-        if (ret !is null)
-        {
-            assert(ret.next is null);
-            assert(ret.prev is null);
-        }
-    } body {
-        import std.datetime.systime : Clock;
-
-        auto stdTime = Clock.currStdTime;
-
-        this.nextTime = long.max;
-        Job* ret = this.head;
-        if(ret !is null) {
-            // skips ticks not to execute yet
-            while(ret !is null && ret.tick.time > stdTime) {
-                if(ret.tick.time < this.nextTime)
-                    this.nextTime = ret.tick.time;
-                ret = ret.next;
-            }
-        }
-
-        if (ret !is null)
-        {
-            this.head = ret.next;
-            ret.prev = null;
-            ret.next = null;
-            ret.taskStatus = JobStatus.InProgress;
-        }
-
-        if (this.head !is null)
-        {
-            this.head.prev = null;
-        }
-
-        return ret;
-    }
-
-    private void doJob(Job* job) {
-        import flow.util : atomicSetUbyte;
-
-        assert(job.taskStatus == JobStatus.InProgress);
-        assert(job.next is null);
-        assert(job.prev is null);
-
-        scope(exit) {
-            this.waiterLock();
-            scope(exit) this.waiterUnlock();
-            this.notifyWaiters();
-        }
-
-        try {
-            job.tick.exec();
-        } catch (Throwable thr) {
-            job.exception = thr;
-        }
-
-        atomicSetUbyte(job.taskStatus, JobStatus.Done);
-    }
-
-
-    void run(string id, Tick t) {
-        this.ensureState(ProcessorState.Started);
-
-        auto j = new Job(t);
-        this.abstractPut(j);
-    }
-    
-    /// Push a task onto the queue.
-    private void abstractPut(Job* task)
-    {
-        queueLock();
-        scope(exit) queueUnlock();
-        abstractPutNoSync(task);
-    }
-
-    private void abstractPutNoSync(Job* task)
-    in {
-        assert(task);
-    } out {
-        import std.conv : text;
-
-        assert(tail.prev !is tail);
-        assert(tail.next is null, text(tail.prev, '\t', tail.next));
-        if (tail.prev !is null) {
-            assert(tail.prev.next is tail, text(tail.prev, '\t', tail.next));
-        }
-    } body {
-        // Not using enforce() to save on function call overhead since this
-        // is a performance critical function.
-        if (status != PoolState.running) {
-            throw new Error(
-                "Cannot submit a new task to a pool after calling " ~
-                "finish() or stop()."
-            );
-        }
-
-        task.next = null;
-        if (head is null) {   //Queue is empty.
-            head = task;
-            tail = task;
-            tail.prev = null;
-        } else {
-            assert(tail);
-            task.prev = tail;
-            tail.next = task;
-            tail = task;
-        }
-        notify();
-    }
-}
-
 /// represents a definded change in systems information
 abstract class Tick {
     private import core.sync.rwmutex : ReadWriteMutex;
+    private import core.time : Duration;
     private import flow.data : Data;
     private import std.datetime.systime : SysTime;
 
@@ -385,6 +22,8 @@ abstract class Tick {
     private Entity entity;
     private Ticker ticker;
     private long time;
+
+    private Throwable thr;
 
     protected @property TickInfo info() {return this.meta.info !is null ? this.meta.info.clone : null;}
     protected @property Signal trigger() {return this.meta.trigger !is null ? this.meta.trigger.clone : null;}
@@ -409,35 +48,6 @@ abstract class Tick {
 
     /// predicted costs of tick (default=0)
     public @property size_t costs() {return 0;}
-
-    /// execute tick meant to be called by processor
-    package void exec() {
-        import flow.util : Log;
-        try {
-            // run tick
-            Log.msg(LL.FDebug, this.logPrefix~"running tick", this.meta);
-            this.run();
-            Log.msg(LL.FDebug, this.logPrefix~"finished tick", this.meta);
-            
-            this.ticker.actual = null;
-            this.ticker.run();
-        } catch(Throwable thr) {
-            Log.msg(LL.Error, this.logPrefix~"run failed", thr);
-            try {
-                Log.msg(LL.Info, this.logPrefix~"handling run error", thr, this.meta);
-                this.error(thr);
-                
-                this.ticker.actual = null;        
-                this.ticker.run();
-            } catch(Throwable thr2) {
-                // if even handling exception failes notify that an error occured
-                Log.msg(LL.Error, this.logPrefix~"handling error failed", thr2);
-                this.ticker.actual = null;
-
-                this.ticker.handle(thr2);
-            }
-        }
-    }
 
     /// algorithm implementation of tick
     public void run() {}
@@ -666,15 +276,16 @@ private Tick createTick(TickMeta m, Entity e) {
     } else return null;
 }
 
-/// executes an entitycentric string of discretized causality
+/// executes an entity centric string of discrete causality
 private class Ticker : StateMachine!SystemState {
     bool sync;
     
     UUID id;
     Entity entity;
     Tick actual;
+    Job job;
     Tick next;
-    Throwable error;
+    Throwable thr;
 
     private this(Entity b) {
         this.id = randomUUID;
@@ -704,8 +315,7 @@ private class Ticker : StateMachine!SystemState {
     }
 
     void join() {
-        import core.thread : Thread;
-
+        import core.thread : Thread, msecs; // core.thread aliases msecs
         while(this.state == SystemState.Ticking)
             Thread.sleep(5.msecs);
     }
@@ -730,9 +340,10 @@ private class Ticker : StateMachine!SystemState {
     }
 
     override protected void onStateChanged(SystemState o, SystemState n) {
+        import core.thread : Thread, msecs; // core.thread aliases msecs
         switch(n) {
             case SystemState.Ticking:
-                this.run();
+                this.process();
                 break;
             case SystemState.Frozen:
                 // wait for executing tick to end if there is one
@@ -744,8 +355,8 @@ private class Ticker : StateMachine!SystemState {
         }
     }
 
-    /// run next tick if possible, is usually called by a tasker
-    void run() {
+    /// run next tick if possible, is usually called by a processor who calls tick.exec
+    private void process() {
         // if in ticking state try to run created tick or notify wha nothing happens
         if(this.state == SystemState.Ticking) {
             if(this.next !is null) {
@@ -754,9 +365,11 @@ private class Ticker : StateMachine!SystemState {
                         // check if entity is still running after getting the sync
                         this.actual = this.next;
                         this.next = null;
-                        this.entity.space.tasker.run(this.entity.meta.ptr.addr, this.actual);
+
+                        this.job = Job(&this.run, &this.error, this.actual.time);
+                        this.entity.space.proc.run(&this.job);
                     } else {
-                        Log.msg(LL.Error, this.logPrefix~"could not run tick -> ending");
+                        Log.msg(LL.Error, this.logPrefix~"could not run tick -> ending", this.actual.meta);
                         this.freeze(); // now it has to be frozen
                     }
             } else {
@@ -768,9 +381,47 @@ private class Ticker : StateMachine!SystemState {
         }
     }
 
-    void handle(Throwable thr) {
-        this.error = thr;
+    /// execute tick meant to be called by processor
+    private void run() {
+        import flow.util : Log;
 
+        // run tick
+        Log.msg(LL.FDebug, this.logPrefix~"running tick", this.actual.meta);
+        this.actual.run();
+        Log.msg(LL.FDebug, this.logPrefix~"finished tick", this.actual.meta);
+        
+        // if everything was successful cleanup and process next
+        this.actual = null;
+        this.process();
+    }
+
+    private void error(Throwable thr) {
+        Log.msg(LL.Info, this.logPrefix~"handling error", thr, this.actual.meta);
+
+        this.thr = thr;
+
+        this.job = Job(&this.runError, &this.fatal);
+        this.entity.space.proc.run(&this.job);
+    }
+
+    private void runError() {
+        this.actual.error(this.thr);
+
+        Log.msg(LL.FDebug, this.logPrefix~"finished handling error", this.actual.meta);
+
+        this.actual = null;
+        this.process();
+    }
+
+    private void fatal(Throwable thr) {
+        this.thr = thr;
+
+        // if even handling exception failes notify that an error occured
+        Log.msg(LL.Error, this.logPrefix~"handling error failed", thr);
+        
+        this.actual = null;
+
+        // BOOM BOOM BOOM
         if(this.sync) {
             if(this.state == SystemState.Ticking)
                 this.freeze();
@@ -848,7 +499,7 @@ private class Entity : StateMachine!SystemState {
                     auto ticker = new Ticker(this, t);
                     ticker.tick(true);
                     ticker.join();
-                    auto thr = ticker.error;
+                    auto thr = ticker.thr;
                     ticker.destroy();
 
                     if(thr !is null) {
@@ -874,7 +525,7 @@ private class Entity : StateMachine!SystemState {
                     auto ticker = new Ticker(this, t);
                     ticker.tick(true);
                     ticker.join();
-                    auto thr = ticker.error;
+                    auto thr = ticker.thr;
                     ticker.destroy();
 
                     if(thr !is null) {
@@ -1497,7 +1148,7 @@ test.footer(); }
 class Space : StateMachine!SystemState {
     private SpaceMeta meta;
     private Process process;
-    private Processor tasker;
+    private Processor proc;
 
     private Junction[] junctions;
     private Entity[string] entities;
@@ -1521,9 +1172,9 @@ class Space : StateMachine!SystemState {
 
         this.junctions = Junction[].init;
 
-        this.tasker.stop();
-        this.tasker.destroy;
-        this.tasker = null;
+        this.proc.stop();
+        this.proc.destroy;
+        this.proc = null;
     }
 
     /// makes space and all of its content freezing
@@ -1559,7 +1210,7 @@ class Space : StateMachine!SystemState {
     override protected void onStateChanged(SystemState o, SystemState n) {
         switch(n) {
             case SystemState.Frozen:
-                if(this.tasker is null)
+                if(this.proc is null)
                     this.onCreated();
                 else
                     this.onFrozen();
@@ -1575,8 +1226,8 @@ class Space : StateMachine!SystemState {
         // default is one core
         if(this.meta.worker < 1)
             this.meta.worker = 1;
-        this.tasker = new Processor(this.meta.worker);
-        this.tasker.start();
+        this.proc = new Processor(this.meta.worker);
+        this.proc.start();
 
         // creating junctions
         foreach(jm; this.meta.junctions) {
@@ -1793,6 +1444,7 @@ class Process {
 
     /// ensure it is executed in main thread or not at all
     private void ensureThread() {
+        import core.thread : thread_isMainThread;
         import flow.core.error : ProcessError;
 
         if(!thread_isMainThread)
