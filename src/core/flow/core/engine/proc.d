@@ -44,7 +44,6 @@ private final class Pipe : Thread
 
 package final class Processor : StateMachine!ProcessorState {
     private import core.sync.condition : Condition;
-    private import core.sync.rwmutex : ReadWriteMutex;
     private import core.sync.mutex : Mutex;
 
     private Pipe[] pipes;

@@ -114,7 +114,7 @@ void run(string confDir, string libDir) {
 
     Log.msg(LL.Message, "initializing process");    
     auto p = new Process();
-    scope(exit) p.destroy;
+    scope(exit) p.dispose;
 
     Log.msg(LL.Message, "initializing spaces");
     Space[] spaces;

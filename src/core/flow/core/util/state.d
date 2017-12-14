@@ -1,6 +1,7 @@
 module flow.core.util.state;
 
 private import flow.core.util.error;
+private import flow.core.util.rwmutex;
 version(unittest) private static import test = flow.core.util.test;
 private import std.traits;
 
@@ -12,26 +13,25 @@ class StateRefusedException : FlowException {mixin exception;}
 
 /// state machine mixin template
 abstract class StateMachine(T) if (isScalarType!T) {
-    private import core.sync.rwmutex : ReadWriteMutex;
-
     private ReadWriteMutex _lock;
     protected @property ReadWriteMutex lock(){return this._lock;}
     private T _state;
 
     /// actual state
     @property T state() {
-        // no lock required since primitives are synced by D
-        return this._state;
+        synchronized(this.lock.reader)
+            // no lock required since primitives are synced by D
+            return this._state;
     }
 
     protected @property void state(T value) {
         auto allowed = false;
         T oldState;
         Exception error;
-        synchronized(this.lock.writer) {
+        synchronized(this.lock.reader) {
             if(this._state == value)
                 return; // already in state, do nothing
-            else {
+            else synchronized(this.lock.writer) {
                 try {
                     allowed = this.onStateChanging(this._state, value);
                 } catch(Exception exc) {
@@ -58,28 +58,35 @@ abstract class StateMachine(T) if (isScalarType!T) {
     }
 
     protected void ensureState(T requiredState) {
-        // no lock required since primitives are synced by D
-        if(this._state != requiredState)
-            throw new InvalidStateException();
+        synchronized(this.lock.reader)
+            // no lock required since primitives are synced by D
+            if(this._state != requiredState)
+                throw new InvalidStateException();
     }
 
     // TODO replace ensure state or overloadings with template
     protected void ensureStateOr(T state1, T state2) {
-        auto state = this._state;
-        if(state != state1 && state != state2)
-            throw new InvalidStateException();
+        synchronized(this.lock.reader) {
+            auto state = this._state;
+            if(state != state1 && state != state2)
+                throw new InvalidStateException();
+        }
     }
 
     protected void ensureStateOr(T state1, T state2, T state3) {
-        auto state = this._state;
-        if(state != state1 && state != state2 && state != state3)
-            throw new InvalidStateException();
+        synchronized(this.lock.reader) {
+            auto state = this._state;
+            if(state != state1 && state != state2 && state != state3)
+                throw new InvalidStateException();
+        }
     }
 
     protected void ensureStateOr(T state1, T state2, T state3, T state4) {
-        auto state = this._state;
-        if(state != state1 && state != state2 && state != state3 && state != state4)
-            throw new InvalidStateException();
+        synchronized(this.lock.reader) {
+            auto state = this._state;
+            if(state != state1 && state != state2 && state != state3 && state != state4)
+                throw new InvalidStateException();
+        }
     }
 
     protected bool onStateChanging(T oldState, T newState) {return true;}

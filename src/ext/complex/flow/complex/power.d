@@ -45,7 +45,7 @@ class React : Tick {
         
         debug(tick) this.msg(LL.Debug, "React::accept: s.power="~s.power.to!string);
         debug(tick) this.msg(LL.Debug, "React::accept: before sync");
-        synchronized(this.sync.writer) {
+        synchronized(this.sync) {
             if(!c.relations.empty && c.power > s.power) { // it can only give power if it has this power
                 // can the act cut out others so it is consumed completely?
                 auto canAccept = false;
@@ -145,7 +145,7 @@ class Exist : Tick {
                         auto a = new Act;
                         a.power = miss;
                         if(this.send(a, r.entity)) {
-                            synchronized(this.sync.writer)
+                            synchronized(this.sync)
                                 c.power += miss;
                             break;
                         }
@@ -153,7 +153,7 @@ class Exist : Tick {
                         auto a = new Act;
                         a.power = rpower;
                         if(this.send(a, r.entity)) {
-                            synchronized(this.sync.writer)
+                            synchronized(this.sync)
                                 c.power += rpower;
                             miss -= rpower;
                             if(miss < 1) {

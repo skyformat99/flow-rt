@@ -35,7 +35,7 @@ class React : Tick {
 
         debug(tick) this.msg(LL.Debug, "React::accept: before sync");
         // we only accept it, if its power is enough to make a difference
-        synchronized(this.sync.writer) {
+        synchronized(this.sync) {
             auto newPower = c.power - s.power;
             if(!c.power.isIdentical(newPower)) {
                 debug(tick) this.msg(LL.Debug, "React::accept: !isIdentical");
@@ -82,7 +82,7 @@ class Exist : Tick {
         auto sleep = false;
 
         debug(tick) this.msg(LL.Debug, "Exist::run: before sync");
-        synchronized(this.sync.writer) {
+        synchronized(this.sync) {
             sleep = c.relations.empty;
             debug(tick) this.msg(LL.Debug, "Exist::run: c.realtions.length'="~c.relations.length.to!string);
             if(!sleep) { // if there are no relations there is nothing to do than wait a bit and check again

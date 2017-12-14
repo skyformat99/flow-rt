@@ -1,6 +1,5 @@
 module flow.core.ipc.nanomsg;
 
-import core.sync.rwmutex;
 import core.thread;
 import flow.core;
 import flow.core.data;
@@ -30,7 +29,6 @@ class MeshJunctionMeta : JunctionMeta {
 
 /// junction allowing direct signalling between spaces hosted in same process
 class MeshJunction : Junction {
-    private import core.sync.rwmutex : ReadWriteMutex;
     private import std.uuid : UUID;
 
     private ReadWriteMutex lock;

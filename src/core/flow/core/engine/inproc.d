@@ -38,7 +38,7 @@ class InProcessChannel : Channel {
 
     override protected void dispose() {
         if(this.master)
-            this.peer.destroy;
+            this.peer.dispose;
 
         this.own.unregister(this);
     }
@@ -60,7 +60,6 @@ class InProcessChannel : Channel {
 
 /// junction allowing direct signalling between spaces hosted in same process
 class InProcessJunction : Junction {
-    private import core.sync.rwmutex : ReadWriteMutex;
     private import std.uuid : UUID;
 
     private static __gshared ReadWriteMutex pLock;
@@ -109,20 +108,19 @@ class InProcessJunction : Junction {
     override bool up() {
         import flow.core.util : as;
 
-        synchronized(pLock.writer)
+        synchronized(pLock)
             if(this.id !in pool) // if is down
-                synchronized(this.cLock.writer)
+                synchronized(this.cLock)
                     pool[this.id][this.meta.info.space] = this.as!(shared(InProcessJunction));
 
         return true;
     }
 
     override void down() {
-        synchronized(pLock.writer) {
-            synchronized(this.cLock.writer)
+        synchronized(pLock) {
+            synchronized(this.cLock)
                 foreach(dst, c; this.channels)
-                    synchronized(c.writer)
-                        c.dispose();
+                    c.dispose();
 
             if(this.id in pool)
                 pool[this.id].remove(this.meta.info.space);
@@ -190,7 +188,7 @@ unittest { test.header("TEST inproc: fully enabled passing of signals");
     import std.uuid;
 
     auto proc = new Process;
-    scope(exit) proc.destroy;
+    scope(exit) proc.dispose;
 
     auto spc1Domain = "spc1.test.inproc.ipc.flow";
     auto spc2Domain = "spc2.test.inproc.ipc.flow";
@@ -243,7 +241,7 @@ unittest { test.header("TEST inproc: anonymous (not) passing of signals");
     import std.uuid;
 
     auto proc = new Process;
-    scope(exit) proc.destroy;
+    scope(exit) proc.dispose;
 
     auto spc1Domain = "spc1.test.inproc.ipc.flow";
     auto spc2Domain = "spc2.test.inproc.ipc.flow";
@@ -298,7 +296,7 @@ unittest { test.header("TEST inproc: indifferent (not) passing of signals");
     import std.uuid;
 
     auto proc = new Process;
-    scope(exit) proc.destroy;
+    scope(exit) proc.dispose;
 
     auto spc1Domain = "spc1.test.inproc.ipc.flow";
     auto spc2Domain = "spc2.test.inproc.ipc.flow";
@@ -352,7 +350,7 @@ unittest { test.header("TEST inproc: !acceptsMulticast (not) passing of signals"
     import std.uuid;
 
     auto proc = new Process;
-    scope(exit) proc.destroy;
+    scope(exit) proc.dispose;
 
     auto spc1Domain = "spc1.test.inproc.ipc.flow";
     auto spc2Domain = "spc2.test.inproc.ipc.flow";

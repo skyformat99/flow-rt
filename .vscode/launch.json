@@ -78,7 +78,7 @@
                 "handle SIGUSR2 nostop noprint",
                 "break onInvalidMemoryOperationError"
             ],
-            "target": "doc_introduction",
+            "target": "doc_introduction.d",
             "cwd": "${workspaceRoot}/test"
         }
     ]

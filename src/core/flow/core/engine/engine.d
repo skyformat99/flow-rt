@@ -1,6 +1,5 @@
 module flow.core.engine.engine;
 
-private import core.sync.rwmutex;
 private import flow.core.engine.data;
 private import flow.core.engine.proc;
 private import flow.core.util;
@@ -13,7 +12,6 @@ private enum SystemState {
 
 /// represents a definded change in systems information
 abstract class Tick {
-    private import core.sync.rwmutex : ReadWriteMutex;
     private import core.time : Duration;
     private import flow.core.data : Data;
     private import std.datetime.systime : SysTime;
@@ -296,12 +294,14 @@ private class Ticker : StateMachine!SystemState {
         this.next.ticker = this;
     }
 
-    ~this() {
+    void dispose() {
         if(this.state == SystemState.Ticking)
             this.freeze();
 
         if(!this.sync)
             this.detach();
+
+        this.destroy;
     }
 
     /// starts ticking
@@ -425,8 +425,6 @@ private class Ticker : StateMachine!SystemState {
 
 /// hosts an entity construct
 private class Entity : StateMachine!SystemState {
-    private import core.sync.rwmutex : ReadWriteMutex;
-
     /** mutex dedicated to sync context accesses */
     ReadWriteMutex sync;
     /** mutex dedicated to sync meta except context accesses */
@@ -446,20 +444,22 @@ private class Entity : StateMachine!SystemState {
         super();
     }
 
-    ~this() {
+    void dispose() {
         if(this.state == SystemState.Ticking)
             this.freeze();
+        
+        this.destroy;
     }
 
     /// disposes a ticker
     void detach(Ticker t) {
-        synchronized(this.lock.writer) {
+        synchronized(this.lock) {
             if(t.next !is null)
-                synchronized(this.metaLock.writer)
+                synchronized(this.metaLock)
                     this.meta.ticks ~= t.next.meta;
             this.ticker.remove(t.id);
         }
-        t.destroy;
+        t.dispose;
     }
 
     /// makes entity tick
@@ -494,7 +494,7 @@ private class Entity : StateMachine!SystemState {
                     ticker.tick(true);
                     ticker.join();
                     auto thr = ticker.thr;
-                    ticker.destroy();
+                    ticker.dispose;
 
                     if(thr !is null) {
                         // damages entity and falls back negativ
@@ -520,7 +520,7 @@ private class Entity : StateMachine!SystemState {
                     ticker.tick(true);
                     ticker.join();
                     auto thr = ticker.thr;
-                    ticker.destroy();
+                    ticker.dispose;
 
                     if(thr !is null) {
                         // doesn't avoid freezing nor further execution of on freezing ticks
@@ -537,7 +537,7 @@ private class Entity : StateMachine!SystemState {
             if(t.next !is null)
                 this.meta.ticks ~= t.next.meta;
             this.ticker.remove(t.id);
-            t.destroy();
+            t.dispose;
         }
 
         return true;
@@ -784,7 +784,7 @@ private enum JunctionState {
     Attached
 }
 
-abstract class Channel : ReadWriteMutex {
+abstract class Channel {
     private string _dst;
     private Junction _own;
     private JunctionInfo _other;
@@ -794,11 +794,9 @@ abstract class Channel : ReadWriteMutex {
     @property string dst() {return this._dst;}
     @property JunctionInfo other() {return this._other;}
     
-    this(string dst, Junction own) {
+    this(string dst, Junction own) {        
         this._dst = dst;
         this._own = own;
-
-        super(ReadWriteMutex.Policy.PREFER_WRITERS);
     }
 
     final protected ubyte[] getAuth() {
@@ -928,9 +926,11 @@ abstract class Junction : StateMachine!JunctionState {
         super();
     }
     
-    ~this() {
+    void dispose() {
         if(this.state != JunctionState.Attached)
             this.detach();
+        
+        this.destroy;
     }
 
     private bool initCrypto() {
@@ -940,7 +940,7 @@ abstract class Junction : StateMachine!JunctionState {
 
     private void deinitCrypto() {
         if(this.crypto !is null) {
-            this.crypto.destroy;
+            this.crypto.dispose;
             this.crypto = null;
         }
     }
@@ -1145,21 +1145,21 @@ class Space : StateMachine!SystemState {
         super();
     }
 
-    ~this() {
+    void dispose() {
         if(this.state == SystemState.Ticking)
             this.freeze();
 
         foreach(j; this.junctions)
-            j.destroy();
+            j.dispose;
 
         foreach(e; this.entities.keys)
-            this.entities[e].destroy;
+            this.entities[e].dispose;
 
         this.junctions = Junction[].init;
 
         this.proc.stop();
-        this.proc.destroy;
-        this.proc = null;
+
+        this.dispose;
     }
 
     /// makes space and all of its content freezing
@@ -1271,17 +1271,19 @@ class Space : StateMachine!SystemState {
     EntityController spawn(EntityMeta m) {
         import flow.core.engine.error : SpaceException;
 
-        synchronized(this.lock.writer) {
+        synchronized(this.lock.reader) {
             if(m.ptr.id in this.entities)
                 throw new SpaceException("entity with addr \""~m.ptr.addr~"\" is already existing");
             else {
-                // ensure entity belonging to this space
-                m.ptr.space = this.meta.id;
-                
-                this.meta.entities ~= m;
-                Entity e = new Entity(this, m);
-                this.entities[m.ptr.id] = e;
-                return new EntityController(e);
+                synchronized(this.lock.writer) {
+                    // ensure entity belonging to this space
+                    m.ptr.space = this.meta.id;
+                    
+                    this.meta.entities ~= m;
+                    Entity e = new Entity(this, m);
+                    this.entities[m.ptr.id] = e;
+                    return new EntityController(e);
+                }
             }
         }
     }
@@ -1290,12 +1292,14 @@ class Space : StateMachine!SystemState {
     void kill(string e) {
         import flow.core.engine.error : SpaceException;
 
-        synchronized(this.lock.writer) {
+        synchronized(this.lock.reader) {
             if(e in this.entities) {
-                this.entities[e].destroy;
-                this.entities.remove(e);
+                synchronized(this.lock.writer) {
+                    this.entities[e].dispose;
+                    this.entities.remove(e);
+                }
             } else
-                throw new SpaceException("entity with addr \""~e~"\" is not existing");
+                    throw new SpaceException("entity with addr \""~e~"\" is not existing");
         }
     }
     
@@ -1321,8 +1325,8 @@ class Space : StateMachine!SystemState {
     private bool route(Anycast s, ushort level) {
         // if its adressed to own space or parent using * wildcard or even none
         // in each case we do not want to regex search when ==
-        if(this.state == SystemState.Ticking) {
-            synchronized(this.lock.reader) {
+        synchronized(this.lock.reader) {
+            if(this.state == SystemState.Ticking) {
                 foreach(e; this.entities.values) {
                     if(e.meta.level >= level) { // only accept if entities level is equal or higher the one of the junction
                         if(e.receipt(s))
@@ -1340,8 +1344,8 @@ class Space : StateMachine!SystemState {
         auto r = false;
         // if its adressed to own space or parent using * wildcard or even none
         // in each case we do not want to regex search when ==
-        if(this.state == SystemState.Ticking) {
-            synchronized(this.lock.reader) {
+        synchronized(this.lock.reader) {
+            if(this.state == SystemState.Ticking) {
                 foreach(e; this.entities.values) {
                     if(e.meta.level >= level) { // only accept if entities level is equal or higher the one of the junction
                         r = e.receipt(s) || r;
@@ -1409,22 +1413,20 @@ class Space : StateMachine!SystemState {
 
 /** hosts one or more spaces and allows to controll them
 whatever happens on this level, it has to happen in main thread or an exception occurs */
-class Process {
-    private import core.sync.rwmutex : ReadWriteMutex;
-
-    private ReadWriteMutex spacesLock;
-    private ReadWriteMutex junctionsLock;
+class Process {    
+    private ReadWriteMutex lock;
     private Space[string] spaces;
 
     /// ctor
     this() {
-        this.spacesLock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
-        this.junctionsLock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
+        this.lock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
     }
 
-    ~this() {
+    void dispose() {
         foreach(s; this.spaces.keys)
-            this.spaces[s].destroy;
+            this.spaces[s].dispose;
+
+        this.destroy;
     }
 
     /// ensure it is executed in main thread or not at all
@@ -1442,13 +1444,15 @@ class Process {
 
         this.ensureThread();
         
-        if(s.id in this.spaces)
-            throw new ProcessException("space with id \""~s.id~"\" is already existing");
-        else {
-            auto space = new Space(this, s);
-            synchronized(this.spacesLock.writer)
-                this.spaces[s.id] = space;
-            return space;
+        synchronized(this.lock.reader) {
+            if(s.id in this.spaces)
+                throw new ProcessException("space with id \""~s.id~"\" is already existing");
+            else {
+                auto space = new Space(this, s);
+                synchronized(this.lock.writer)
+                    this.spaces[s.id] = space;
+                return space;
+            }
         }
     }
 
@@ -1456,7 +1460,7 @@ class Process {
     Space get(string s) {
         this.ensureThread();
         
-        synchronized(this.spacesLock.reader)
+        synchronized(this.lock.reader)
             return (s in this.spaces).as!bool ? this.spaces[s] : null;
     }
 
@@ -1466,12 +1470,13 @@ class Process {
 
         this.ensureThread();
         
-        synchronized(this.spacesLock.writer)
-            if(s in this.spaces) {
-                this.spaces[s].destroy;
-                this.spaces.remove(s);
-            } else
-                throw new ProcessException("space with id \""~s~"\" is not existing");
+        synchronized(this.lock.reader)
+            if(s in this.spaces)
+                synchronized(this.lock.writer) {
+                    this.spaces[s].dispose;
+                    this.spaces.remove(s);
+                } else
+                    throw new ProcessException("space with id \""~s~"\" is not existing");
     }
 }
 
@@ -1756,7 +1761,7 @@ unittest { test.header("TEST core.engine: events");
     import flow.core.util;
 
     auto proc = new Process;
-    scope(exit) proc.destroy;
+    scope(exit) proc.dispose;
 
     auto spcDomain = "spc.test.engine.ipc.flow";
 
@@ -1789,8 +1794,7 @@ unittest { test.header("TEST core.engine: event error handling");
     import std.range;   
 
     auto proc = new Process;
-    scope(exit)
-        proc.destroy;
+    scope(exit) proc.dispose;
 
     auto spcDomain = "spc.test.engine.ipc.flow";
 
@@ -1823,8 +1827,7 @@ unittest { test.header("TEST core.engine: damage error handling");
     
 
     auto proc = new Process;
-    scope(exit)
-        proc.destroy;
+    scope(exit) proc.dispose;
 
     auto spcDomain = "spc.test.engine.ipc.flow";
 
@@ -1853,8 +1856,7 @@ unittest { test.header("TEST core.engine: delayed next");
     import flow.core.util;
 
     auto proc = new Process;
-    scope(exit)
-        proc.destroy;
+    scope(exit) proc.dispose;
 
     auto spcDomain = "spc.test.engine.ipc.flow";
     auto delay = 100.msecs;
@@ -1892,8 +1894,7 @@ unittest { test.header("TEST core.engine: send and receipt of all signal types a
 
 
     auto proc = new Process;
-    scope(exit)
-        proc.destroy;
+    scope(exit) proc.dispose;
 
     auto spcDomain = "spc.test.engine.ipc.flow";
 

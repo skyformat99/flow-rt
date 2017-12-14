@@ -135,7 +135,7 @@ private class Cipher {
     private import core.thread;
     private import std.datetime.systime;
 
-    private RwMutex lock;
+    private ReadWriteMutex lock;
 
     /// a cipher algorithm needs a hash algorithm
     private string cipher, hash;
@@ -180,7 +180,7 @@ private class Cipher {
     }
 
     this(string cipher, string hash) {
-        this.lock = new RwMutex;
+        this.lock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
 
         this.cipher = cipher;
         this.hash = hash;
@@ -197,9 +197,6 @@ private class Cipher {
             foreach(c; this._ctx.values)
                 EVP_CIPHER_CTX_cleanup(&c);
         }
-
-        this.lock.dispose;
-        this.destroy;
     }
 
     ubyte[] encrypt(ref ubyte[] data) {
@@ -267,7 +264,7 @@ private class Peer {
     private import core.thread;
     private import std.datetime.systime;
 
-    private RwMutex lock;
+    private ReadWriteMutex lock;
 
     private Crypto crypto;
 
@@ -339,7 +336,7 @@ private class Peer {
     private SysTime[ulong] inValidity;
 
     this(Crypto crypto, string crt, string cipher, string hash, Duration outValidity, bool check = true) {
-        this.lock = new RwMutex;
+        this.lock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
 
         this.crypto = crypto;
         this._crt = crt;
@@ -359,9 +356,6 @@ private class Peer {
         synchronized(this.lock)
             foreach(ctx; this._ctx.values)
                 ctx.free;
-
-        this.lock.dispose;
-        this.destroy;
     }
 
     bool check() {
@@ -498,7 +492,7 @@ package final class Crypto {
     private import core.thread;
     private import core.time;
 
-    private RwMutex lock;
+    private ReadWriteMutex lock;
 
     private string addr;
     private string key;
@@ -561,7 +555,7 @@ package final class Crypto {
     //https://www.youtube.com/watch?v=uwzWVG_LDGA
 
     this(string addr, string key, string crt, string cipher, string hash, bool check = true, Duration cipherValidity = 10.minutes) {
-        this.lock = new RwMutex;
+        this.lock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
 
         this.addr = addr;
         this.key = key;
@@ -579,9 +573,6 @@ package final class Crypto {
         synchronized(this.lock)
             foreach(ctx; this._ctx.values)
                 ctx.free;
-        
-        this.lock.dispose;
-        this.destroy;
     }
 
     /// add peer

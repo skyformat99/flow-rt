@@ -154,7 +154,7 @@ void main() {
     // creates a process which hosts our spaces
     auto proc = new Process;
     // the process should be destroyed when exiting scope
-    scope(exit) proc.destroy;
+    scope(exit) proc.dispose;
 
     // defines domains for our spaces
     /// sender hosting space's domain
