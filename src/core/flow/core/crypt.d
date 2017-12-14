@@ -1,7 +1,12 @@
 module flow.core.crypt;
 
 private import deimos.openssl.ssl;
-private import flow.util;
+private import flow.core.util.error;
+private import flow.core.util;
+
+class CryptoInitException : FlowException {mixin exception;}
+
+class CryptoException : FlowException {mixin exception;}
 
 private RSA* load(T)(string key) if(is(T==RSA)) {
     import std.conv : to;
@@ -37,7 +42,7 @@ private struct GenCipher {
 }
 
 private GenCipher loadCipher(ubyte[] data) {
-    import flow.data.bin : unpack;
+    import flow.core.data.bin : unpack;
 
     GenCipher gen;
     gen.key = data.unpack;
@@ -68,8 +73,7 @@ private GenCipher createCipher(string cipher, string hash) {
 /// openssl cipher generator
 private GenCipher genCipher(string title, string cipherFunc, string hashFunc)() {
     import deimos.openssl.rand : RAND_bytes;
-    import flow.core.error : CryptoException;
-    import flow.data.bin : pack;
+    import flow.core.data.bin : pack;
 
     immutable ks = 256/8;
     immutable rounds = 3;
@@ -111,7 +115,6 @@ private EVP_CIPHER_CTX createCipherCtx(string hash, GenCipher ciph) {
 
 /// openssl cipher context generator
 private EVP_CIPHER_CTX genCipherCtx(string title, string initFunc, string cipherFunc)(GenCipher ciph) {
-    import flow.core.error : CryptoException;
     EVP_CIPHER_CTX ctx;
     
     EVP_CIPHER_CTX_init(&ctx);
@@ -200,7 +203,7 @@ private class Cipher {
     }
 
     ubyte[] encrypt(ref ubyte[] data) {
-        import flow.core.error : CryptoException;
+        import flow.core.util.log : Log, LL;
         import std.conv : to;
 
         synchronized(this.lock.reader) try {
@@ -218,7 +221,7 @@ private class Cipher {
     }
 
     ubyte[] decrypt(ref ubyte[] crypt) {
-        import flow.core.error : CryptoException;
+        import flow.core.util.log : Log, LL;
         import std.conv : to;
 
         synchronized(this.lock.reader) try {
@@ -274,8 +277,6 @@ private class Peer {
 
     /// lazy and per thread loading
     private RsaPubCtx ctx() @property {
-        import flow.core.error : CryptoException;
-
         /* as Cipher.ctx */
         synchronized(this.lock.reader) if(Thread.getThis in this._ctx)
             return this._ctx[Thread.getThis];
@@ -307,7 +308,7 @@ private class Peer {
     private SysTime outValidity;
 
     private void createOutgoing() {
-        import flow.data.bin : pack;
+        import flow.core.data.bin : pack;
 
         Cipher ciph = new Cipher(this.cipher, this.hash);
         
@@ -377,7 +378,6 @@ private class Peer {
     /// encrypts data via RSA for crt
     private ubyte[] encryptRsa(ref ubyte[] data) {
         import deimos.openssl.err : ERR_error_string, ERR_get_error;
-        import flow.core.error : CryptoException;
         import std.conv : to;
 
         auto ds = data.length;
@@ -423,7 +423,7 @@ private class Peer {
 
     /// unpacks received cipher data and creates its stuff if needed
     private Cipher addInCipher(ref ubyte[] cc) {
-        import flow.data.bin : unpack, unbin;
+        import flow.core.data.bin : unpack, unbin;
         import std.conv : to;
 
         // get signature out of crypted cipher
@@ -459,7 +459,8 @@ private class Peer {
 
     /// decrypts encrypted data returning its plain bytes unless there is a key
     ubyte[] decrypt(ubyte[] crypt) { // parameter crypt will get modified (never ref)
-        import flow.data.bin : unpack;
+        import flow.core.data.bin : unpack;
+        import flow.core.util.log : Log, LL;
         try {
             // binary rule: crypted cipher is packed, rest is data
             auto cc = crypt.unpack;
@@ -507,8 +508,6 @@ package final class Crypto {
 
     /// lazy and per thread loading
     private RsaPrivCtx ctx() @property {
-        import flow.core.error : CryptoException;
-
         auto ctx = RsaPrivCtx();
         /* as Cipher.ctx */
         synchronized(this.lock.reader) if(Thread.getThis in this._ctx)
@@ -634,7 +633,6 @@ package final class Crypto {
 
     ubyte[] decryptRsa(ref ubyte[] crypt) {
         import deimos.openssl.err : ERR_error_string, ERR_get_error;
-        import flow.core.error : CryptoException;
         import std.conv : to;
 
         synchronized(this.lock.reader) {
@@ -714,7 +712,7 @@ version(unittest) {
 
 unittest { test.header("TEST core.crypt: rsa encrypt/decrypt, sign/verify");
     import deimos.openssl.ssl;
-    import flow.data : bin, unbin;
+    import flow.core.data : bin, unbin;
 
     assert(TestKeys.loaded, "keys were not loaded! did you execute util/ssl/gen.sh on a CA free host?");
 
@@ -743,7 +741,7 @@ test.footer; }
 
 /*version(unittest) {
     void runCipherTest(string cipher, string hash) {
-        import flow.data : bin, unbin;
+        import flow.core.data : bin, unbin;
 
         auto selfC = new Crypto("self", TestKeys.selfKey, TestKeys.selfCrt, cipher, hash);
         auto signedC = new Crypto("signed", TestKeys.signedKey, TestKeys.signedCrt, cipher, hash);

@@ -1,9 +1,9 @@
-module flow.data.engine;
+module flow.core.data.engine;
 
 private import std.variant;
 private import std.range;
 private import std.traits;
-private import flow.util;
+private import flow.core.util;
 
 /// checks if data engine can handle a certain data type
 template canHandle(T) {
@@ -122,7 +122,7 @@ abstract class Data {
     abstract @property string dataType();
 
     override bool opEquals(Object o) {
-        import flow.util.templates : as;
+        import flow.core.util.templates : as;
 
         auto c = o.as!Data;
         if(c !is null && this.dataType == c.dataType) {
@@ -142,7 +142,7 @@ abstract class Data {
 
     /// deep clones data object (copies whole memory)
     @property Data clone() {
-        import flow.util.templates : as;
+        import flow.core.util.templates : as;
 
         Data c = Object.factory(this.dataType).as!Data;
 
@@ -158,7 +158,7 @@ abstract class Data {
 
 /// mixin allowing to derrive from data
 mixin template data() {
-    private static import __flowutil = flow.util.templates, __flowdata = flow.data.engine;
+    private static import __flowutil = flow.core.util.templates, __flowdata = flow.core.data.engine;
     debug(data) pragma(msg, "\tdata "~__flowutil.fqn!(typeof(this)));
 
     shared static __flowdata.PropertyInfo[string] Properties;
@@ -169,7 +169,7 @@ mixin template data() {
     override @property string dataType() {return __flowutil.fqn!(typeof(this));}
     
     shared static this() {
-		static if(__flowutil.fqn!(typeof(super)) != "flow.data.engine.Data")
+		static if(__flowutil.fqn!(typeof(super)) != "flow.core.data.engine.Data")
             foreach(n, i; super.Properties)
                 Properties[n] = i;
     }
@@ -185,8 +185,8 @@ if (canHandle!T && (!isArray!T || is(T==string))) {
     debug(data) pragma(msg, "\t\t"~T.stringof~" "~__name);
 
     shared static this() {
-        import flow.data.engine : Data, PropertyInfo, TPropertyHelper;
-        import flow.util.templates : as;
+        import flow.core.data.engine : Data, PropertyInfo, TPropertyHelper;
+        import flow.core.util.templates : as;
         import std.traits : OriginalType;
         import std.variant : Variant;
 
@@ -234,8 +234,8 @@ if(
     debug(data) pragma(msg, "\t\t"~AT.stringof~" "~__name);
 
     shared static this() {
-        import flow.data.engine : Data, PropertyInfo, TPropertyHelper;
-        import flow.util.templates : as; 
+        import flow.core.data.engine : Data, PropertyInfo, TPropertyHelper;
+        import flow.core.util.templates : as; 
         import std.traits : OriginalType;
         import std.variant : Variant;
 
@@ -348,7 +348,7 @@ template TPropertyHelper(T, string name) {
 
 /// create a data object from its type name
 Data createData(string name) {
-    import flow.util.templates : as;
+    import flow.core.util.templates : as;
 
     return Object.factory(name).as!Data;
 }
@@ -519,7 +519,7 @@ unittest { test.header("TEST data.engine: static data usage");
 test.footer(); }
 
 unittest { test.header("TEST data.engine: clone and == of data and member");
-    import flow.util.templates : as;
+    import flow.core.util.templates : as;
 
     auto d = new InheritedTestData;
     d.uinteger = 5;

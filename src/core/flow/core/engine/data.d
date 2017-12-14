@@ -1,7 +1,7 @@
-module flow.core.data;
+module flow.core.engine.data;
 
-private import flow.data.engine;
-private import flow.data.data;
+private import flow.core.data.engine;
+private import flow.core.data.data;
 
 /// data representing a signal
 abstract class Signal : IdData {
@@ -35,7 +35,7 @@ class Multicast : Signal {
 }
 
 class Damage : Data {
-    private import flow.data.engine : Data;
+    private import flow.core.data.engine : Data;
 
     mixin data;
 

@@ -1,13 +1,13 @@
-module flow.data.bin;
+module flow.core.data.bin;
 
-private import flow.data.engine;
-private import flow.util;
+private import flow.core.data.engine;
+private import flow.core.util;
 private import std.range;
 private import std.traits;
 private import std.variant;
 
 private void bin(Variant t, PropertyInfo pi, ref Appender!(ubyte[]) a) {
-    import flow.data.engine : Data, TypeDesc;
+    import flow.core.data.engine : Data, TypeDesc;
     import std.datetime : SysTime, DateTime, Duration, Date;
     import std.uuid : UUID;
 
@@ -114,8 +114,8 @@ if(
 
 private void bin(T)(T val, ref Appender!(ubyte[]) a)
 if(canHandle!T) {
-    import flow.data.engine : Data, PropertyInfo;
-    import flow.util.templates : as;
+    import flow.core.data.engine : Data, PropertyInfo;
+    import flow.core.util.templates : as;
     import std.datetime : SysTime, DateTime, Duration, Date;
     import std.bitmanip : nativeToBigEndian;
     import std.uuid : UUID;
@@ -197,8 +197,8 @@ if(
 /// deserializes binary data to a given supported type
 private T _unbin(T)(ref ubyte[] arr)
 if(canHandle!T || is(T:Data)) {
-    import flow.data.engine : Data, createData, PropertyInfo;
-    import flow.util.templates : as;
+    import flow.core.data.engine : Data, createData, PropertyInfo;
+    import flow.core.util.templates : as;
     import std.bitmanip : bigEndianToNative;
     import std.datetime : SysTime, DateTime, Duration, Date, dur;
     import std.range : front, popFront, popFrontN;
@@ -250,7 +250,7 @@ if(canHandle!T || is(T:Data)) {
 }
 
 private void _unbin(ref ubyte[] arr, Data d, PropertyInfo pi) {
-    import flow.data.engine : Data, TypeDesc;
+    import flow.core.data.engine : Data, TypeDesc;
     import std.datetime : SysTime, DateTime, Duration, Date;
     import std.uuid : UUID;
     import std.variant : Variant;
@@ -347,7 +347,7 @@ private void _unbin(ref ubyte[] arr, Data d, PropertyInfo pi) {
 }
 
 unittest { test.header("TEST data.bin: binary serialization of data and member");
-    import flow.data.engine : TestData, InheritedTestData, TestEnum;
+    import flow.core.data.engine : TestData, InheritedTestData, TestEnum;
     import std.uuid : parseUUID;
 
     auto d = new InheritedTestData;

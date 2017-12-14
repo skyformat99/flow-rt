@@ -1,6 +1,6 @@
-module flow.data.data;
+module flow.core.data.data;
 
-private import flow.data.engine;
+private import flow.core.data.engine;
 
 /// identifyable data
 class IdData : Data {

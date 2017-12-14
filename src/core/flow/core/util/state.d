@@ -1,7 +1,7 @@
-module flow.util.state;
+module flow.core.util.state;
 
-private import flow.util.error;
-version(unittest) private static import test = flow.util.test;
+private import flow.core.util.error;
+version(unittest) private static import test = flow.core.util.test;
 private import std.traits;
 
 /// thrown when state machine detects an invalid state for operation

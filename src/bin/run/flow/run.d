@@ -3,7 +3,7 @@ module flow.run;
 bool stopped = false;
 
 extern (C) void stop(int signal) {
-    import flow.util;
+    import flow.core.util;
     import core.stdc.stdlib;
 
     if(!stopped)
@@ -16,7 +16,7 @@ extern (C) void stop(int signal) {
 }
 
 extern (C) void die(int signal) {
-    import flow.util;
+    import flow.core.util;
     import core.stdc.stdlib;
 
     Log.msg(LL.Fatal, "Memory access error (SIGSEGV) occured -> exiting");
@@ -24,7 +24,7 @@ extern (C) void die(int signal) {
 }
 
 int main(string[] args) {
-    import flow.util;
+    import flow.core.util;
     import core.stdc.stdlib;
     import std.stdio, std.file, std.path, std.process, std.algorithm, std.algorithm.searching;
 
@@ -94,7 +94,7 @@ int main(string[] args) {
 }
 
 void run(string confDir, string libDir) {
-    import flow.util, flow.data, flow.core;
+    import flow.core.util, flow.core.data, flow.core;
     import core.stdc.stdlib, core.sys.posix.dlfcn, core.thread;
     import std.string, std.array, std.algorithm.iteration, std.file, std.path;
 

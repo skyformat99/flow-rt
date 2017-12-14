@@ -1,8 +1,8 @@
-module flow.util.error;
+module flow.core.util.error;
 
 /// mixin allowing to derrive from FlowError
 mixin template error() {
-    private import flow.util.templates : fqn;
+    private import flow.core.util.templates : fqn;
 
     override @property string type() {return fqn!(typeof(this));}
 
@@ -13,8 +13,8 @@ mixin template error() {
 
 /// mixin allowing to derrive from FlowException
 mixin template exception() {
-    private import flow.data.engine : Data;
-    private import flow.util.templates : fqn;
+    private import flow.core.data.engine : Data;
+    private import flow.core.util.templates : fqn;
 
     override @property string type() {return fqn!(typeof(this));}
 
@@ -34,7 +34,7 @@ class FlowError : Error {
 
 /// smart exception knowing its type and storing context data
 class FlowException : Exception {
-    private import flow.data.engine : Data;
+    private import flow.core.data.engine : Data;
 
     /// type name
 	abstract @property string type();

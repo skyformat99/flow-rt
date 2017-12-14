@@ -1,14 +1,14 @@
-module flow.data.json;
+module flow.core.data.json;
 
-private import flow.data.engine;
-private import flow.util;
+private import flow.core.data.engine;
+private import flow.core.util;
 private import std.json;
 private import std.range;
 private import std.traits;
 private import std.variant;
 
 private JSONValue jsonValue(Variant t, PropertyInfo pi) {
-    import flow.data.engine : Data, TypeDesc;
+    import flow.core.data.engine : Data, TypeDesc;
     import std.datetime : SysTime, DateTime, Date, Duration;
     import std.uuid : UUID;
 
@@ -220,8 +220,8 @@ if(is(T == std.datetime.Duration)) {
 
 private JSONValue jsonValue(T)(T data)
 if(is(T : Data)) {
-    import flow.data.engine : PropertyInfo;
-    import flow.util.templates : as;
+    import flow.core.data.engine : PropertyInfo;
+    import flow.core.util.templates : as;
     import std.json : JSONValue;
 
     JSONValue c;
@@ -246,7 +246,7 @@ enum JsonSerializer {
 
 /// jsonifies a data object
 string json(T)(T data, bool pretty = false, JsonSerializer serializer = JsonSerializer.StdJson) {
-    import flow.util.error : NotImplementedError;
+    import flow.core.util.error : NotImplementedError;
 
     switch(serializer) {
         case JsonSerializer.StdJson:
@@ -264,7 +264,7 @@ class InvalidJsonException : Exception {
 
 /// create a data object from json
 Data createDataFromJson(string str, JsonSerializer serializer = JsonSerializer.StdJson) {
-    import flow.util.error : NotImplementedError;
+    import flow.core.util.error : NotImplementedError;
     import std.json : parseJSON;
 
     switch(serializer) {
@@ -276,8 +276,8 @@ Data createDataFromJson(string str, JsonSerializer serializer = JsonSerializer.S
 }
 
 private Data createData(JSONValue j) {
-    import flow.data.engine : createData, Data, PropertyInfo;
-    import flow.util.templates : as;
+    import flow.core.data.engine : createData, Data, PropertyInfo;
+    import flow.core.util.templates : as;
     import std.datetime : SysTime, DateTime, Date, Duration;
     import std.uuid : UUID;
     import std.variant : Variant;
@@ -330,7 +330,7 @@ if(
     canHandle!T &&
     !is(T : Data)
 ) {
-    import flow.util.templates : as;
+    import flow.core.util.templates : as;
     import std.base64 : Base64;
     import std.datetime : SysTime, DateTime, Date, Duration, hnsecs;
     import std.json : JSON_TYPE;
@@ -391,7 +391,7 @@ if(
 
 private Variant get(T)(JSONValue j, Data d, PropertyInfo pi)
 if(is(T : Data)) {
-    import flow.data.engine : Data, TypeDesc;
+    import flow.core.data.engine : Data, TypeDesc;
     import std.json : JSON_TYPE;
     import std.variant : Variant;
 
@@ -413,8 +413,8 @@ if(is(T : Data)) {
 }
 
 unittest { test.header("TEST data.json: json serialization of data and member");
-    import flow.data.engine : TestData, InheritedTestData, TestEnum;
-    import flow.util.templates : as;
+    import flow.core.data.engine : TestData, InheritedTestData, TestEnum;
+    import flow.core.util.templates : as;
     import std.json : parseJSON;
     import std.uuid : parseUUID;
 
@@ -437,16 +437,16 @@ unittest { test.header("TEST data.json: json serialization of data and member");
     auto templ = "{"~
         "\"additional\":\"ble\","~
         "\"boolean\":true,"~
-        "\"dataType\":\"flow.data.engine.InheritedTestData\","~
+        "\"dataType\":\"flow.core.data.engine.InheritedTestData\","~
         "\"enumeration\":1,"~
         "\"enumerationA\":[1,0],"~
         "\"inner\":{"~
-            "\"dataType\":\"flow.data.engine.TestData\","~
+            "\"dataType\":\"flow.core.data.engine.TestData\","~
             "\"integer\":3"~
         "},"~
         "\"innerA\":["~
-            "{\"dataType\":\"flow.data.engine.TestData\"},"~
-            "{\"dataType\":\"flow.data.engine.TestData\"}"~
+            "{\"dataType\":\"flow.core.data.engine.TestData\"},"~
+            "{\"dataType\":\"flow.core.data.engine.TestData\"}"~
         "],"~
         "\"text\":\"foo\","~
         "\"textA\":[\"foo\",\"bar\"],"~

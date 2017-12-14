@@ -1,6 +1,6 @@
-module flow.core.error;
+module flow.core.engine.error;
 
-private import flow.util;
+private import flow.core.util.error;
 
 /// error thrown when a process is in a dying situation
 class ProcessError : FlowError {mixin error;}
@@ -19,7 +19,3 @@ class ProcessException : FlowException {mixin exception;}
 
 /// exception indicating something went wrong in junction
 class JunctionException : FlowException {mixin exception;}
-
-class CryptoInitException : FlowException {mixin exception;}
-
-class CryptoException : FlowException {mixin exception;}

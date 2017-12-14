@@ -1,7 +1,5 @@
 // neccessary imports
 import flow.core;   // core functionality of flow
-import flow.data;   // everything related to data
-import flow.util;   // a few little helpers
 
 /* This scenario tests the signal passing through a junction */
 
@@ -151,7 +149,6 @@ class MulticastReceiptingTestTick : Tick {
 void main() {
     import core.thread : Thread;
     import core.time;
-    import flow.ipc;
     import std.uuid;
 
     // creates a process which hosts our spaces

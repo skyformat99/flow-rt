@@ -4,7 +4,7 @@ private import flow.core;
 
 /// transports a previous signal
 class RoutedSignal : Unicast {
-    private import flow.data : data, field;
+    private import flow.core.data : data, field;
     
     mixin data;
 

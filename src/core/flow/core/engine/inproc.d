@@ -1,8 +1,10 @@
-module flow.ipc.inproc;
+module flow.core.engine.inproc;
 
-private import flow.data;
-private import flow.core;
-private import flow.util;
+private import flow.core.data;
+private import flow.core.engine.data;
+private import flow.core.engine.engine;
+private import flow.core.util;
+private import std.uuid;
 
 /// metadata of in process junction
 class InProcessJunctionMeta : JunctionMeta {
@@ -18,7 +20,7 @@ class InProcessChannel : Channel {
     private InProcessChannel peer;
 
     override @property InProcessJunction own() {
-        import flow.util : as;
+        import flow.core.util : as;
         return super.own.as!InProcessJunction;
     }
 
@@ -50,7 +52,7 @@ class InProcessChannel : Channel {
     }
 
     override protected bool transport(ref ubyte[] pkg) {
-        import flow.util : as;
+        import flow.core.util : as;
 
         return this.peer.pull(pkg, this.own.meta.info);
     }
@@ -68,7 +70,7 @@ class InProcessJunction : Junction {
     private InProcessChannel[string] channels;
 
     override @property InProcessJunctionMeta meta() {
-        import flow.util : as;
+        import flow.core.util : as;
         return super.meta.as!InProcessJunctionMeta;
     }
 
@@ -105,7 +107,7 @@ class InProcessJunction : Junction {
     }
 
     override bool up() {
-        import flow.util : as;
+        import flow.core.util : as;
 
         synchronized(pLock.writer)
             if(this.id !in pool) // if is down
@@ -128,7 +130,7 @@ class InProcessJunction : Junction {
     }
 
     override Channel get(string dst) {
-        import flow.util : as;
+        import flow.core.util : as;
 
         synchronized(pLock.reader)
             synchronized(this.lock.reader)
@@ -148,11 +150,43 @@ class InProcessJunction : Junction {
     }
 }
 
+/// creates metadata for an in process junction and appeds it to a spaces metadata 
+JunctionMeta addInProcJunction(
+    SpaceMeta sm,
+    UUID id,
+    ushort level = 0
+) {
+    return sm.addInProcJunction(id, level, false, false, false);
+}
+
+/// creates metadata for an in process junction and appeds it to a spaces metadata 
+JunctionMeta addInProcJunction(
+    SpaceMeta sm,
+    UUID id,
+    ushort level,
+    bool anonymous,
+    bool indifferent,
+    bool introvert
+) {
+    import flow.core.engine.inproc : InProcessJunctionMeta;
+    import flow.core.util : as;
+    
+    auto jm = sm.addJunction(
+        "flow.core.engine.inproc.InProcessJunctionMeta",
+        "flow.core.engine.inproc.InProcessJunction",
+        level,
+        anonymous,
+        indifferent,
+        introvert
+    ).as!InProcessJunctionMeta;
+    jm.id = id;
+
+    return jm;
+}
+
 unittest { test.header("TEST inproc: fully enabled passing of signals");
     import core.thread;
-    import flow.core;
-    import flow.ipc.make;
-    import flow.util;
+    import flow.core.util;
     import std.uuid;
 
     auto proc = new Process;
@@ -205,9 +239,7 @@ test.footer(); }
 
 unittest { test.header("TEST inproc: anonymous (not) passing of signals");
     import core.thread;
-    import flow.core;
-    import flow.ipc.make;
-    import flow.util;
+    import flow.core.util;
     import std.uuid;
 
     auto proc = new Process;
@@ -262,9 +294,7 @@ test.footer(); }
 
 unittest { test.header("TEST inproc: indifferent (not) passing of signals");
     import core.thread;
-    import flow.core;
-    import flow.ipc.make;
-    import flow.util;
+    import flow.core.util;
     import std.uuid;
 
     auto proc = new Process;
@@ -318,9 +348,7 @@ test.footer(); }
 
 unittest { test.header("TEST inproc: !acceptsMulticast (not) passing of signals");
     import core.thread;
-    import flow.core;
-    import flow.ipc.make;
-    import flow.util;
+    import flow.core.util;
     import std.uuid;
 
     auto proc = new Process;

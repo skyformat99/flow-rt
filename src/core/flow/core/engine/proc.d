@@ -1,7 +1,7 @@
-module flow.core.proc;
+module flow.core.engine.proc;
 
 import core.thread;
-import flow.util;
+import flow.core.util;
 
 package enum ProcessorState {
     Stopped = 0,
@@ -59,13 +59,13 @@ package final class Processor : StateMachine!ProcessorState {
     private Mutex waiterMutex; // For waiterCondition
 
     /// The instanceStartIndex of the next instance that will be created.
-    __gshared static size_t nextInstanceIndex = 1;
+    private __gshared static size_t nextInstanceIndex = 1;
 
     /// The index of the current thread.
     private static size_t threadIndex;
 
     /// The index of the first thread in this instance.
-    immutable size_t instanceStartIndex;
+    private immutable size_t instanceStartIndex;
     
     /// The index that the next thread to be initialized in this pool will have.
     private size_t nextThreadIndex;
@@ -120,7 +120,7 @@ package final class Processor : StateMachine!ProcessorState {
             case ProcessorState.Stopped:
                 if(o == ProcessorState.Started) { // stop only if it is started
                     {
-                        import flow.util : atomicCasUbyte;
+                        import flow.core.util : atomicCasUbyte;
 
                         this.queueLock();
                         scope(exit) this.queueUnlock();
@@ -166,7 +166,7 @@ package final class Processor : StateMachine!ProcessorState {
     until they terminate.  It's also entered by non-worker threads when
     finish() is called with the blocking variable set to true. */
     private void executeWorkLoop() {    
-        import flow.util : atomicReadUbyte, atomicSetUbyte;
+        import flow.core.util : atomicReadUbyte, atomicSetUbyte;
 
         while (atomicReadUbyte(this.status) != PoolState.stopNow) {
             Job* task = pop();
@@ -282,7 +282,7 @@ package final class Processor : StateMachine!ProcessorState {
     }
 
     private void doJob(Job* job) {
-        import flow.util : atomicSetUbyte;
+        import flow.core.util : atomicSetUbyte;
 
         assert(job.taskStatus == JobState.InProgress);
         assert(job.next is null);

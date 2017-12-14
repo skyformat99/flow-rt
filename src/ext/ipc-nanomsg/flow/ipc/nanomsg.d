@@ -1,19 +1,19 @@
-module flow.ipc.nanomsg;
+module flow.core.ipc.nanomsg;
 
 import core.sync.rwmutex;
 import core.thread;
 import flow.core;
-import flow.data;
+import flow.core.data;
 import deimos.nanomsg.nn;
 import deimos.nanomsg.pubsub;
 import std.string;
 import std.array;
 
 /// at linking something bad is happening if "Data" symbol is not used in shared library
-private static import flow.data.engine; class __Foo : flow.data.engine.Data {mixin flow.data.engine.data;}
+private static import flow.core.data.engine; class __Foo : flow.core.data.engine.Data {mixin flow.core.data.engine.data;}
 
 /*class MeshJunctionInfo : JunctionInfo {
-    import flow.data;
+    import flow.core.data;
 
     mixin data;
 
@@ -21,7 +21,7 @@ private static import flow.data.engine; class __Foo : flow.data.engine.Data {mix
 }
 
 class MeshJunctionMeta : JunctionMeta {
-    import flow.data;
+    import flow.core.data;
 
     mixin data;
 
@@ -37,7 +37,7 @@ class MeshJunction : Junction {
     private MeshJunctionInfo[string] others;
 
     override @property MeshJunctionMeta meta() {
-        import flow.util : as;
+        import flow.core.util : as;
         return super.meta.as!MeshJunctionMeta;
     }
 
@@ -53,7 +53,7 @@ class MeshJunction : Junction {
     }
 
     override bool up() {
-        import flow.util : as;
+        import flow.core.util : as;
 
         synchronized(lock.writer) {
             // TODO CONNECT
@@ -90,7 +90,7 @@ class MeshChannel : Channel {
     }
 
     override bool transport(ubyte[] p) {
-        import flow.util : as;
+        import flow.core.util : as;
 
         // TODO TRANSMIT
 

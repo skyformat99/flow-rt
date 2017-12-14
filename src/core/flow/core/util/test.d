@@ -1,4 +1,4 @@
-module flow.util.test;
+module flow.core.util.test;
 
 version(unittest) {
     import std.stdio;

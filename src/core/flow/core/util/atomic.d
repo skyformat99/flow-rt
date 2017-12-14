@@ -1,4 +1,4 @@
-module flow.util.atomic;
+module flow.core.util.atomic;
 
 /** Atomics code.  These forward to core.atomic, but are written like this
    for two reasons:

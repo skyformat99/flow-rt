@@ -1,7 +1,7 @@
-module flow.util.rwmutex;
+module flow.core.util.rwmutex;
 
 private import core.sync.mutex;
-private import flow.util;
+private import flow.core.util;
 
 /// this readwrite mutex is meant only for systems reusing threads
 class RwMutex : Mutex {

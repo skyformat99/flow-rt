@@ -11,7 +11,7 @@ private struct ComplexOpts {
 }
 
 void main(string[] args) {
-    import flow.core, flow.data, flow.util;
+    import flow.core, flow.core.data, flow.core.util;
     import std.file;
 
     ComplexOpts opts;

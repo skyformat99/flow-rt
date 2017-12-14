@@ -1,4 +1,4 @@
-module flow.util.templates;
+module flow.core.util.templates;
 
 /// Returns: full qualified name of type
 template fqn(T) {

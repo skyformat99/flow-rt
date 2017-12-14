@@ -9,8 +9,6 @@ This scenario tests the signal passing through a junction.
 ## Neccessary imports
 ```D
 import flow.core;   // core functionality of flow
-import flow.data;   // everything related to data
-import flow.util;   // a few little helpers
 ```
 
 ## Data of entities
@@ -20,8 +18,8 @@ And there is the context meant to store runtime information.
 However this separation is just pro forma.
 While our first entity notes if it was successfully sending the casts,
 our second one notes if it got them.
-```D// you can inherit other data types
-// https://github.com/RalphBariz/flow-rt/blob/master/doc/basics.md#definition-of-data
+```D
+// you can inherit other data types
 /// configuration for the sending entity
 class TestSendingConfig : Data {
     // mixing data functinality
@@ -190,7 +188,6 @@ and restart everything again. It will continue where it got frozen.
 void main() {
     import core.thread : Thread;
     import core.time;
-    import flow.ipc;
     import std.uuid;
 
     // creates a process which hosts our spaces

@@ -1,7 +1,7 @@
-module flow.data.dynamic;
+module flow.core.data.dynamic;
 
-private import flow.data.engine;
-private import flow.util;
+private import flow.core.data.engine;
+private import flow.core.util;
 private import std.range;
 private import std.traits;
 private import std.variant;
@@ -13,8 +13,8 @@ class PropertyNotExistingException : Exception {
 }
 
 private Variant get(Data d, string name){
-    import flow.data.engine : PropertyInfo;
-    import flow.util.templates : as;
+    import flow.core.data.engine : PropertyInfo;
+    import flow.core.util.templates : as;
 
     if(name in d.properties)
         return d.properties[name].as!PropertyInfo.get(d);
@@ -25,8 +25,8 @@ private Variant get(Data d, string name){
 /// get property as data
 T get(T)(Data d, string name)
 if(is(T : Data)) {
-    import flow.data.engine : Data;
-    import flow.util.templates : as;
+    import flow.core.data.engine : Data;
+    import flow.core.util.templates : as;
 
     return d.get(name).get!Data().as!T;
 }
@@ -37,8 +37,8 @@ if(
     isArray!T &&
     is(ElementType!T : Data)
 ) {
-    import flow.data.engine : Data;
-    import flow.util.templates : as;
+    import flow.core.data.engine : Data;
+    import flow.core.util.templates : as;
 
     return d.get(name).get!(Data[])().as!T;
 }
@@ -69,8 +69,8 @@ if(
 }
 
 private bool set(Data d, string name, Variant val) {
-    import flow.data.engine : PropertyInfo;
-    import flow.util.templates : as;
+    import flow.core.data.engine : PropertyInfo;
+    import flow.core.util.templates : as;
 
     if(name in d.properties)
         return d.properties[name].as!PropertyInfo.set(d, val);
@@ -81,8 +81,8 @@ private bool set(Data d, string name, Variant val) {
 /// set property using data
 bool set(T)(Data d, string name, T val)
 if(is(T : Data)) {
-    import flow.data.engine : Data;
-    import flow.util.templates : as;
+    import flow.core.data.engine : Data;
+    import flow.core.util.templates : as;
     import std.variant : Variant;
 
     return d.set(name, Variant(val.as!Data));
@@ -94,8 +94,8 @@ if(
     isArray!T &&
     is(ElementType!T : Data)
 ) {
-    import flow.data.engine : Data;
-    import flow.util.templates : as;
+    import flow.core.data.engine : Data;
+    import flow.core.util.templates : as;
     import std.variant : Variant;
 
     return d.set(name, Variant(val.as!(Data[])));
@@ -129,11 +129,11 @@ if(
 }
 
 unittest { test.header("TEST data.dynamic: dynamic data usage");
-    import flow.data.engine : createData, TestData, InheritedTestData, TestEnum;
-    import flow.util.templates : as;
+    import flow.core.data.engine : createData, TestData, InheritedTestData, TestEnum;
+    import flow.core.util.templates : as;
     import std.range : empty;
 
-    auto d = "flow.data.engine.InheritedTestData".createData().as!InheritedTestData;
+    auto d = "flow.core.data.engine.InheritedTestData".createData().as!InheritedTestData;
     assert(d !is null, "could not dynamically create instance of data");
     assert(d.integer is long.init && d.integerA.empty, "data is not initialized correctly at dynamic creation");
 

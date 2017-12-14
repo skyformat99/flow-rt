@@ -1,4 +1,4 @@
-module flow.util.log;
+module flow.core.util.log;
 
 enum LL {
     Message = 0,
@@ -12,7 +12,7 @@ enum LL {
 
 /// flow system logger
 final class Log {
-    private import flow.data.engine : Data;
+    private import flow.core.data.engine : Data;
     private import std.ascii : newline;
     private import std.range : isArray;
 
@@ -29,9 +29,9 @@ final class Log {
     }
 
     private static string get(Throwable thr) {
-        import flow.data.json : json;
-        import flow.util.error : FlowException;
-        import flow.util.templates : as;
+        import flow.core.data.json : json;
+        import flow.core.util.error : FlowException;
+        import flow.core.util.templates : as;
         import std.conv : to;
         
         string str;
@@ -56,20 +56,20 @@ final class Log {
     }
 
     private static string get(Data d) {
-        import flow.data.json : json;
+        import flow.core.data.json : json;
 
         return Log.sep~(d !is null ? d.json(true) : "NULL");
     }
 
     /// log a message
     public static void msg(LL level, string msg) {
-        import flow.util.templates : as;
+        import flow.core.util.templates : as;
         Log.msg(level, msg, null, null.as!Data);
     }
 
     /// log a message coming with an error or exception
     public static void msg(LL level, string msg, Throwable thr) {
-        import flow.util.templates : as;
+        import flow.core.util.templates : as;
         Log.msg(level, msg, thr, null.as!Data);
     }
     
@@ -80,7 +80,7 @@ final class Log {
 
     /// log an error or exception
     public static void msg(LL level, Throwable thr) {
-        import flow.util.templates : as;
+        import flow.core.util.templates : as;
 
         Log.msg(level, string.init, thr, null.as!Data);
     }
