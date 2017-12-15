@@ -100,10 +100,10 @@ function testCore {
 
     echo "LINKING test/test_flow-core..." &&
     $ld -of$rootDir/test/test_flow-core build/libflow-core-test.o $sslLinkParams -L-l:libopenssl.so $defLinkParams $testLinkParams &&
-    ret=0 &&
 
     echo "TESTING test/test_flow-core..." &&
-    $rootDir/test/test_flow-core
+    $rootDir/test/test_flow-core &&
+    ret=0
 
     footer
 
@@ -137,10 +137,10 @@ function testExt {
 
     echo "LINKING test/test_flow-$1..." &&
     $ld -of$rootDir/test/test_flow-$1 build/libflow-$1-test.o $defLinkParams $flowLinkParams $testLinkParams ${@:3} &&
-    ret=0 &&
 
     echo "TESTING test/test_flow-$1..." &&
-    $rootDir/test/test_flow-$1
+    $rootDir/test/test_flow-$1 &&
+    ret=0
 
     footer
 
@@ -174,10 +174,10 @@ function testBin {
 
     echo "LINKING test_flow-..." &&
     $ld -of$rootDir/test/test_flow-$1 build/flow-$1-test.o $defLinkParams $flowLinkParams $testLinkParams ${@:3} &&
-    ret=0 &&
 
     echo "TESTING test_flow-$1..." &&
-    $rootDir/test/test_flow-$1
+    $rootDir/test/test_flow-$1 &&
+    ret=0
 
     footer
 
@@ -196,10 +196,10 @@ function testDoc {
 
     echo "LINKING doc_$1..." &&
     $ld -of$rootDir/test/doc_$1 build/doc_$1.o $defLinkParams $flowLinkParams ${@:3} &&
-    ret=0 &&
 
     echo "TESTING doc_$1..." &&
-    $rootDir/test/doc_$1
+    $rootDir/test/doc_$1 &&
+    ret=0
 
     footer
 

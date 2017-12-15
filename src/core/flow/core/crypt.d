@@ -22,6 +22,159 @@ private RSA* load(T)(string key) if(is(T==RSA)) {
     return null;
 }
 
+private struct RsaPrivCtx {
+    RSA* rsa;
+}
+
+private RsaPrivCtx createRsaPrivCtx(string key) {
+    auto ctx = RsaPrivCtx();
+    ctx.rsa = key.load!(RSA);
+    return ctx;
+}
+
+private void free(RsaPrivCtx ctx) {
+    RSA_free(ctx.rsa);
+}
+
+private ubyte[] hashMd5(ref ubyte[] data) {
+    import deimos.openssl.md5;
+
+    auto digest = MD5(data.ptr, data.length, null);
+    return digest[0..MD5_DIGEST_LENGTH];
+}
+
+private ubyte[] hashSha1(ref ubyte[] data) {
+    import deimos.openssl.sha;
+
+    auto digest = SHA1(data.ptr, data.length, null);
+    return digest[0..SHA_DIGEST_LENGTH];
+}
+
+private ubyte[] hashSha256(ref ubyte[] data) {
+    import deimos.openssl.sha;
+
+    auto digest = SHA256(data.ptr, data.length, null);
+    return digest[0..SHA256_DIGEST_LENGTH];
+}
+
+private ubyte[] sign(ref ubyte[] data, RSA* key, string hash) {
+    switch(hash) {
+        case SSL_TXT_MD5:
+            return data.sign!(
+                SSL_TXT_MD5, NID_hmacWithMD5, "hashMd5"
+            )(key);
+        case SSL_TXT_SHA:
+            return data.sign!(
+                SSL_TXT_SHA, NID_hmacWithSHA1, "hashSha1"
+            )(key);
+        case SSL_TXT_SHA256:
+            return data.sign!(
+                SSL_TXT_SHA256, NID_hmacWithSHA256, "hashSha256"
+            )(key);
+        default: assert(false);
+    }
+}
+
+private ubyte[] sign(string title, int hash, string hashFunc)(ref ubyte[] data, RSA* key) {
+    import deimos.openssl.err : ERR_error_string, ERR_get_error;
+    import flow.core.data : bin;
+    import std.conv : to;
+
+    auto bs = RSA_size(key);
+    auto hdata = mixin(hashFunc)(data);
+    auto ds = hdata.length.to!uint;
+    uint ss;
+
+    auto buf = new ubyte[bs];
+    if(RSA_sign(hash, hdata.ptr, ds, buf.ptr, &ss, key) != 1 || ss < 1)
+        throw new CryptoException("rsa signing error ["~title~"]: "~ERR_error_string(ERR_get_error(), null).to!string);
+    
+    buf.length = ss;
+    return hash.bin~buf;
+}
+
+private bool verify(ref ubyte[] data, ref ubyte[] s, RSA* key) {
+    import flow.core.data : unbin;
+    auto hash = s[0..int.sizeof].unbin!int;
+    auto sig = s[int.sizeof..$];
+
+    switch(hash) {
+        case NID_hmacWithMD5:
+            return data.verify!(NID_hmacWithMD5, "hashMd5")(sig, key);
+        case NID_hmacWithSHA1:
+            return data.verify!(NID_hmacWithSHA1, "hashSha1")(sig, key);
+        case NID_hmacWithSHA256:
+            return data.verify!(NID_hmacWithSHA256, "hashSha256")(sig, key);
+        default: return false;
+    }
+}
+
+private bool verify(int hash, string hashFunc)(ref ubyte[] data, ref ubyte[] sig, RSA* key) {
+    import deimos.openssl.err : ERR_error_string, ERR_get_error;
+    import flow.core.data : unbin;
+    import std.conv : to;
+
+    auto hdata = mixin(hashFunc)(data);
+    auto ds = hdata.length.to!uint;
+    return RSA_verify(hash, hdata.ptr, ds, sig.ptr, sig.length.to!uint, key) == 1;
+}
+
+private ubyte[] encryptRsa(ref ubyte[] data, RSA* key) {
+    import deimos.openssl.err : ERR_error_string, ERR_get_error;
+    import std.conv : to;
+
+    auto bs = RSA_size(key);
+    auto ds = data.length;
+
+    ubyte[] crypt;
+    auto buffer = new ubyte[bs];
+    int ret;
+    size_t i = 0;
+    while(i < ds) {
+        auto end = (i+bs)-RSA_PKCS1_PADDING_SIZE < ds ? (i+bs)-RSA_PKCS1_PADDING_SIZE : ds;
+
+        auto len = (end-i).to!int;
+        auto from = data[i..end];
+
+        ret = RSA_public_encrypt(len, from.ptr, buffer.ptr, key, RSA_PKCS1_PADDING);
+        if(ret == -1)
+            throw new CryptoException("rsa encryption error: "~ERR_error_string(ERR_get_error(), null).to!string);
+
+        i = end;
+        crypt ~= buffer[0..ret];
+    }
+
+    return crypt;
+}
+
+private ubyte[] decryptRsa(ref ubyte[] crypt, RSA* key) {
+    import deimos.openssl.err : ERR_error_string, ERR_get_error;
+    import std.conv : to;
+
+    auto bs = RSA_size(key);
+    auto ds = crypt.length;
+
+    ubyte[] data;
+    auto buffer = new ubyte[bs-RSA_PKCS1_PADDING_SIZE];
+    int ret;
+    size_t i = 0;
+    while(i < ds) {
+        auto end = i+bs < ds ? i+bs : ds;
+
+        auto len = (end-i).to!int;
+        auto from = crypt[i..end];
+        
+        ret = RSA_private_decrypt(len, from.ptr, buffer.ptr, key, RSA_PKCS1_PADDING);
+        if(ret == -1)
+            return null;
+
+        i = end;
+        data ~= buffer[0..ret]; // trim data to real size
+    }
+
+    return data;
+}
+
 private X509* load(T)(string crt) if(is(T==X509)) {
     import std.conv : to;
 
@@ -52,7 +205,7 @@ private GenCipher loadCipher(ubyte[] data) {
 
 /** cipher and hash decides what generator
 will run for creating it it */
-private GenCipher createCipher(string cipher, string hash) {
+private GenCipher genCipher(string cipher, string hash) {
     switch(cipher~hash) {
         case SSL_TXT_AES128~SSL_TXT_SHA:
             return genCipher!(SSL_TXT_AES128~"+"~SSL_TXT_SHA, "EVP_aes_128_cbc", "EVP_sha")();
@@ -95,8 +248,8 @@ private GenCipher genCipher(string title, string cipherFunc, string hashFunc)() 
     return ciph;
 }
 
-private EVP_CIPHER_CTX createCipherCtx(string hash, GenCipher ciph) {
-    switch(hash) {
+private EVP_CIPHER_CTX genCipherCtx(string cipher, GenCipher ciph) {
+    switch(cipher) {
         case SSL_TXT_AES128:
             return genCipherCtx!(
                 SSL_TXT_AES128~"+"~SSL_TXT_SHA, "EVP_DecryptInit_ex", "EVP_aes_128_cbc"
@@ -151,7 +304,7 @@ private class Cipher {
         synchronized(this.lock.reader) {
             if(this._gen.data is null) {
                 synchronized(this.lock)
-                    this._gen = createCipher(cipher, hash);
+                    this._gen = genCipher(cipher, hash);
             }
         }
 
@@ -171,7 +324,7 @@ private class Cipher {
         else {
             EVP_CIPHER_CTX ctx;
             synchronized(this.lock) {
-                ctx = createCipherCtx(this.hash, this.gen);
+                ctx = genCipherCtx(this.cipher, this.gen);
                 this._ctx[Thread.getThis] = ctx;
             }
             
@@ -370,36 +523,13 @@ private class Peer {
     /// verifies sig of data using peers certificate
     bool verify(ref ubyte[] data, ref ubyte[] sig) {
         synchronized(this.lock.reader)
-            return true; // TODO
+            return data.verify(sig, this.ctx.rsa);
     }
 
     /// encrypts data via RSA for crt
     private ubyte[] encryptRsa(ref ubyte[] data) {
-        import deimos.openssl.err : ERR_error_string, ERR_get_error;
-        import std.conv : to;
-
-        auto ds = data.length;
-
-        ubyte[] crypt;
         synchronized(this.lock.reader) {
-            auto buffer = new ubyte[this.ctx.bs];
-            int ret;
-            size_t i = 0;
-            while(i < ds) {
-                auto end = (i+this.ctx.bs)-RSA_PKCS1_PADDING_SIZE < ds ? (i+this.ctx.bs)-RSA_PKCS1_PADDING_SIZE : ds;
-
-                auto len = (end-i).to!int;
-                auto from = data[i..end];
-
-                ret = RSA_public_encrypt(len, from.ptr, buffer.ptr, this.ctx.rsa, RSA_PKCS1_PADDING);
-                if(ret == -1)
-                    throw new CryptoException("rsa encryption error: "~ERR_error_string(ERR_get_error(), null).to!string);
-
-                i = end;
-                crypt ~= buffer[0..ret];
-            }
-
-            return crypt;
+            return data.encryptRsa(this.ctx.rsa);
         }
     }
 
@@ -424,35 +554,37 @@ private class Peer {
         import flow.core.data.bin : unpack, unbin;
         import std.conv : to;
 
-        // get signature out of crypted cipher
-        auto sig = cc.unpack;
+        if(cc !is null) {
+            // get signature out of crypted cipher
+            auto sig = cc.unpack;
 
-        /* generate hash out of crypted data
-        due to rsa encryption of randoms this should be representative */
-        auto hash = sig[0..ulong.sizeof].unbin!long;
+            /* generate hash out of crypted data
+            due to rsa encryption of randoms this should be representative */
+            auto hash = sig[0..ulong.sizeof].unbin!long;
 
-        synchronized(this.lock.reader) {        
-            // if hash is known stay in reader mode and return cipher
-            if(hash in this.incoming)
-                return this.incoming[hash];
-            // otherwise switch to writer mode and create
-            else synchronized(this.lock) {
-                // clean what is expired (requires writer mode)
-                this.cleanInCiphers();
+            synchronized(this.lock.reader) {        
+                // if hash is known stay in reader mode and return cipher
+                if(hash in this.incoming)
+                    return this.incoming[hash];
+                // otherwise switch to writer mode and create
+                else synchronized(this.lock) {
+                    // clean what is expired (requires writer mode)
+                    this.cleanInCiphers();
 
-                // get crypted data out of crypted cipher
-                auto crypt = cc.unpack;
+                    // get crypted data out of crypted cipher
+                    auto crypt = cc.unpack;
 
-                auto sigOk = sig !is null && this.verify(crypt, sig);
-                auto data = this.crypto.decryptRsa(crypt);
-                auto ciph = new Cipher(this.cipher, this.hash, data);
-                this.inValidity[hash] = Clock.currTime + this.validity;
-                
-                this.incoming[hash] = ciph;
+                    auto sigOk = sig !is null && this.verify(crypt, sig);
+                    auto data = this.crypto.decryptRsa(crypt);
+                    auto ciph = new Cipher(this.cipher, this.hash, data);
+                    this.inValidity[hash] = Clock.currTime + this.validity;
+                    
+                    this.incoming[hash] = ciph;
 
-                return ciph;
+                    return ciph;
+                }
             }
-        }
+        } else return null;
     }
 
     /// decrypts encrypted data returning its plain bytes unless there is a key
@@ -467,6 +599,7 @@ private class Peer {
                 
                 if(ciph !is null)
                     return ciph.decrypt(crypt);
+                else return crypt; // if there is no in cipher, it is assumed pkg is not encrypted;
             }
         } catch(Exception exc) {
             Log.msg(LL.Error, "decrypting by cipher failed", exc);
@@ -474,22 +607,6 @@ private class Peer {
 
         return null;
     }
-}
-
-private struct RsaPrivCtx {
-    RSA* rsa;
-    size_t bs; // block size of rsa key
-}
-
-private RsaPrivCtx createRsaPrivCtx(string key) {
-    auto ctx = RsaPrivCtx();
-    ctx.rsa = key.load!(RSA);
-    ctx.bs = RSA_size(ctx.rsa);
-    return ctx;
-}
-
-private void free(RsaPrivCtx ctx) {
-    RSA_free(ctx.rsa);
 }
 
 package final class Crypto {
@@ -518,7 +635,7 @@ package final class Crypto {
                     throw new CryptoException("couldn't load own rsa key", null, [exc]);
                 }
 
-                if(ctx.rsa is null && ctx.bs > 0)
+                if(ctx.rsa is null)
                     throw new CryptoException("couldn't load own rsa key");
                 
                 this._ctx[Thread.getThis] = ctx;
@@ -539,6 +656,12 @@ package final class Crypto {
 
     /// available destinations
     private Peer[string] peers;
+
+    private Peer get(string p) {
+        if(p in this.peers)
+            return this.peers[p];
+        else throw new CryptoException("peer \""~p~"\" not found");
+    }
 
     shared static this() {
         import deimos.openssl.conf;
@@ -602,69 +725,40 @@ package final class Crypto {
 
     bool check(string dst) {
         synchronized(this.lock.reader)
-            if(dst in this.peers)
-                return this.peers[dst].check();
-            else return false;
+            return this.get(dst).check();
     }
 
     /** signs data using private key
     returns signature if there is a key else null */
-    ubyte[] sign(ref ubyte[] data) {
+    ubyte[] sign(ref ubyte[] data) {  
         synchronized(this.lock.reader)
-            return null; // TODO
+            return data.sign(this.ctx.rsa, this.hash);
     }
 
-    bool verify(ref ubyte[] data, ref ubyte[] sig, string dst) {
+    bool verify(ref ubyte[] data, ref ubyte[] sig, string src) {
         synchronized(this.lock.reader)
-            if(dst in this.peers)
-                return this.peers[dst].verify(data, sig);
-            else return false;
+            return this.get(src).verify(data, sig);
     }
 
     ubyte[] encryptRsa(ref ubyte[] data, string dst) {
         synchronized(this.lock.reader)
-            if(dst in this.peers)
-                return this.peers[dst].encryptRsa(data);
-            else return null;
+            return this.get(dst).encryptRsa(data);
     }
 
     ubyte[] decryptRsa(ref ubyte[] crypt) {
-        import deimos.openssl.err : ERR_error_string, ERR_get_error;
-        import std.conv : to;
-
         synchronized(this.lock.reader) {
-            auto ds = crypt.length;
-
-            ubyte[] data;
-            auto buffer = new ubyte[this.ctx.bs-RSA_PKCS1_PADDING_SIZE];
-            int ret;
-            size_t i = 0;
-            while(i < ds) {
-                auto end = i+this.ctx.bs < ds ? i+this.ctx.bs : ds;
-
-                auto len = (end-i).to!int;
-                auto from = crypt[i..end];
-                
-                ret = RSA_private_decrypt(len, from.ptr, buffer.ptr, this.ctx.rsa, RSA_PKCS1_PADDING);
-                if(ret == -1)
-                    throw new CryptoException("rsa decryption error: "~ERR_error_string(ERR_get_error(), null).to!string);
-
-                i = end;
-                data ~= buffer[0..ret]; // trim data to real size
-            }
-
-            return data;
+            return crypt.decryptRsa(this.ctx.rsa);
         }
     }
 
     ubyte[] encrypt(ref ubyte[] data, string dst) {
         synchronized(this.lock.reader)
-            return this.peers[dst].encrypt(data);
+            return this.get(dst).encrypt(data);
     }
 
     ubyte[] decrypt(ref ubyte[] crypt, string src) {
         synchronized(this.lock.reader)
-            return this.peers[src].decrypt(crypt);
+            return this.get(src).decrypt(crypt);
     }
 }
 
@@ -707,50 +801,93 @@ version(unittest) {
     }
 }
 
-unittest { test.header("TEST core.crypt: rsa encrypt/decrypt, sign/verify");
+unittest { test.header("TEST core.crypt: rsa encrypt/decrypt");
+    import core.exception : AssertError;
     import deimos.openssl.ssl;
     import flow.core.data : bin, unbin;
 
     assert(TestKeys.loaded, "keys were not loaded! did you execute util/ssl/gen.sh on a CA free host?");
 
     auto selfC = new Crypto("self", TestKeys.selfKey, TestKeys.selfCrt, SSL_TXT_AES_GCM, SSL_TXT_SHA, false);
-    selfC.add("signed", TestKeys.signedCrt);
-
     auto signedC = new Crypto("signed", TestKeys.signedKey, TestKeys.signedCrt, SSL_TXT_AES_GCM, SSL_TXT_SHA, false);
+    auto invalidC = new Crypto("invalid", TestKeys.invalidKey, TestKeys.invalidCrt, SSL_TXT_AES_GCM, SSL_TXT_SHA, false);
+    selfC.add("signed", TestKeys.signedCrt);
+    selfC.add("invalid", TestKeys.invalidCrt);
     signedC.add("self", TestKeys.selfCrt);
+    signedC.add("invalid", TestKeys.invalidCrt);
+    invalidC.add("signed", TestKeys.signedCrt);
+    invalidC.add("self", TestKeys.selfCrt);
 
     auto orig = "CRYPTED MESSAGE: hello world, I'm coming".bin;
     
-    auto signedCrypt = signedC.encryptRsa(orig, "self");
-    auto selfDecrypt = selfC.decryptRsa(signedCrypt);
-    assert(orig == selfDecrypt, "original message and decrypt of self crypto mismatch");
-    
-    auto selfCrypt = selfC.encryptRsa(orig, "signed");
-    auto signedDecrypt = signedC.decryptRsa(selfCrypt);
-    assert(orig == signedDecrypt, "original message and decrypt of signed crypto mismatch");
+    auto crypt = signedC.encryptRsa(orig, "self");
+    auto decrypt = selfC.decryptRsa(crypt);
+    auto wrong = invalidC.decryptRsa(crypt);
+    assert(orig == decrypt, "original message and decrypt of self crypto mismatch");
+    assert(wrong is null, "wrong rsa crypt wasn't null");
 
     selfC.remove("signed");
+    selfC.remove("invalid");
     signedC.remove("self");
+    signedC.remove("invalid");
+    invalidC.remove("signed");
+    invalidC.remove("self");
 
     selfC.dispose;
     signedC.dispose;
+    invalidC.dispose;
+test.footer; }
+
+unittest { test.header("TEST core.crypt: rsa sign/verify");
+    import deimos.openssl.ssl;
+    import flow.core.data : bin, unbin;
+
+    assert(TestKeys.loaded, "keys were not loaded! did you execute util/ssl/gen.sh on a CA free host?");
+
+    auto selfC = new Crypto("self", TestKeys.selfKey, TestKeys.selfCrt, SSL_TXT_AES_GCM, SSL_TXT_SHA, false);
+    auto signedC = new Crypto("signed", TestKeys.signedKey, TestKeys.signedCrt, SSL_TXT_AES_GCM, SSL_TXT_SHA, false);
+    auto invalidC = new Crypto("invalid", TestKeys.invalidKey, TestKeys.invalidCrt, SSL_TXT_AES_GCM, SSL_TXT_SHA, false);
+    selfC.add("signed", TestKeys.signedCrt); selfC.add("invalid", TestKeys.invalidCrt);
+    signedC.add("self", TestKeys.selfCrt); signedC.add("invalid", TestKeys.invalidCrt);
+    invalidC.add("signed", TestKeys.signedCrt); invalidC.add("self", TestKeys.selfCrt);
+
+    auto msg = "CRYPTED MESSAGE: hello world, I'm coming".bin;
+    
+    auto sign = signedC.sign(msg);
+    assert(selfC.verify(msg, sign, "signed"), "correct sig was verified as wrong");
+    assert(!selfC.verify(msg, sign, "invalid"), "wrong sig was verified as correct");
+    assert(invalidC.verify(msg, sign, "signed"), "correct sig was verified as wrong");
+
+    selfC.remove("signed");
+    selfC.remove("invalid");
+    signedC.remove("self");
+    signedC.remove("invalid");
+    invalidC.remove("signed");
+    invalidC.remove("self");
+
+    selfC.dispose;
+    signedC.dispose;
+    invalidC.dispose;
 test.footer; }
 
 /*version(unittest) {
     void runCipherTest(string cipher, string hash) {
         import flow.core.data : bin, unbin;
 
-        auto selfC = new Crypto("self", TestKeys.selfKey, TestKeys.selfCrt, cipher, hash);
-        auto signedC = new Crypto("signed", TestKeys.signedKey, TestKeys.signedCrt, cipher, hash);
+        auto selfC = new Crypto("self", TestKeys.selfKey, TestKeys.selfCrt, SSL_TXT_AES_GCM, SSL_TXT_SHA, false);
+        selfC.add("signed", TestKeys.signedCrt);
+
+        auto signedC = new Crypto("signed", TestKeys.signedKey, TestKeys.signedCrt, SSL_TXT_AES_GCM, SSL_TXT_SHA, false);
+        signedC.add("self", TestKeys.selfCrt);
 
         auto orig = "CRYPTED MESSAGE: hello world, I'm coming".bin;
         
-        auto signedCrypt = signedC.encrypt(orig, "self", TestKeys.selfCrt);
-        auto selfDecrypt = selfC.decrypt(signedCrypt);
+        auto signedCrypt = signedC.encrypt(orig, "self");
+        auto selfDecrypt = selfC.decrypt(signedCrypt, "signed");
         assert(orig == selfDecrypt, "original message and decrypt of self crypto mismatch");
         
-        auto selfCrypt = selfC.encrypt(orig, "signed", TestKeys.signedCrt);
-        auto signedDecrypt = signedC.decrypt(selfCrypt, "self", TestKeys.signedCrt);
+        auto selfCrypt = selfC.encrypt(orig, "signed");
+        auto signedDecrypt = signedC.decrypt(selfCrypt, "self");
         assert(orig == signedDecrypt, "original message and decrypt of signed crypto mismatch");
     }
 }
