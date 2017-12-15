@@ -197,6 +197,8 @@ private class Cipher {
             foreach(c; this._ctx.values)
                 EVP_CIPHER_CTX_cleanup(&c);
         }
+
+        this.destroy;
     }
 
     ubyte[] encrypt(ref ubyte[] data) {
@@ -356,6 +358,8 @@ private class Peer {
         synchronized(this.lock)
             foreach(ctx; this._ctx.values)
                 ctx.free;
+
+        this.destroy;
     }
 
     bool check() {
@@ -573,6 +577,8 @@ package final class Crypto {
         synchronized(this.lock)
             foreach(ctx; this._ctx.values)
                 ctx.free;
+
+        this.destroy;
     }
 
     /// add peer

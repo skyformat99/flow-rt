@@ -659,12 +659,14 @@ private class Entity : StateMachine!SystemState {
 
         auto accepted = t.checkAccept;
         
-        synchronized(this.lock.writer) {
+        synchronized(this.lock.reader) {
             if(accepted) {
                 if(this.state == SystemState.Ticking) {
-                    auto ticker = new Ticker(this, t);
-                    this.ticker[ticker.id] = ticker;
-                    ticker.tick();
+                    synchronized(this.lock.reader) {
+                        auto ticker = new Ticker(this, t);
+                        this.ticker[ticker.id] = ticker;
+                        ticker.tick();
+                    }
                 } else {
                     synchronized(this.metaLock.writer)
                         this.meta.ticks ~= t.meta;
@@ -905,7 +907,9 @@ abstract class Channel {
     abstract protected bool transport(ref ubyte[] p);
 
     /// clean up called in destructor
-    abstract protected void dispose();
+    protected void dispose() {
+        this.destroy;
+    }
 }
 
 /// allows signals from one space to get shipped to other spaces
@@ -1159,7 +1163,7 @@ class Space : StateMachine!SystemState {
 
         this.proc.stop();
 
-        this.dispose;
+        this.destroy;
     }
 
     /// makes space and all of its content freezing

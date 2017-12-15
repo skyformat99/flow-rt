@@ -1,3 +1,5 @@
+/** MADE UPGRADEABLE FOR FLOW, USE ONLY FOR RECYCLING THREADS */
+
 /**
  * The read/write mutex module provides a primitive for maintaining shared read
  * access and mutually exclusive write access.
@@ -19,7 +21,8 @@ public import core.sync.exception;
 private import core.sync.condition;
 private import core.sync.mutex;
 private import core.memory;
-private import flow.core.util;
+private import core.thread;
+version(unittest) private static import test = flow.core.util.test;
 
 version( Posix )
 {
@@ -185,7 +188,7 @@ class ReadWriteMutex
 
                 while( shouldQueueReader )
                     m_readerQueue.wait();
-                ++m_numActiveReaders;
+				addActiveReader();
             }
         }
 
@@ -197,7 +200,7 @@ class ReadWriteMutex
         {
             synchronized( m_commonMutex )
             {
-                if( --m_numActiveReaders < 1 )
+                if( removeActiveReader() < 1 )
                 {
                     if( m_numQueuedWriters > 0 )
                         m_writerQueue.notify();
@@ -220,7 +223,7 @@ class ReadWriteMutex
             {
                 if( shouldQueueReader )
                     return false;
-                ++m_numActiveReaders;
+                addActiveReader();
                 return true;
             }
         }
@@ -346,7 +349,7 @@ class ReadWriteMutex
         @property bool shouldQueueWriter()
         {
             if( m_numActiveWriters > 0 ||
-                m_numActiveReaders > 0 )
+                hasForeignReaders() )
                 return true;
             switch( m_policy )
             {
@@ -380,9 +383,26 @@ private:
     Condition   m_writerQueue;
 
     int         m_numQueuedReaders;
-    int         m_numActiveReaders;
+	int[Thread] m_numActiveReaders;
     int         m_numQueuedWriters;
     int         m_numActiveWriters;
+
+	void addActiveReader() {
+		++m_numActiveReaders[Thread.getThis];
+	}
+
+	int removeActiveReader() {
+		auto left = --m_numActiveReaders[Thread.getThis];
+		if(left == 0)
+			m_numActiveReaders.remove(Thread.getThis);
+		
+		return left;
+	}
+
+	int hasForeignReaders() {
+		import std.range : front;
+		return m_numActiveReaders.keys.length > 1 || (m_numActiveReaders.keys.length == 1 && m_numActiveReaders.keys.front != Thread.getThis);
+	}
 }
 
 

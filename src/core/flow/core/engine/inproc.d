@@ -41,6 +41,8 @@ class InProcessChannel : Channel {
             this.peer.dispose;
 
         this.own.unregister(this);
+
+        super.dispose;
     }
 
     override protected ubyte[] reqAuth() {
@@ -120,7 +122,7 @@ class InProcessJunction : Junction {
         synchronized(pLock) {
             synchronized(this.cLock)
                 foreach(dst, c; this.channels)
-                    c.dispose();
+                    if(c.master) c.dispose();
 
             if(this.id in pool)
                 pool[this.id].remove(this.meta.info.space);
