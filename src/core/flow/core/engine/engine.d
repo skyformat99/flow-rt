@@ -215,6 +215,10 @@ abstract class Tick {
 
         return this.entity.send(s);
     }
+
+    package void dispose() {
+        this.destroy;
+    }
 }
 
 private bool checkAccept(Tick t) {
@@ -262,7 +266,7 @@ private TickMeta createTickMeta(EntityMeta entity, string type, UUID group = ran
 private Tick createTick(TickMeta m, Entity e) {
     if(m !is null && m.info !is null) {
         auto t = Object.factory(m.info.type).as!Tick;
-        if(t !is null) {  
+        if(t !is null) {
             t.meta = m;
             t.entity = e;
         }
@@ -379,13 +383,14 @@ private class Ticker : StateMachine!SystemState {
 
     /// execute tick meant to be called by processor
     private void run() {
+        import core.memory : GC;
         // run tick
         Log.msg(LL.FDebug, this.logPrefix~"running tick", this.actual.meta);
         this.actual.run();
         Log.msg(LL.FDebug, this.logPrefix~"finished tick", this.actual.meta);
         
         // if everything was successful cleanup and process next
-        this.actual = null;
+        this.actual.dispose(); GC.free(&this.actual); this.actual = null;
         this.process();
     }
 
@@ -399,21 +404,23 @@ private class Ticker : StateMachine!SystemState {
     }
 
     private void runError() {
+        import core.memory : GC;
         this.actual.error(this.thr);
 
         Log.msg(LL.FDebug, this.logPrefix~"finished handling error", this.actual.meta);
 
-        this.actual = null;
+        this.actual.dispose(); GC.free(&this.actual); this.actual = null;
         this.process();
     }
 
     private void fatal(Throwable thr) {
+        import core.memory : GC;
         this.thr = thr;
 
         // if even handling exception failes notify that an error occured
         Log.msg(LL.Error, this.logPrefix~"handling error failed", thr);
         
-        this.actual = null;
+        this.actual.dispose(); GC.free(&this.actual); this.actual = null;
 
         // BOOM BOOM BOOM
         if(this.sync) {
@@ -453,13 +460,14 @@ private class Entity : StateMachine!SystemState {
 
     /// disposes a ticker
     void detach(Ticker t) {
+        import core.memory : GC;
         synchronized(this.lock) {
             if(t.next !is null)
                 synchronized(this.metaLock)
                     this.meta.ticks ~= t.next.meta;
             this.ticker.remove(t.id);
         }
-        t.dispose;
+        t.dispose; GC.free(&t);
     }
 
     /// makes entity tick
@@ -483,6 +491,7 @@ private class Entity : StateMachine!SystemState {
     }
 
     private bool canGoTicking() {
+        import core.memory : GC;
         import std.algorithm.iteration;
 
         synchronized(this.metaLock.reader) {
@@ -494,7 +503,7 @@ private class Entity : StateMachine!SystemState {
                     ticker.tick(true);
                     ticker.join();
                     auto thr = ticker.thr;
-                    ticker.dispose;
+                    ticker.dispose; GC.free(&ticker);
 
                     if(thr !is null) {
                         // damages entity and falls back negativ
@@ -509,6 +518,7 @@ private class Entity : StateMachine!SystemState {
     }
 
     private bool canGoFreezing() {
+        import core.memory : GC;
         import std.algorithm.iteration;
 
         synchronized(this.metaLock.reader) {
@@ -520,7 +530,7 @@ private class Entity : StateMachine!SystemState {
                     ticker.tick(true);
                     ticker.join();
                     auto thr = ticker.thr;
-                    ticker.dispose;
+                    ticker.dispose; GC.free(&ticker);
 
                     if(thr !is null) {
                         // doesn't avoid freezing nor further execution of on freezing ticks
@@ -532,12 +542,13 @@ private class Entity : StateMachine!SystemState {
 
         // stopping and destroying all ticker and freeze next ticks
         foreach(t; this.ticker.values.dup) {
+            import core.memory : GC;
             t.sync = true; // first switch it to sync mode
             t.freeze();
             if(t.next !is null)
                 this.meta.ticks ~= t.next.meta;
             this.ticker.remove(t.id);
-            t.dispose;
+            t.dispose; GC.free(&t);
         }
 
         return true;
@@ -943,9 +954,9 @@ abstract class Junction : StateMachine!JunctionState {
     }
 
     private void deinitCrypto() {
+        import core.memory : GC;
         if(this.crypto !is null) {
-            this.crypto.dispose;
-            this.crypto = null;
+            this.crypto.dispose; GC.free(&this.crypto); this.crypto = null;
         }
     }
 
@@ -1150,14 +1161,17 @@ class Space : StateMachine!SystemState {
     }
 
     void dispose() {
+        import core.memory : GC;
         if(this.state == SystemState.Ticking)
             this.freeze();
 
-        foreach(j; this.junctions)
-            j.dispose;
+        foreach(j; this.junctions) {
+            j.dispose; GC.free(&j);
+        }
 
-        foreach(e; this.entities.keys)
-            this.entities[e].dispose;
+        foreach(k, e; this.entities) {
+            e.dispose; GC.free(&e);
+        }
 
         this.junctions = Junction[].init;
 
@@ -1293,17 +1307,18 @@ class Space : StateMachine!SystemState {
     }
 
     /// kills an existing entity in space
-    void kill(string e) {
+    void kill(string en) {
+        import core.memory : GC;
         import flow.core.engine.error : SpaceException;
 
         synchronized(this.lock.reader) {
-            if(e in this.entities) {
+            if(en in this.entities) {
                 synchronized(this.lock.writer) {
-                    this.entities[e].dispose;
-                    this.entities.remove(e);
+                    auto e = this.entities[en];
+                    e.dispose; GC.free(&e);
+                    this.entities.remove(en);
                 }
-            } else
-                    throw new SpaceException("entity with addr \""~e~"\" is not existing");
+            } else throw new SpaceException("entity with addr \""~en~"\" is not existing");
         }
     }
     
@@ -1427,8 +1442,10 @@ class Process {
     }
 
     void dispose() {
-        foreach(s; this.spaces.keys)
-            this.spaces[s].dispose;
+        import core.memory : GC;
+        foreach(k, s; this.spaces) {
+            s.dispose; GC.free(&s);
+        }
 
         this.destroy;
     }
@@ -1469,18 +1486,20 @@ class Process {
     }
 
     /// removes an existing space
-    void remove(string s) {
+    void remove(string sn) {
+        import core.memory : GC;
         import flow.core.engine.error : ProcessException;
 
         this.ensureThread();
         
         synchronized(this.lock.reader)
-            if(s in this.spaces)
+            if(sn in this.spaces)
                 synchronized(this.lock.writer) {
-                    this.spaces[s].dispose;
-                    this.spaces.remove(s);
+                    auto s = this.spaces[sn];
+                    s.dispose; GC.free(&s);
+                    this.spaces.remove(sn);
                 } else
-                    throw new ProcessException("space with id \""~s~"\" is not existing");
+                    throw new ProcessException("space with id \""~sn~"\" is not existing");
     }
 }
 

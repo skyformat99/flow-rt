@@ -37,8 +37,10 @@ class InProcessChannel : Channel {
     }
 
     override protected void dispose() {
-        if(this.master)
-            this.peer.dispose;
+        import core.memory : GC;
+        if(this.master) {
+            this.peer.dispose; GC.free(&this.peer);
+        }
 
         this.own.unregister(this);
 
@@ -119,10 +121,11 @@ class InProcessJunction : Junction {
     }
 
     override void down() {
+        import core.memory : GC;
         synchronized(pLock) {
             synchronized(this.cLock)
                 foreach(dst, c; this.channels)
-                    if(c.master) c.dispose();
+                    if(c.master) {c.dispose(); GC.free(&c);}
 
             if(this.id in pool)
                 pool[this.id].remove(this.meta.info.space);
