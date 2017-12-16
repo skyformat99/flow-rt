@@ -96,7 +96,7 @@ class JunctionInfo : IdData {
     /** this side of the junction does not inform sending side of acceptance
     therefore it keeps internals secret
     (cannot allow anycast) */
-    mixin field!(bool, "anonymous"); 
+    mixin field!(bool, "hiding"); 
 
     /** send signals into junction and do not care about acceptance
     (cannot use anycast) */

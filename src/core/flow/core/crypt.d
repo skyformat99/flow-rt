@@ -341,18 +341,9 @@ private ubyte[] decrypt(string title, string cipherFunc)(ref ubyte[] crypt, GenC
     if(!EVP_DecryptFinal_ex(&ctx, buf.ptr+bs, &fs))
         throw new CryptoException("cipher decryption error: "~ERR_error_string(ERR_get_error(), null).to!string);
 
-    buf.length = bs;
+    buf.length = bs+fs;
     return buf;
 }
-
-
-/*
-            auto data = new ubyte[crypt.length];
-            auto ds = crypt.length.to!int;
-            
-            if(!EVP_DecryptUpdate(&ctx, data.ptr, &ds, crypt.ptr, ds))
-                throw new CryptoException("cipher error: decryption failed");
-            return data;*/
 
 /** it has to get locked so no thread can
 kill others ctx by destructing it however

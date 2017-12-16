@@ -816,7 +816,7 @@ abstract class Channel {
         import flow.core.data : pack;
 
         ubyte[] auth = null;
-        if(!this.own.meta.info.anonymous) {
+        if(!this.own.meta.info.hiding) {
             import flow.core.data : bin;
 
             if(this.own.meta.key != string.init) {
@@ -859,6 +859,9 @@ abstract class Channel {
             auto sig = auth.unpack;
             auto infoData = auth.unpack;
             auto info = infoData.unbin!JunctionInfo;
+
+            this.own.crypto.add(this._dst, info.crt);
+
             // if peer signed then there has to be a crt there too
             auto sigOk = sig !is null && this.own.crypto.verify(infoData, sig, this._dst);
             auto checkOk = !info.crt.empty && this.own.crypto.check(info.space);
@@ -866,45 +869,48 @@ abstract class Channel {
             if((sig is null || sigOk) && (!this.own.meta.info.checking || checkOk)){
                 this._other = info;
                 return true;
-            }
+            } else this.own.crypto.remove(this._dst);
         }
         
         return false;
     }
 
-    /// encrypts package
-    private ubyte[] encrypt(ref ubyte[] pb, JunctionInfo info) {
-        if(this.own.meta.info.encrypting)
-            return ubyte.max~this.own.crypto.encrypt(pb, info.space);
-        else
-            return ubyte.min~pb;
-    }
+    protected final bool pull(/*w/o ref*/ ubyte[] pkg, JunctionInfo info) {
+        import flow.core.data : unbin, unpack;
 
-    /// decrypts package
-    private ubyte[] decrypt(ref ubyte[] pb, string src) {
-        import std.range : front;
-
-        if(pb.front) { // if its marked as encrypted
-            auto cpb = pb[1..$];
-            return this.own.crypto.decrypt(cpb, src);
-        } else
-            return pb[1..$]; // if not encrypted its clear bin
-    }
-
-    protected final bool pull(/*w/o ref*/ ubyte[] p, JunctionInfo info) {
-        import flow.core.data : unbin;
-
-        if(this._other !is null) // only if verified
-            return this.own.pull(p.unbin!Signal, info);
-        else return false;
+        if(this._other !is null) {// only if verified
+            if(info.crt !is null) {
+                if(info.encrypting) {// decrypt it
+                    auto data = this.own.crypto.decrypt(pkg, this._dst);
+                    auto pl = data.length;
+                    auto s = data.unbin!Signal;
+                    return this.own.pull(s, info);
+                }
+                else {// fisrt check signature
+                    auto sig = pkg.unpack;
+                    return this.own.crypto.verify(pkg, sig, this._dst)
+                        && this.own.pull(pkg.unbin!Signal, info);
+                }
+            } else return this.own.pull(pkg.unbin!Signal, info);
+        } else return false;
     }
 
     private final bool push(Signal s) {
-        import flow.core.data : bin;
+        import flow.core.data : bin, pack;
 
         if(this._other !is null) { // only if verified
             auto pkg = s.bin;
-            return this.transport(pkg);
+            auto pl = pkg.length;
+            if(this.own.meta.key !is null) {
+                if(this.own.meta.info.encrypting) {// encrypt for dst
+                    auto crypt = this.own.crypto.encrypt(pkg, this._dst);
+                    return this.transport(crypt);
+                } else {// sign
+                    auto sig = this.own.crypto.sign(pkg);
+                    auto signed = sig.pack~pkg;
+                    return this.transport(signed);
+                }
+            } else return this.transport(pkg);
         } else return false;
     }
 
@@ -1027,7 +1033,7 @@ abstract class Junction : StateMachine!JunctionState {
         if(s.allowed(auth, this.meta.info)) {
             /* do not allow measuring of runtimes timings
             ==> make the call async and dada */
-            if(this.meta.info.anonymous) {
+            if(this.meta.info.hiding) {
                 taskPool.put(task(&this.route, s));
                 return true;
             } else return this.route(s);
@@ -1095,7 +1101,7 @@ bool allowed(Signal s, JunctionInfo snd, JunctionInfo recv) {
     if(s.as!Unicast !is null)
         return s.as!Unicast.dst.space == recv.space;
     else if(s.as!Anycast !is null)
-        return !snd.indifferent && !recv.anonymous && !recv.introvert && recv.space.matches(s.as!Anycast.dst);
+        return !snd.indifferent && !recv.hiding && !recv.introvert && recv.space.matches(s.as!Anycast.dst);
     else if(s.as!Multicast !is null)
         return !recv.introvert && recv.space.matches(s.as!Multicast.dst);
     else return false;
@@ -1581,7 +1587,7 @@ JunctionMeta addJunction(
     string type,
     string junctionType,
     ushort level,
-    bool anonymous,
+    bool hiding,
     bool indifferent,
     bool introvert
 ) {
@@ -1593,7 +1599,7 @@ JunctionMeta addJunction(
     jm.type = junctionType;
     
     jm.level = level;
-    jm.info.anonymous = anonymous;
+    jm.info.hiding = hiding;
     jm.info.indifferent = indifferent;
     jm.info.introvert = introvert;
 
