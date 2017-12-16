@@ -882,7 +882,6 @@ abstract class Channel {
             if(info.crt !is null) {
                 if(info.encrypting) {// decrypt it
                     auto data = this.own.crypto.decrypt(pkg, this._dst);
-                    auto pl = data.length;
                     auto s = data.unbin!Signal;
                     return this.own.pull(s, info);
                 }
@@ -900,7 +899,6 @@ abstract class Channel {
 
         if(this._other !is null) { // only if verified
             auto pkg = s.bin;
-            auto pl = pkg.length;
             if(this.own.meta.key !is null) {
                 if(this.own.meta.info.encrypting) {// encrypt for dst
                     auto crypt = this.own.crypto.encrypt(pkg, this._dst);
