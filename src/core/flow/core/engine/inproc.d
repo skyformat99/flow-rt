@@ -187,7 +187,7 @@ JunctionMeta addInProcJunction(
     return jm;
 }
 
-unittest { test.header("TEST inproc: fully enabled passing of signals");
+unittest { test.header("TEST engine.inproc: fully enabled passing of signals");
     import core.thread;
     import flow.core.util;
     import std.uuid;
@@ -240,7 +240,7 @@ unittest { test.header("TEST inproc: fully enabled passing of signals");
     assert(nsm1.entities[0].context.as!TestSendingContext.multicast, "didn't confirm test multicast");
 test.footer(); }
 
-unittest { test.header("TEST inproc: anonymous (not) passing of signals");
+unittest { test.header("TEST engine.inproc: anonymous (not) passing of signals");
     import core.thread;
     import flow.core.util;
     import std.uuid;
@@ -295,7 +295,7 @@ unittest { test.header("TEST inproc: anonymous (not) passing of signals");
     assert(nsm1.entities[0].context.as!TestSendingContext.multicast, "didn't confirm test multicast");
 test.footer(); }
 
-unittest { test.header("TEST inproc: indifferent (not) passing of signals");
+unittest { test.header("TEST engine.inproc: indifferent (not) passing of signals");
     import core.thread;
     import flow.core.util;
     import std.uuid;
@@ -349,7 +349,7 @@ unittest { test.header("TEST inproc: indifferent (not) passing of signals");
     assert(nsm1.entities[0].context.as!TestSendingContext.multicast, "didn't confirm test multicast");
 test.footer(); }
 
-unittest { test.header("TEST inproc: !acceptsMulticast (not) passing of signals");
+unittest { test.header("TEST engine.inproc: !acceptsMulticast (not) passing of signals");
     import core.thread;
     import flow.core.util;
     import std.uuid;

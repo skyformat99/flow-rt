@@ -461,7 +461,7 @@ private class Entity : StateMachine!SystemState {
     /// disposes a ticker
     void detach(Ticker t) {
         import core.memory : GC;
-        synchronized(this.lock) {
+        synchronized(this.lock.writer) {
             if(t.next !is null)
                 synchronized(this.metaLock)
                     this.meta.ticks ~= t.next.meta;
@@ -850,7 +850,7 @@ abstract class Channel {
         import std.range : empty, front;
         
         // own is not authenticating
-        if((auth is null || auth.empty) && !this.own.meta.info.verifying) {
+        if((auth is null || auth.empty) && !this.own.meta.info.checking) {
             this._other = new JunctionInfo;
             this._other.space = this._dst;
             
@@ -863,7 +863,7 @@ abstract class Channel {
             auto sigOk = sig !is null && this.own.crypto.verify(infoData, sig, this._dst);
             auto checkOk = !info.crt.empty && this.own.crypto.check(info.space);
 
-            if((sig is null || sigOk) && (!this.own.meta.info.verifying || checkOk)){
+            if((sig is null || sigOk) && (!this.own.meta.info.checking || checkOk)){
                 this._other = info;
                 return true;
             }

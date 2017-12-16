@@ -197,9 +197,12 @@ private struct GenCipher {
 private GenCipher loadCipher(ubyte[] data) {
     import flow.core.data.bin : unpack;
 
+    auto key = data.unpack;
+    auto iv = data.unpack;
+
     GenCipher gen;
-    gen.key = data.unpack;
-    gen.iv = data.unpack;
+    gen.key = key;
+    gen.iv = iv;
     return gen;
 }
 
@@ -207,79 +210,149 @@ private GenCipher loadCipher(ubyte[] data) {
 will run for creating it it */
 private GenCipher genCipher(string cipher, string hash) {
     switch(cipher~hash) {
+        case SSL_TXT_AES128~SSL_TXT_MD5:
+            return genCipher!(SSL_TXT_AES128~"+"~SSL_TXT_MD5, "EVP_aes_128_cbc", "EVP_md5", 16)();
+        case SSL_TXT_AES256~SSL_TXT_MD5:
+            return genCipher!(SSL_TXT_AES256~"+"~SSL_TXT_MD5, "EVP_aes_256_cbc", "EVP_md5", 32)();
         case SSL_TXT_AES128~SSL_TXT_SHA:
-            return genCipher!(SSL_TXT_AES128~"+"~SSL_TXT_SHA, "EVP_aes_128_cbc", "EVP_sha")();
+            return genCipher!(SSL_TXT_AES128~"+"~SSL_TXT_SHA, "EVP_aes_128_cbc", "EVP_sha", 16)();
         case SSL_TXT_AES256~SSL_TXT_SHA:
-            return genCipher!(SSL_TXT_AES256~"+"~SSL_TXT_SHA, "EVP_aes_256_cbc", "EVP_sha")();
-        case SSL_TXT_AES_GCM~SSL_TXT_SHA:
-            return genCipher!(SSL_TXT_AES_GCM~"+"~SSL_TXT_SHA, "EVP_aes_192_gcm", "EVP_sha")();
+            return genCipher!(SSL_TXT_AES256~"+"~SSL_TXT_SHA, "EVP_aes_256_cbc", "EVP_sha", 32)();
         case SSL_TXT_AES128~SSL_TXT_SHA256:
-            return genCipher!(SSL_TXT_AES128~"+"~SSL_TXT_SHA256, "EVP_aes_128_cbc", "EVP_sha256")();
+            return genCipher!(SSL_TXT_AES128~"+"~SSL_TXT_SHA256, "EVP_aes_128_cbc", "EVP_sha256", 16)();
         case SSL_TXT_AES256~SSL_TXT_SHA256:
-            return genCipher!(SSL_TXT_AES256~"+"~SSL_TXT_SHA256, "EVP_aes_256_cbc", "EVP_sha256")();
-        case SSL_TXT_AES_GCM~SSL_TXT_SHA256:
-            return genCipher!(SSL_TXT_AES_GCM~"+"~SSL_TXT_SHA256, "EVP_aes_192_gcm", "EVP_sha256")();
+            return genCipher!(SSL_TXT_AES256~"+"~SSL_TXT_SHA256, "EVP_aes_256_cbc", "EVP_sha256", 32)();
         default: assert(false);
     }
 }
 
 /// openssl cipher generator
-private GenCipher genCipher(string title, string cipherFunc, string hashFunc)() {
+private GenCipher genCipher(string title, string cipherFunc, string hashFunc, size_t length)() {
     import deimos.openssl.rand : RAND_bytes;
     import flow.core.data.bin : pack;
 
-    immutable ks = 256/8;
+    immutable ks = length;
     immutable rounds = 3;
 
     auto pass = new ubyte[ks]; RAND_bytes(pass.ptr, ks);
 
-    GenCipher ciph;
-    ciph.key = new ubyte[ks];
-    ciph.iv = new ubyte[ks];
+    auto key = new ubyte[ks];
+    auto iv = new ubyte[ks];
     
-    auto ret = EVP_BytesToKey(mixin(cipherFunc)(), mixin(hashFunc)(), null, pass.ptr, ks, rounds, ciph.key.ptr, ciph.iv.ptr);
+    auto ret = EVP_BytesToKey(mixin(cipherFunc)(), mixin(hashFunc)(), null, pass.ptr, ks, rounds, key.ptr, iv.ptr);
 
     if(ret != ks)
         new CryptoException("couldn't generate "~title~" cipher");
 
     // they are packed together for communicating cipher
-    ciph.data = ciph.key.pack~ciph.iv.pack;
+    auto data = key.pack~iv.pack;
+
+    GenCipher ciph;
+    ciph.key = key;
+    ciph.iv = iv;
+    ciph.data = data;
 
     return ciph;
 }
 
-private EVP_CIPHER_CTX genCipherCtx(string cipher, GenCipher ciph) {
+private ubyte[] encrypt(ref ubyte[] data, string cipher, GenCipher ciph) {
     switch(cipher) {
         case SSL_TXT_AES128:
-            return genCipherCtx!(
-                SSL_TXT_AES128~"+"~SSL_TXT_SHA, "EVP_DecryptInit_ex", "EVP_aes_128_cbc"
+            return data.encrypt!(
+                SSL_TXT_AES128~"+"~SSL_TXT_SHA, "EVP_aes_128_cbc"
             )(ciph);
         case SSL_TXT_AES256:
-            return genCipherCtx!(
-                SSL_TXT_AES256~"+"~SSL_TXT_SHA, "EVP_DecryptInit_ex", "EVP_aes_256_cbc"
-            )(ciph);
-        case SSL_TXT_AES_GCM:
-            return genCipherCtx!(
-                SSL_TXT_AES_GCM~"+"~SSL_TXT_SHA, "EVP_DecryptInit_ex", "EVP_aes_192_gcm"
+            return data.encrypt!(
+                SSL_TXT_AES256~"+"~SSL_TXT_SHA, "EVP_aes_256_cbc"
             )(ciph);
         default: assert(false);
     }
 }
 
 /// openssl cipher context generator
-private EVP_CIPHER_CTX genCipherCtx(string title, string initFunc, string cipherFunc)(GenCipher ciph) {
+private ubyte[] encrypt(string title, string cipherFunc)(ref ubyte[] data, GenCipher ciph) {
+    import deimos.openssl.aes;
+    import deimos.openssl.err : ERR_error_string, ERR_get_error;
+    import std.conv : to;
+
     EVP_CIPHER_CTX ctx;
     
     EVP_CIPHER_CTX_init(&ctx);
-    if(!mixin(initFunc)(&ctx, mixin(cipherFunc)(), null, ciph.key.ptr, ciph.iv.ptr))
+    scope(exit) EVP_CIPHER_CTX_cleanup(&ctx);
+    if(!EVP_EncryptInit_ex(&ctx, mixin(cipherFunc)(), null, ciph.key.ptr, ciph.iv.ptr))
         new CryptoException("couldn't initialize "~title~" encryption context");
 
     // double check
-    if(!mixin(initFunc)(&ctx, null, null, null, null))
+    if(!EVP_EncryptInit_ex(&ctx, null, null, null, null))
         new CryptoException("couldn't initialize "~title~" encryption context");
 
-    return ctx;
+    auto buf = new ubyte[data.length+AES_BLOCK_SIZE];
+    auto ds = data.length.to!int;
+    int bs, fs;
+
+    if(!EVP_EncryptUpdate(&ctx, buf.ptr, &bs, data.ptr, ds))
+        throw new CryptoException("cipher encryption error: "~ERR_error_string(ERR_get_error(), null).to!string);
+    
+    if(!EVP_EncryptFinal_ex(&ctx, buf.ptr+bs, &fs))
+        throw new CryptoException("cipher encryption error: "~ERR_error_string(ERR_get_error(), null).to!string);
+
+    buf.length = bs+fs;
+    return buf;
 }
+
+private ubyte[] decrypt(ref ubyte[] crypt, string cipher, GenCipher ciph) {
+    switch(cipher) {
+        case SSL_TXT_AES128:
+            return crypt.decrypt!(
+                SSL_TXT_AES128~"+"~SSL_TXT_SHA, "EVP_aes_128_cbc"
+            )(ciph);
+        case SSL_TXT_AES256:
+            return crypt.decrypt!(
+                SSL_TXT_AES256~"+"~SSL_TXT_SHA, "EVP_aes_256_cbc"
+            )(ciph);
+        default: assert(false);
+    }
+}
+
+/// openssl cipher context generator
+private ubyte[] decrypt(string title, string cipherFunc)(ref ubyte[] crypt, GenCipher ciph) {
+    import deimos.openssl.aes;
+    import deimos.openssl.err : ERR_error_string, ERR_get_error;
+    import std.conv : to;
+
+    EVP_CIPHER_CTX ctx;
+    
+    EVP_CIPHER_CTX_init(&ctx);
+    scope(exit) EVP_CIPHER_CTX_cleanup(&ctx);
+    if(!EVP_DecryptInit_ex(&ctx, mixin(cipherFunc)(), null, ciph.key.ptr, ciph.iv.ptr))
+        new CryptoException("couldn't initialize "~title~" decryption context");
+
+    // double check
+    if(!EVP_DecryptInit_ex(&ctx, null, null, null, null))
+        new CryptoException("couldn't initialize "~title~" encryption context");
+
+    auto buf = new ubyte[crypt.length];            
+    auto ds = crypt.length.to!int;
+    int bs, fs;
+
+    if(!EVP_DecryptUpdate(&ctx, buf.ptr, &bs, crypt.ptr, ds))
+        throw new CryptoException("cipher decryption error: "~ERR_error_string(ERR_get_error(), null).to!string);
+
+    if(!EVP_DecryptFinal_ex(&ctx, buf.ptr+bs, &fs))
+        throw new CryptoException("cipher decryption error: "~ERR_error_string(ERR_get_error(), null).to!string);
+
+    buf.length = bs;
+    return buf;
+}
+
+
+/*
+            auto data = new ubyte[crypt.length];
+            auto ds = crypt.length.to!int;
+            
+            if(!EVP_DecryptUpdate(&ctx, data.ptr, &ds, crypt.ptr, ds))
+                throw new CryptoException("cipher error: decryption failed");
+            return data;*/
 
 /** it has to get locked so no thread can
 kill others ctx by destructing it however
@@ -293,42 +366,20 @@ private class Cipher {
     /// a cipher algorithm needs a hash algorithm
     private string cipher, hash;
 
-    /// merged cipher data
-    ubyte[] data() @property {return this.gen.data;}
-
     /// generated cipher
-    private GenCipher _gen;
+    private GenCipher gen;
 
-    // lazy load
-    private GenCipher gen() @property {
-        synchronized(this.lock.reader) {
-            if(this._gen.data is null) {
-                synchronized(this.lock)
-                    this._gen = genCipher(cipher, hash);
-            }
-        }
-
-        return this._gen;
+    // lazy loading
+    private void ensureGen() {
+        if(this.gen.data is null)
+            this.gen = genCipher(cipher, hash);
     }
 
-    private EVP_CIPHER_CTX[Thread] _ctx;
-
-    /// lazy and per thread loading
-    private EVP_CIPHER_CTX ctx() @property {
-        /* even it does not crash openssl
-        cannot use objects multithreaded
-        since this is meant to run in reused threads
-        every thread gets its own ctx */
-        synchronized(this.lock.reader) if(Thread.getThis in this._ctx)
-            return this._ctx[Thread.getThis];
-        else {
-            EVP_CIPHER_CTX ctx;
-            synchronized(this.lock) {
-                ctx = genCipherCtx(this.cipher, this.gen);
-                this._ctx[Thread.getThis] = ctx;
-            }
-            
-            return ctx;
+    /// merged cipher data
+    ubyte[] data() @property {
+        synchronized(this.lock.writer) {
+            this.ensureGen();
+            return this.gen.data;
         }
     }
 
@@ -340,17 +391,12 @@ private class Cipher {
     }
 
     this(string cipher, string hash, ref ubyte[] data) {
-        this._gen = GenCipher(data);
+        this.gen = loadCipher(data);
 
         this(cipher, hash);
     }
 
     void dispose() {
-        synchronized(this.lock) {
-            foreach(c; this._ctx.values)
-                EVP_CIPHER_CTX_cleanup(&c);
-        }
-
         this.destroy;
     }
 
@@ -359,12 +405,7 @@ private class Cipher {
         import std.conv : to;
 
         synchronized(this.lock.reader) try {
-            auto buf = new ubyte[data.length];            
-            auto ds = data.length.to!int;
-            EVP_CIPHER_CTX ctx = this.ctx;
-            if(!EVP_EncryptUpdate(&ctx, buf.ptr, &ds, data.ptr, ds))
-                throw new CryptoException("cipher error: encryption failed");
-            return buf;
+            return data.encrypt(this.cipher, this.gen);
         } catch(Exception exc) {
             Log.msg(LL.Error, "decrypting by cipher failed", exc);
         }
@@ -377,12 +418,7 @@ private class Cipher {
         import std.conv : to;
 
         synchronized(this.lock.reader) try {
-            auto data = new ubyte[crypt.length];
-            auto ds = crypt.length.to!int;
-            EVP_CIPHER_CTX ctx = this.ctx;
-            if(!EVP_DecryptUpdate(&ctx, data.ptr, &ds, crypt.ptr, ds))
-                throw new CryptoException("cipher error: encryption failed");
-            return data;
+            return crypt.decrypt(this.cipher, this.gen);
         } catch(Exception exc) {
             Log.msg(LL.Error, "decrypting by cipher failed", exc);
         }
@@ -423,67 +459,63 @@ private class Peer {
 
     private Crypto crypto;
 
-    private RsaPubCtx[Thread] _ctx;
-
     private string _crt;
 
-    /// lazy and per thread loading
-    private RsaPubCtx ctx() @property {
-        /* as Cipher.ctx */
-        synchronized(this.lock.reader) if(Thread.getThis in this._ctx)
-            return this._ctx[Thread.getThis];
-        else {
-            auto ctx = RsaPubCtx();
-            synchronized(this.lock) {
-                try {
-                    ctx = this._crt.createRsaPubCtx;
-                } catch(Exception exc) {
-                    throw new CryptoException("couldn't load peers certificate", null, [exc]);
-                }
+    private RsaPubCtx[Thread] _ctx;
+    private RsaPubCtx ctx() @property {return this._ctx[Thread.getThis];}
 
-                if(ctx.crt is null || ctx.pub == null || ctx.rsa is null && ctx.bs > 0)
-                    throw new CryptoException("couldn't load peers certificate");
-                
-                this._ctx[Thread.getThis] = ctx;
+    /// lazy and per thread loading
+    private void ensureCtx() {
+        /* as Cipher.ctx */
+        if(Thread.getThis !in this._ctx) {
+            RsaPubCtx ctx;
+            try {
+                ctx = this._crt.createRsaPubCtx;
+            } catch(Exception exc) {
+                throw new CryptoException("couldn't load peers certificate", null, [exc]);
             }
+
+            if(ctx.crt is null || ctx.pub == null || ctx.rsa is null && ctx.bs > 0)
+                throw new CryptoException("couldn't load peers certificate");
             
-            return ctx;
+            this._ctx[Thread.getThis] = ctx;
         }
     }
 
-    private string cipher, hash;
     private Duration validity;
 
     /// ciphers used to encrypt outgoing packages
-    private Cipher _outgoing;
+    private Cipher outgoing;
     private ubyte[] outCrypt;
     private SysTime outValidity;
 
     private void createOutgoing() {
-        import flow.core.data.bin : pack;
+        import flow.core.data.bin : bin, pack;
 
-        Cipher ciph = new Cipher(this.cipher, this.hash);
+        Cipher ciph = new Cipher(this.crypto.cipher, this.crypto.hash);
         
         // encrypts and signs generated cipher
         auto data = ciph.data;
-        auto crypt = this.encryptRsa(data);
-        auto sig = this.crypto.sign(crypt);
-        this.outCrypt = sig.pack~crypt.pack;
+        this.ensureCtx();
+        auto crypt = data.encryptRsa(this.ctx.rsa);
+        auto sig = crypt.sign(this.crypto.ctx.rsa, this.crypto.hash);
+        auto cipherBin = ciph.cipher.bin;
+        auto hashBin = ciph.hash.bin;
+        this.outCrypt = cipherBin.pack~hashBin.pack~sig.pack~crypt.pack;
         this.outValidity = Clock.currTime + this.validity;
-        this._outgoing = ciph;
+        this.outgoing = ciph;
     }
 
-    private Cipher outgoing() @property {
+    private void ensureOutgoing() @property {
         import core.memory : GC;
         synchronized(this.lock.reader)  {
-                if(this.outValidity < Clock.currTime) {
-                    synchronized(this.lock) {
-                        this._outgoing.dispose; GC.free(&this._outgoing);
-                        this.createOutgoing();
-                    }
+            if(this.outgoing is null || this.outValidity < Clock.currTime) {
+                synchronized(this.lock.writer) {
+                    if(this.outgoing !is null)
+                        this.outgoing.dispose; GC.free(&this.outgoing);
+                    this.createOutgoing();
+                }
             }
-
-            return this._outgoing;
         }
     }
 
@@ -491,25 +523,21 @@ private class Peer {
     private Cipher[ulong] incoming;
     private SysTime[ulong] inValidity;
 
-    this(Crypto crypto, string crt, string cipher, string hash, Duration outValidity, bool check = true) {
+    this(Crypto crypto, string crt, Duration outValidity, bool check = true) {
         this.lock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
 
         this.crypto = crypto;
         this._crt = crt;
-        this.cipher = cipher;
-        this.hash = hash;
         this.validity = outValidity;
 
         if(check) {
             /* TODO check certificate against authorities
             and destination against cn of certificate*/
         }
-
-        this.createOutgoing();
     }
 
     void dispose() {
-        synchronized(this.lock)
+        synchronized(this.lock.writer)
             foreach(ctx; this._ctx.values)
                 ctx.free;
 
@@ -517,19 +545,24 @@ private class Peer {
     }
 
     bool check() {
-        synchronized(this.lock.reader)
+        synchronized(this.lock.reader) {
+            this.ensureCtx();
             return false; // TODO check with authority
+        }
     }
 
     /// verifies sig of data using peers certificate
     bool verify(ref ubyte[] data, ref ubyte[] sig) {
-        synchronized(this.lock.reader)
+        synchronized(this.lock.reader) {
+            this.ensureCtx();
             return data.verify(sig, this.ctx.rsa);
+        }
     }
 
     /// encrypts data via RSA for crt
     private ubyte[] encryptRsa(ref ubyte[] data) {
         synchronized(this.lock.reader) {
+            this.ensureCtx();
             return data.encryptRsa(this.ctx.rsa);
         }
     }
@@ -537,8 +570,11 @@ private class Peer {
     ubyte[] encrypt(ref ubyte[] data) {
         import flow.core.data.bin : pack;
         // binary rule: crypted cipher is packed, rest is data
-        synchronized(this.lock.reader) { // TODO
-            return this.outCrypt.pack~this.outgoing.encrypt(data);
+        synchronized(this.lock.reader) {
+            this.ensureCtx();
+            this.ensureOutgoing();
+            auto crypt = this.outgoing.encrypt(data);
+            return this.outCrypt.pack~crypt;
         }
     }
 
@@ -558,33 +594,37 @@ private class Peer {
         import std.conv : to;
 
         if(cc !is null) {
+            auto cipher = cc.unpack.unbin!string;
+            auto hash = cc.unpack.unbin!string;
             // get signature out of crypted cipher
             auto sig = cc.unpack;
 
-            /* generate hash out of crypted data
+            /* generate cipher id out of crypted data
             due to rsa encryption of randoms this should be representative */
-            auto hash = sig[0..ulong.sizeof].unbin!long;
+            auto id = sig[0..ulong.sizeof].unbin!long;
 
             synchronized(this.lock.reader) {        
-                // if hash is known stay in reader mode and return cipher
-                if(hash in this.incoming)
-                    return this.incoming[hash];
+                // if cipher id is known stay in reader mode and return cipher
+                if(id in this.incoming)
+                    return this.incoming[id];
                 // otherwise switch to writer mode and create
-                else synchronized(this.lock) {
+                else synchronized(this.lock.writer) {
                     // clean what is expired (requires writer mode)
                     this.cleanInCiphers();
 
                     // get crypted data out of crypted cipher
                     auto crypt = cc.unpack;
 
-                    auto sigOk = sig !is null && this.verify(crypt, sig);
-                    auto data = this.crypto.decryptRsa(crypt);
-                    auto ciph = new Cipher(this.cipher, this.hash, data);
-                    this.inValidity[hash] = Clock.currTime + this.validity;
-                    
-                    this.incoming[hash] = ciph;
+                    auto sigOk = sig !is null && crypt.verify(sig, this.ctx.rsa);
+                    auto data = crypt.decryptRsa(this.crypto.ctx.rsa);
+                    if(data !is null) { // add it if it could get decrypted
+                        auto ciph = new Cipher(cipher, hash, data);
+                        this.inValidity[id] = Clock.currTime + this.validity;
+                        
+                        this.incoming[id] = ciph;
 
-                    return ciph;
+                        return ciph;
+                    } else return null;
                 }
             }
         } else return null;
@@ -598,6 +638,7 @@ private class Peer {
             // binary rule: crypted cipher is packed, rest is data
             auto cc = crypt.unpack;
             synchronized(this.lock.reader) {
+                this.ensureCtx();
                 auto ciph = this.addInCipher(cc);
                 
                 if(ciph !is null)
@@ -623,28 +664,23 @@ package final class Crypto {
     private string crt;
 
     private RsaPrivCtx[Thread] _ctx;
+    private RsaPrivCtx ctx() @property {return this._ctx[Thread.getThis];}
 
     /// lazy and per thread loading
-    private RsaPrivCtx ctx() @property {
-        auto ctx = RsaPrivCtx();
+    private void ensureCtx() @property {
+        RsaPrivCtx ctx;
         /* as Cipher.ctx */
-        synchronized(this.lock.reader) if(Thread.getThis in this._ctx)
-            return this._ctx[Thread.getThis];
-        else {
-            synchronized(this.lock) {
-                try {
-                    ctx = this.key.createRsaPrivCtx;
-                } catch(Exception exc) {
-                    throw new CryptoException("couldn't load own rsa key", null, [exc]);
-                }
-
-                if(ctx.rsa is null)
-                    throw new CryptoException("couldn't load own rsa key");
-                
-                this._ctx[Thread.getThis] = ctx;
+        if(Thread.getThis !in this._ctx) {
+            try {
+                ctx = this.key.createRsaPrivCtx;
+            } catch(Exception exc) {
+                throw new CryptoException("couldn't load own rsa key", null, [exc]);
             }
+
+            if(ctx.rsa is null)
+                throw new CryptoException("couldn't load own rsa key");
             
-            return ctx;
+            this._ctx[Thread.getThis] = ctx;
         }
     }
 
@@ -693,14 +729,14 @@ package final class Crypto {
         
         /* aes-256 in combination with sha256 is
         the default cipher and hash pair to use */
-        this.cipher = cipher != string.init ? cipher : SSL_TXT_AES_GCM;
-        this.hash = hash != string.init ? hash : SSL_TXT_SHA;
+        this.cipher = cipher != string.init ? cipher : SSL_TXT_AES128;
+        this.hash = hash != string.init ? hash : SSL_TXT_MD5;
         this._check = check;
         this.cipherValidity = cipherValidity;
     }
 
     void dispose() {
-        synchronized(this.lock)
+        synchronized(this.lock.writer)
             foreach(ctx; this._ctx.values)
                 ctx.free;
 
@@ -711,8 +747,8 @@ package final class Crypto {
     void add(string p, string crt) {
         synchronized(this.lock.reader)
             if(p !in this.peers)
-                synchronized(this.lock)
-                    this.peers[p] = new Peer(this, crt, this.cipher, this.hash, this.cipherValidity, this._check);
+                synchronized(this.lock.writer)
+                    this.peers[p] = new Peer(this, crt, this.cipherValidity, this._check);
     }
 
     /// remove it again
@@ -720,13 +756,14 @@ package final class Crypto {
         import core.memory : GC;
         synchronized(this.lock.reader)
             if(p in this.peers)            
-                synchronized(this.lock) {
+                synchronized(this.lock.writer) {
                     auto peer = this.peers[p];
                     peer.dispose; GC.free(&peer);
                     this.peers.remove(p);
                 }
     }
 
+    /// NOTE: unsupported yet
     bool check(string dst) {
         synchronized(this.lock.reader)
             return this.get(dst).check();
@@ -735,8 +772,10 @@ package final class Crypto {
     /** signs data using private key
     returns signature if there is a key else null */
     ubyte[] sign(ref ubyte[] data) {  
-        synchronized(this.lock.reader)
+        synchronized(this.lock.reader) {
+            this.ensureCtx();
             return data.sign(this.ctx.rsa, this.hash);
+        }
     }
 
     bool verify(ref ubyte[] data, ref ubyte[] sig, string src) {
@@ -745,24 +784,31 @@ package final class Crypto {
     }
 
     ubyte[] encryptRsa(ref ubyte[] data, string dst) {
-        synchronized(this.lock.reader)
+        synchronized(this.lock.reader) {
+            this.ensureCtx();
             return this.get(dst).encryptRsa(data);
+        }
     }
 
     ubyte[] decryptRsa(ref ubyte[] crypt) {
         synchronized(this.lock.reader) {
+            this.ensureCtx();
             return crypt.decryptRsa(this.ctx.rsa);
         }
     }
 
     ubyte[] encrypt(ref ubyte[] data, string dst) {
-        synchronized(this.lock.reader)
+        synchronized(this.lock.reader) {
+            this.ensureCtx();
             return this.get(dst).encrypt(data);
+        }
     }
 
     ubyte[] decrypt(ref ubyte[] crypt, string src) {
-        synchronized(this.lock.reader)
+        synchronized(this.lock.reader) {
+            this.ensureCtx();
             return this.get(src).decrypt(crypt);
+        }
     }
 }
 
@@ -812,9 +858,9 @@ unittest { test.header("TEST core.crypt: rsa encrypt/decrypt");
 
     assert(TestKeys.loaded, "keys were not loaded! did you execute util/ssl/gen.sh on a CA free host?");
 
-    auto selfC = new Crypto("self", TestKeys.selfKey, TestKeys.selfCrt, SSL_TXT_AES_GCM, SSL_TXT_SHA, false);
-    auto signedC = new Crypto("signed", TestKeys.signedKey, TestKeys.signedCrt, SSL_TXT_AES_GCM, SSL_TXT_SHA, false);
-    auto invalidC = new Crypto("invalid", TestKeys.invalidKey, TestKeys.invalidCrt, SSL_TXT_AES_GCM, SSL_TXT_SHA, false);
+    auto selfC = new Crypto("self", TestKeys.selfKey, TestKeys.selfCrt, SSL_TXT_AES128, SSL_TXT_MD5, false);
+    auto signedC = new Crypto("signed", TestKeys.signedKey, TestKeys.signedCrt, SSL_TXT_AES128, SSL_TXT_MD5, false);
+    auto invalidC = new Crypto("invalid", TestKeys.invalidKey, TestKeys.invalidCrt, SSL_TXT_AES128, SSL_TXT_MD5, false);
     selfC.add("signed", TestKeys.signedCrt);
     selfC.add("invalid", TestKeys.invalidCrt);
     signedC.add("self", TestKeys.selfCrt);
@@ -848,9 +894,9 @@ unittest { test.header("TEST core.crypt: rsa sign/verify");
 
     assert(TestKeys.loaded, "keys were not loaded! did you execute util/ssl/gen.sh on a CA free host?");
 
-    auto selfC = new Crypto("self", TestKeys.selfKey, TestKeys.selfCrt, SSL_TXT_AES_GCM, SSL_TXT_SHA, false);
-    auto signedC = new Crypto("signed", TestKeys.signedKey, TestKeys.signedCrt, SSL_TXT_AES_GCM, SSL_TXT_SHA, false);
-    auto invalidC = new Crypto("invalid", TestKeys.invalidKey, TestKeys.invalidCrt, SSL_TXT_AES_GCM, SSL_TXT_SHA, false);
+    auto selfC = new Crypto("self", TestKeys.selfKey, TestKeys.selfCrt, SSL_TXT_AES128, SSL_TXT_MD5, false);
+    auto signedC = new Crypto("signed", TestKeys.signedKey, TestKeys.signedCrt, SSL_TXT_AES128, SSL_TXT_MD5, false);
+    auto invalidC = new Crypto("invalid", TestKeys.invalidKey, TestKeys.invalidCrt, SSL_TXT_AES128, SSL_TXT_MD5, false);
     selfC.add("signed", TestKeys.signedCrt); selfC.add("invalid", TestKeys.invalidCrt);
     signedC.add("self", TestKeys.selfCrt); signedC.add("invalid", TestKeys.invalidCrt);
     invalidC.add("signed", TestKeys.signedCrt); invalidC.add("self", TestKeys.selfCrt);
@@ -875,25 +921,32 @@ unittest { test.header("TEST core.crypt: rsa sign/verify");
 test.footer; }
 
 version(unittest) {
-    void runCipherTest(string cipher, string hash) {
+    void runCipherTest(string cipher, string hash) { test.header("TEST core.crypt: "~cipher~" using "~hash~" cipher encrypt/decrypt");
         import flow.core.data : bin, unbin;
 
-        auto selfC = new Crypto("self", TestKeys.selfKey, TestKeys.selfCrt, SSL_TXT_AES_GCM, SSL_TXT_SHA, false);
-        selfC.add("signed", TestKeys.signedCrt);
 
-        auto signedC = new Crypto("signed", TestKeys.signedKey, TestKeys.signedCrt, SSL_TXT_AES_GCM, SSL_TXT_SHA, false);
-        signedC.add("self", TestKeys.selfCrt);
+        auto selfC = new Crypto("self", TestKeys.selfKey, TestKeys.selfCrt, cipher, hash, false);
+        auto signedC = new Crypto("signed", TestKeys.signedKey, TestKeys.signedCrt, cipher, hash, false);
+        auto invalidC = new Crypto("invalid", TestKeys.invalidKey, TestKeys.invalidCrt, cipher, hash, false);
+        selfC.add("signed", TestKeys.signedCrt); selfC.add("invalid", TestKeys.invalidCrt);
+        signedC.add("self", TestKeys.selfCrt); signedC.add("invalid", TestKeys.invalidCrt);
+        invalidC.add("signed", TestKeys.signedCrt); invalidC.add("self", TestKeys.selfCrt);
 
         auto orig = "CRYPTED MESSAGE: hello world, I'm coming".bin;
         
-        auto signedCrypt = signedC.encrypt(orig, "self");
-        auto selfDecrypt = selfC.decrypt(signedCrypt, "signed");
-        assert(orig == selfDecrypt, "original message and decrypt of self crypto mismatch");
-        
-        auto selfCrypt = selfC.encrypt(orig, "signed");
-        auto signedDecrypt = signedC.decrypt(selfCrypt, "self");
-        assert(orig == signedDecrypt, "original message and decrypt of signed crypto mismatch");
-    }
+        auto crypt = signedC.encrypt(orig, "self");
+        auto decrypt = selfC.decrypt(crypt, "signed");
+        auto wrong = invalidC.decrypt(crypt, "signed");
+        assert(orig == decrypt, "original message and decrypt mismatch");
+        assert(orig != wrong, "original message and wrong match");
+
+        selfC.remove("signed");
+        selfC.remove("invalid");
+        signedC.remove("self");
+        signedC.remove("invalid");
+        invalidC.remove("signed");
+        invalidC.remove("self");
+    test.footer; }
 }
 
 unittest { test.header("TEST core.crypt: cipher encrypt/decrypt");
@@ -901,14 +954,15 @@ unittest { test.header("TEST core.crypt: cipher encrypt/decrypt");
 
     assert(TestKeys.loaded, "keys were not loaded! did you execute util/ssl/gen.sh on a CA free host?");
 
-    /*runCipherTest(SSL_TXT_AES128, SSL_TXT_SHA);
+    runCipherTest(SSL_TXT_AES128, SSL_TXT_MD5);
+    runCipherTest(SSL_TXT_AES256, SSL_TXT_MD5);
+    runCipherTest(SSL_TXT_AES128, SSL_TXT_SHA);
     runCipherTest(SSL_TXT_AES256, SSL_TXT_SHA);
-    runCipherTest(SSL_TXT_AES_GCM, SSL_TXT_SHA);
     runCipherTest(SSL_TXT_AES128, SSL_TXT_SHA256);
     runCipherTest(SSL_TXT_AES256, SSL_TXT_SHA256);
-    runCipherTest(SSL_TXT_AES_GCM, SSL_TXT_SHA256);*/
 test.footer; }
 
+// not to support yet
 //unittest { test.header("TEST core.crypt: self signed certificates check behavior"); test.footer(); }
 //unittest { test.header("TEST core.crypt: signed certificates check behavior"); test.footer(); }
 //unittest { test.header("TEST core.crypt: invalid certificates check behavior"); test.footer(); }

@@ -72,22 +72,23 @@ class JunctionInfo : IdData {
     mixin field!(string, "crt");
 
     /** type of cipher to use for encryption
-    default AESGCM
+    default AES128
     available
     - AES128
-    - AES256
-    - AESGCM*/
+    - AES256*/
     mixin field!(string, "cipher");
 
     /** type of cipher to use for encryption
-    default SHA
+    default MD5
     available
+    - MD5
     - SHA
     - SHA256*/
     mixin field!(string, "hash");
 
-    /// indicates if junction is verifying peers
-    mixin field!(bool, "verifying");
+    /// indicates if junction is checking peers with systems CA's
+    /// NOTE: not supported yet
+    mixin field!(bool, "checking");
 
     /// indicates if junction is encrypting outbound signals
     mixin field!(bool, "encrypting");
