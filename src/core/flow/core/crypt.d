@@ -534,9 +534,10 @@ private class Peer {
     }
 
     ubyte[] encrypt(ref ubyte[] data) {
+        import flow.core.data.bin : pack;
         // binary rule: crypted cipher is packed, rest is data
         synchronized(this.lock.reader) { // TODO
-            return this.outCrypt~this.outgoing.encrypt(data);
+            return this.outCrypt.pack~this.outgoing.encrypt(data);
         }
     }
 
@@ -870,7 +871,7 @@ unittest { test.header("TEST core.crypt: rsa sign/verify");
     invalidC.dispose;
 test.footer; }
 
-/*version(unittest) {
+version(unittest) {
     void runCipherTest(string cipher, string hash) {
         import flow.core.data : bin, unbin;
 
@@ -903,7 +904,7 @@ unittest { test.header("TEST core.crypt: cipher encrypt/decrypt");
     runCipherTest(SSL_TXT_AES128, SSL_TXT_SHA256);
     runCipherTest(SSL_TXT_AES256, SSL_TXT_SHA256);
     runCipherTest(SSL_TXT_AES_GCM, SSL_TXT_SHA256);
-test.footer; }*/
+test.footer; }
 
 //unittest { test.header("TEST core.crypt: self signed certificates check behavior"); test.footer(); }
 //unittest { test.header("TEST core.crypt: signed certificates check behavior"); test.footer(); }
