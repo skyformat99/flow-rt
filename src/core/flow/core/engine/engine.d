@@ -34,13 +34,7 @@ abstract class Tick {
     /** context of hosting entity
     warning you have to sync as reader when accessing it reading
     and as writer when accessing it writing */
-    protected T context(T)(size_t i = 0) if(is(T:Data)) {
-        if(typeid(T) in this.entity.context)
-            if(this.entity.context[typeid(T)].length > i)
-                return this.entity.context[typeid(T)][i].as!T;
-        
-        return null;
-    }
+    protected T context(T)(size_t i = 0) if(is(T:Data)) {return this.entity.get!T(i);}
 
     /// check if execution of tick is accepted
     public @property bool accept() {return true;}
@@ -591,6 +585,57 @@ private class Entity : StateMachine!SystemState {
 
         synchronized(this.metaLock.writer)
             this.meta.damages ~= thr.damage;
+    }
+
+    /// adds data to context and returns its typed index
+    size_t add(Data d) {
+        import std.algorithm.searching;
+        if(d !is null) synchronized(this.metaLock.reader)
+            if(!this.meta.context.any!((x)=>x is d))
+                synchronized(this.metaLock.writer){
+                    this.meta.context ~= d;
+                    this.context[typeid(d)] ~= d;
+                    foreach_reverse(i, c; this.context[typeid(d)])
+                        if(c is d) return i;
+                }
+        
+        return -1;
+    }
+
+    /// removes data from context
+    void remove(Data d) {
+        import std.algorithm.searching;
+        import std.algorithm.mutation;
+        if(d !is null) synchronized(this.metaLock.reader)
+            if(this.meta.context.any!((x)=>x is d))
+                synchronized(this.metaLock.writer) {
+                    // removing it from context cache
+                    TypeInfo ft = typeid(d);
+                    if(ft in this.context)
+                        foreach_reverse(i, c; this.context[ft])
+                            if(c is d) {
+                                this.context[ft].remove(i);
+                                break;
+                            }
+
+                    // removing it from context
+                    foreach_reverse(i, c; this.meta.context)
+                        if(c is d) {
+                            this.meta.context.remove(i);
+                            break;
+                        }
+                }
+    }
+
+    /// gets data by type and index from context
+    T get(T)(size_t i = 0) {
+        synchronized(this.metaLock.reader) {
+            if(typeid(T) in this.context)
+                if(this.context[typeid(T)].length > i)
+                    return this.context[typeid(T)][i].as!T;
+        }
+        
+        return null;
     }
 
     /// registers a receptor if not registered

@@ -31,7 +31,7 @@ class React : Tick {
         import std.math, std.array, std.conv, std.algorithm.sorting, std.algorithm.iteration;
 
         auto s = this.trigger.as!Act;
-        auto c = this.context.as!Actuality;
+        auto c = this.context!Actuality;
 
         debug(tick) this.msg(LL.Debug, "React::accept: before sync");
         // we only accept it, if its power is enough to make a difference
@@ -78,7 +78,7 @@ class Exist : Tick {
         import core.thread;
         import std.math, std.random, std.conv, std.algorithm.mutation, std.range.primitives;
 
-        auto c = this.context.as!Actuality;
+        auto c = this.context!Actuality;
         auto sleep = false;
 
         debug(tick) this.msg(LL.Debug, "Exist::run: before sync");
@@ -159,7 +159,7 @@ SpaceMeta createPower(string id, size_t amount, string[string] params) {
                 c.relations ~= r;
             }
         }
-        em.context = c;
+        em.context ~= c;
 
         auto rr = new Receptor;
         rr.signal = "flow.complex.power.Act";

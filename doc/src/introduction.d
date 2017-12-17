@@ -97,8 +97,8 @@ class UnicastSendingTestTick : Tick { // only derriving from Tick
     /** assigns space to deliver an unicast to configured entity in its space.
     it notes if signal was accepted into context.unicast */
     override void run() {
-        auto cfg = this.config.as!TestSendingConfig;
-        auto ctx = this.context.as!TestSendingContext;
+        auto cfg = this.context!TestSendingConfig;
+        auto ctx = this.context!TestSendingContext;
         ctx.unicast = this.send(new TestUnicast, cfg.dstEntity, cfg.dstSpace);
     }
 }
@@ -106,8 +106,8 @@ class UnicastSendingTestTick : Tick { // only derriving from Tick
 /** ... */
 class AnycastSendingTestTick : Tick {
     override void run() {
-        auto cfg = this.config.as!TestSendingConfig;
-        auto ctx = this.context.as!TestSendingContext;
+        auto cfg = this.context!TestSendingConfig;
+        auto ctx = this.context!TestSendingContext;
         ctx.anycast = this.send(new TestAnycast, cfg.dstSpace);
     }
 }
@@ -116,8 +116,8 @@ class AnycastSendingTestTick : Tick {
 /** ... */
 class MulticastSendingTestTick : Tick {
     override void run() {
-        auto cfg = this.config.as!TestSendingConfig;
-        auto ctx = this.context.as!TestSendingContext;
+        auto cfg = this.context!TestSendingConfig;
+        auto ctx = this.context!TestSendingContext;
         ctx.multicast = this.send(new TestMulticast, cfg.dstSpace);
     }
 }
@@ -125,7 +125,7 @@ class MulticastSendingTestTick : Tick {
 /** stores triggering signal into context TestReceiptingContext */
 class UnicastReceiptingTestTick : Tick {
     override void run() {
-        auto c = this.context.as!TestReceiptingContext;
+        auto c = this.context!TestReceiptingContext;
         c.unicast = this.trigger.as!Unicast;
     }
 }
@@ -133,7 +133,7 @@ class UnicastReceiptingTestTick : Tick {
 /** ... */
 class AnycastReceiptingTestTick : Tick {
     override void run() {
-        auto c = this.context.as!TestReceiptingContext;
+        auto c = this.context!TestReceiptingContext;
         c.anycast = this.trigger.as!Anycast;
     }
 }
@@ -141,7 +141,7 @@ class AnycastReceiptingTestTick : Tick {
 /** ... */
 class MulticastReceiptingTestTick : Tick {
     override void run() {
-        auto c = this.context.as!TestReceiptingContext;
+        auto c = this.context!TestReceiptingContext;
         c.multicast = this.trigger.as!Multicast;
     }
 }
@@ -172,10 +172,14 @@ void main() {
         /* adds the entity "sending" having
         a context TestSendingContext
         and are configured by a TestSendingConfig */
-        auto ems = ssm.addEntity("sending", fqn!TestSendingContext, fqn!TestSendingConfig); {
+        auto ems = ssm.addEntity("sending"); {
+            // adding context
+            ems.context ~= new TestSendingContext;
+            // adding config
+            auto cfg = new TestSendingConfig; ems.context ~= cfg;
             /* setting the destination of the signals */
-            ems.config.as!TestSendingConfig.dstEntity = "receiving";
-            ems.config.as!TestSendingConfig.dstSpace = rDomain;
+            cfg.dstEntity = "receiving";
+            cfg.dstSpace = rDomain;
 
             /* when entity starts ticking
             what implies that it is not freezed anymore
@@ -192,7 +196,9 @@ void main() {
     /* generates meta data for our
     second space hosting receipting entity */
     auto rsm = createSpace(rDomain);
-    auto emr = rsm.addEntity("receiving", fqn!TestReceiptingContext); {
+    auto emr = rsm.addEntity("receiving"); {
+        // adding context
+        emr.context ~= new TestReceiptingContext;
         /* when entity receipts a signal Test***cast
         it triggers a tick of type ***castReceiptingTestTick */
         emr.addReceptor(fqn!TestUnicast, fqn!UnicastReceiptingTestTick);
@@ -224,13 +230,13 @@ void main() {
     auto nrsm = rSpc.snap();
 
     // checks if all got their testsignal
-    auto rCtx = nrsm.entities[0].context.as!TestReceiptingContext;
+    auto rCtx = nrsm.entities[0].context[0].as!TestReceiptingContext;
     assert(rCtx.unicast !is null, "didn't get test unicast");
     assert(rCtx.anycast !is null, "didn't get test anycast");
     assert(rCtx.multicast !is null, "didn't get test multicast");
 
     // checks if all got a confirmation for their testsignal
-    auto sCtx = nssm.entities[0].context.as!TestSendingContext;
+    auto sCtx = nssm.entities[0].context[0].as!TestSendingContext;
     assert(sCtx.unicast, "didn't confirm test unicast");
     assert(sCtx.anycast, "didn't confirm test anycast");
     assert(sCtx.as!TestSendingContext.multicast, "didn't confirm test multicast");
