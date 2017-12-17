@@ -1066,17 +1066,20 @@ abstract class Junction : StateMachine!JunctionState {
     /// pushes a signal through a channel
     private bool push(Signal s, Channel c) {
         import flow.core.data : bin;
-
-        synchronized(this.lock.reader)
-            if(s.allowed(this.meta.info, c.other)) {
-                // it gets done async returns true
-                if(this.meta.info.indifferent) {
-                    taskPool.put(task(&c.push, s));
-                    return true;
-                } else {
-                    return c.push(s);
-                }
-            } else return false;
+        
+        // channel init might have failed, do not segfault because of that
+        if(c.other !is null) {
+            synchronized(this.lock.reader)
+                if(s.allowed(this.meta.info, c.other)) {
+                    // it gets done async returns true
+                    if(this.meta.info.indifferent) {
+                        taskPool.put(task(&c.push, s));
+                        return true;
+                    } else {
+                        return c.push(s);
+                    }
+                } else return false;
+        } return false;
     }
 
     /// pulls a signal from a channel
@@ -1995,8 +1998,8 @@ unittest { test.header("TEST core.engine: send and receipt of all signal types a
     ems.addTick(fqn!AnycastSendingTestTick, group);
     ems.addTick(fqn!MulticastSendingTestTick, group);
 
-    /* first the receiving entity should come up
-    (order of entries in space equals order of starting ticking) */
+    // first the receiving entity should come up
+    // (order of entries in space equals order of starting ticking)
     auto emr = sm.addEntity("receiving");
     emr.context ~= new TestReceivingContext;
     emr.addReceptor(fqn!TestUnicast, fqn!UnicastReceivingTestTick);

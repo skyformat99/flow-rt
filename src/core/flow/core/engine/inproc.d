@@ -226,7 +226,7 @@ unittest { test.header("TEST engine.inproc: fully enabled passing of signals");
     spc2.tick();
     spc1.tick();
 
-    Thread.sleep(5.msecs);
+    Thread.sleep(10.msecs);
 
     spc2.freeze();
     spc1.freeze();
@@ -281,7 +281,7 @@ unittest { test.header("TEST engine.inproc: hiding (not) passing of signals");
     spc2.tick();
     spc1.tick();
 
-    Thread.sleep(5.msecs);
+    Thread.sleep(10.msecs);
 
     spc2.freeze();
     spc1.freeze();
@@ -339,7 +339,7 @@ unittest { test.header("TEST engine.inproc: indifferent (not) passing of signals
     spc2.tick();
     spc1.tick();
 
-    Thread.sleep(5.msecs);
+    Thread.sleep(10.msecs);
 
     spc2.freeze();
     spc1.freeze();
@@ -397,7 +397,7 @@ unittest { test.header("TEST engine.inproc: !acceptsMulticast (not) passing of s
     spc2.tick();
     spc1.tick();
 
-    Thread.sleep(5.msecs);Thread.sleep(5.msecs);
+    Thread.sleep(10.msecs);
 
     spc2.freeze();
     spc1.freeze();
@@ -638,8 +638,6 @@ DuRfSEERdBHjYgvyYN3Q5tlWea/uvQ==
     assert(nsm1.entities[0].context[0].as!TestSendingContext.anycast, "didn't confirm test anycast");
     assert(nsm1.entities[0].context[0].as!TestSendingContext.multicast, "didn't confirm test multicast");
 test.footer(); }
-
-
 
 unittest { test.header("TEST engine.inproc: fully enabled passing of signals over an encrypting junction");
     import core.thread;

@@ -77,6 +77,31 @@
             }
             // Use the standard MS compiler pattern to detect errors, warnings and infos
             //"problemMatcher": "$msCompile"
+        },
+        {
+            "label": "build test",
+            "type": "shell",
+            "command": "/usr/bin/dmd",
+            "args": [ "-debug", "-g", "-fPIC", "-w", "-of${workspaceRoot}/tmp/test", "${workspaceRoot}/tmp/test.d" ],
+            "group": "build",
+            "presentation": {
+                // Reveal the output only if unrecognized errors occur.
+                "reveal": "silent"
+            },
+            "problemMatcher": {
+                "owner": "d",
+                "fileLocation": ["relative", "${workspaceRoot}"],
+                "pattern": {
+                    "regexp": "^(.*)\\((\\d+),(\\d+)\\):\\s+(Warning|Error):\\s+(.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "message": 5
+                }
+            }
+            // Use the standard MS compiler pattern to detect errors, warnings and infos
+            //"problemMatcher": "$msCompile"
         }
     ]
 }

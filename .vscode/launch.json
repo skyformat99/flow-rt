@@ -80,6 +80,19 @@
             ],
             "target": "doc_introduction.d",
             "cwd": "${workspaceRoot}/test"
+        },
+        {
+            "name": "run test",
+            "type": "gdb",
+            "request": "launch",
+            "autorun": [
+                "set environment LD_LIBRARY_PATH ${workspaceRoot}/util/dmd2/linux/lib64:${workspaceRoot}/lib",
+                "handle SIGUSR1 nostop noprint",
+                "handle SIGUSR2 nostop noprint",
+                "break onInvalidMemoryOperationError"
+            ],
+            "target": "${workspaceRoot}/tmp/test",
+            "cwd": "${workspaceRoot}/tmp"
         }
     ]
 }

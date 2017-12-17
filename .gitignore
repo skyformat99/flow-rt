@@ -33,6 +33,7 @@ hive
 
 # tmp/cfg
 tmp/cfg
+tmp/test
 
 # DUB
 .dub
