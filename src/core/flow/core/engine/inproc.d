@@ -201,16 +201,19 @@ unittest { test.header("TEST engine.inproc: fully enabled passing of signals");
     auto junctionId = randomUUID;
 
     auto sm1 = createSpace(spc1Domain);
-    auto ems = sm1.addEntity("sending", fqn!TestSendingContext, fqn!TestSendingConfig);
-    ems.config.as!TestSendingConfig.dstEntity = "receiving";
-    ems.config.as!TestSendingConfig.dstSpace = spc2Domain;
+    auto ems = sm1.addEntity("sending");
+    ems.context ~= new TestSendingContext;
+    auto cfg = new TestSendingConfig; ems.context ~= cfg;
+    cfg.dstEntity = "receiving";
+    cfg.dstSpace = spc2Domain;
     ems.addTick(fqn!UnicastSendingTestTick);
     ems.addTick(fqn!AnycastSendingTestTick);
     ems.addTick(fqn!MulticastSendingTestTick);
     sm1.addInProcJunction(junctionId);
 
     auto sm2 = createSpace(spc2Domain);
-    auto emr = sm2.addEntity("receiving", fqn!TestReceivingContext);
+    auto emr = sm2.addEntity("receiving");
+    emr.context ~= new TestReceivingContext;
     emr.addReceptor(fqn!TestUnicast, fqn!UnicastReceivingTestTick);
     emr.addReceptor(fqn!TestAnycast, fqn!AnycastReceivingTestTick);
     emr.addReceptor(fqn!TestMulticast, fqn!MulticastReceivingTestTick);
@@ -231,13 +234,13 @@ unittest { test.header("TEST engine.inproc: fully enabled passing of signals");
     auto nsm1 = spc1.snap();
     auto nsm2 = spc2.snap();
 
-    assert(nsm2.entities[0].context.as!TestReceivingContext.unicast !is null, "didn't get test unicast");
-    assert(nsm2.entities[0].context.as!TestReceivingContext.anycast !is null, "didn't get test anycast");
-    assert(nsm2.entities[0].context.as!TestReceivingContext.multicast !is null, "didn't get test multicast");
+    assert(nsm2.entities[0].context[0].as!TestReceivingContext.unicast !is null, "didn't get test unicast");
+    assert(nsm2.entities[0].context[0].as!TestReceivingContext.anycast !is null, "didn't get test anycast");
+    assert(nsm2.entities[0].context[0].as!TestReceivingContext.multicast !is null, "didn't get test multicast");
 
-    assert(nsm1.entities[0].context.as!TestSendingContext.unicast, "didn't confirm test unicast");
-    assert(nsm1.entities[0].context.as!TestSendingContext.anycast, "didn't confirm test anycast");
-    assert(nsm1.entities[0].context.as!TestSendingContext.multicast, "didn't confirm test multicast");
+    assert(nsm1.entities[0].context[0].as!TestSendingContext.unicast, "didn't confirm test unicast");
+    assert(nsm1.entities[0].context[0].as!TestSendingContext.anycast, "didn't confirm test anycast");
+    assert(nsm1.entities[0].context[0].as!TestSendingContext.multicast, "didn't confirm test multicast");
 test.footer(); }
 
 unittest { test.header("TEST engine.inproc: hiding (not) passing of signals");
@@ -254,16 +257,19 @@ unittest { test.header("TEST engine.inproc: hiding (not) passing of signals");
     auto junctionId = randomUUID;
 
     auto sm1 = createSpace(spc1Domain);
-    auto ems = sm1.addEntity("sending", fqn!TestSendingContext, fqn!TestSendingConfig);
-    ems.config.as!TestSendingConfig.dstEntity = "receiving";
-    ems.config.as!TestSendingConfig.dstSpace = spc2Domain;
+    auto ems = sm1.addEntity("sending");
+    ems.context ~= new TestSendingContext;
+    auto cfg = new TestSendingConfig; ems.context ~= cfg;
+    cfg.dstEntity = "receiving";
+    cfg.dstSpace = spc2Domain;
     ems.addTick(fqn!UnicastSendingTestTick);
     ems.addTick(fqn!AnycastSendingTestTick);
     ems.addTick(fqn!MulticastSendingTestTick);
     sm1.addInProcJunction(junctionId, 0, true, false, false);
 
     auto sm2 = createSpace(spc2Domain);
-    auto emr = sm2.addEntity("receiving", fqn!TestReceivingContext);
+    auto emr = sm2.addEntity("receiving");
+    emr.context ~= new TestReceivingContext;
     emr.addReceptor(fqn!TestUnicast, fqn!UnicastReceivingTestTick);
     emr.addReceptor(fqn!TestAnycast, fqn!AnycastReceivingTestTick);
     sm2.addInProcJunction(junctionId, 0, true, false, false);
@@ -285,14 +291,14 @@ unittest { test.header("TEST engine.inproc: hiding (not) passing of signals");
 
     // Since junctions hiding = true, anycast cannot work.
     // Multicast cannot be received since it has no receiver but should be confirmed
-    assert(nsm2.entities[0].context.as!TestReceivingContext.unicast !is null, "didn't get test unicast");
-    assert(!(nsm2.entities[0].context.as!TestReceivingContext.anycast !is null), "got test anycast but shouldn't");
-    assert(!(nsm2.entities[0].context.as!TestReceivingContext.multicast !is null), "got test multicast but shouldn't");
+    assert(nsm2.entities[0].context[0].as!TestReceivingContext.unicast !is null, "didn't get test unicast");
+    assert(!(nsm2.entities[0].context[0].as!TestReceivingContext.anycast !is null), "got test anycast but shouldn't");
+    assert(!(nsm2.entities[0].context[0].as!TestReceivingContext.multicast !is null), "got test multicast but shouldn't");
 
     // Same for anycast. All other should get a confirmation which in this case tells it was send to destination space
-    assert(nsm1.entities[0].context.as!TestSendingContext.unicast, "didn't confirm test unicast");
-    assert(!nsm1.entities[0].context.as!TestSendingContext.anycast, "confirmed test anycast but shouldn't");
-    assert(nsm1.entities[0].context.as!TestSendingContext.multicast, "didn't confirm test multicast");
+    assert(nsm1.entities[0].context[0].as!TestSendingContext.unicast, "didn't confirm test unicast");
+    assert(!nsm1.entities[0].context[0].as!TestSendingContext.anycast, "confirmed test anycast but shouldn't");
+    assert(nsm1.entities[0].context[0].as!TestSendingContext.multicast, "didn't confirm test multicast");
 test.footer(); }
 
 unittest { test.header("TEST engine.inproc: indifferent (not) passing of signals");
@@ -309,16 +315,19 @@ unittest { test.header("TEST engine.inproc: indifferent (not) passing of signals
     auto junctionId = randomUUID;
 
     auto sm1 = createSpace(spc1Domain);
-    auto ems = sm1.addEntity("sending", fqn!TestSendingContext, fqn!TestSendingConfig);
-    ems.config.as!TestSendingConfig.dstEntity = "receiving";
-    ems.config.as!TestSendingConfig.dstSpace = spc2Domain;
+    auto ems = sm1.addEntity("sending");
+    ems.context ~= new TestSendingContext;
+    auto cfg = new TestSendingConfig; ems.context ~= cfg;
+    cfg.dstEntity = "receiving";
+    cfg.dstSpace = spc2Domain;
     ems.addTick(fqn!UnicastSendingTestTick);
     ems.addTick(fqn!AnycastSendingTestTick);
     ems.addTick(fqn!MulticastSendingTestTick);
     sm1.addInProcJunction(junctionId, 0, false, true, false);
 
     auto sm2 = createSpace(spc2Domain);
-    auto emr = sm2.addEntity("receiving", fqn!TestReceivingContext);
+    auto emr = sm2.addEntity("receiving");
+    emr.context ~= new TestReceivingContext;
     emr.addReceptor(fqn!TestUnicast, fqn!UnicastReceivingTestTick);
     emr.addReceptor(fqn!TestAnycast, fqn!AnycastReceivingTestTick);
     sm2.addInProcJunction(junctionId, 0, false, true, false);
@@ -340,13 +349,13 @@ unittest { test.header("TEST engine.inproc: indifferent (not) passing of signals
 
     // Since junctions indifferent = true, anycast cannot work.
     // Multicast cannot be received since it has no receiver but should be confirmed
-    assert(nsm2.entities[0].context.as!TestReceivingContext.unicast !is null, "didn't get test unicast");
-    assert(!(nsm2.entities[0].context.as!TestReceivingContext.anycast !is null), "got test anycast but shouldn't");
-    assert(!(nsm2.entities[0].context.as!TestReceivingContext.multicast !is null), "got test multicast but shouldn't");
+    assert(nsm2.entities[0].context[0].as!TestReceivingContext.unicast !is null, "didn't get test unicast");
+    assert(!(nsm2.entities[0].context[0].as!TestReceivingContext.anycast !is null), "got test anycast but shouldn't");
+    assert(!(nsm2.entities[0].context[0].as!TestReceivingContext.multicast !is null), "got test multicast but shouldn't");
 
-    assert(nsm1.entities[0].context.as!TestSendingContext.unicast, "didn't confirm test unicast");
-    assert(!nsm1.entities[0].context.as!TestSendingContext.anycast, "confirmed test anycast but shouldn't");
-    assert(nsm1.entities[0].context.as!TestSendingContext.multicast, "didn't confirm test multicast");
+    assert(nsm1.entities[0].context[0].as!TestSendingContext.unicast, "didn't confirm test unicast");
+    assert(!nsm1.entities[0].context[0].as!TestSendingContext.anycast, "confirmed test anycast but shouldn't");
+    assert(nsm1.entities[0].context[0].as!TestSendingContext.multicast, "didn't confirm test multicast");
 test.footer(); }
 
 unittest { test.header("TEST engine.inproc: !acceptsMulticast (not) passing of signals");
@@ -363,16 +372,19 @@ unittest { test.header("TEST engine.inproc: !acceptsMulticast (not) passing of s
     auto junctionId = randomUUID;
 
     auto sm1 = createSpace(spc1Domain);
-    auto ems = sm1.addEntity("sending", fqn!TestSendingContext, fqn!TestSendingConfig);
-    ems.config.as!TestSendingConfig.dstEntity = "receiving";
-    ems.config.as!TestSendingConfig.dstSpace = spc2Domain;
+    auto ems = sm1.addEntity("sending");
+    ems.context ~= new TestSendingContext;
+    auto cfg = new TestSendingConfig; ems.context ~= cfg;
+    cfg.dstEntity = "receiving";
+    cfg.dstSpace = spc2Domain;
     ems.addTick(fqn!UnicastSendingTestTick);
     ems.addTick(fqn!AnycastSendingTestTick);
     ems.addTick(fqn!MulticastSendingTestTick);
     sm1.addInProcJunction(junctionId, 0, false, false, true);
 
     auto sm2 = createSpace(spc2Domain);
-    auto emr = sm2.addEntity("receiving", fqn!TestReceivingContext);
+    auto emr = sm2.addEntity("receiving");
+    emr.context ~= new TestReceivingContext;
     emr.addReceptor(fqn!TestUnicast, fqn!UnicastReceivingTestTick);
     emr.addReceptor(fqn!TestAnycast, fqn!AnycastReceivingTestTick);
     emr.addReceptor(fqn!TestMulticast, fqn!MulticastReceivingTestTick);
@@ -394,13 +406,13 @@ unittest { test.header("TEST engine.inproc: !acceptsMulticast (not) passing of s
     auto nsm2 = spc2.snap();
 
     // Since junctions indifferent = true, it is not accepting anything but the directed unicasts.
-    assert(nsm2.entities[0].context.as!TestReceivingContext.unicast !is null, "didn't get test unicast");
-    assert(!(nsm2.entities[0].context.as!TestReceivingContext.anycast !is null), "got test anycast but shouldn't");
-    assert(!(nsm2.entities[0].context.as!TestReceivingContext.multicast !is null), "got test multicast but shouldn't");
+    assert(nsm2.entities[0].context[0].as!TestReceivingContext.unicast !is null, "didn't get test unicast");
+    assert(!(nsm2.entities[0].context[0].as!TestReceivingContext.anycast !is null), "got test anycast but shouldn't");
+    assert(!(nsm2.entities[0].context[0].as!TestReceivingContext.multicast !is null), "got test multicast but shouldn't");
 
-    assert(nsm1.entities[0].context.as!TestSendingContext.unicast, "didn't confirm test unicast");
-    assert(!nsm1.entities[0].context.as!TestSendingContext.anycast, "confirmed test anycast but shouldn't");
-    assert(!nsm1.entities[0].context.as!TestSendingContext.multicast, "confirmed test multicast but shouldn't");
+    assert(nsm1.entities[0].context[0].as!TestSendingContext.unicast, "didn't confirm test unicast");
+    assert(!nsm1.entities[0].context[0].as!TestSendingContext.anycast, "confirmed test anycast but shouldn't");
+    assert(!nsm1.entities[0].context[0].as!TestSendingContext.multicast, "confirmed test multicast but shouldn't");
 test.footer(); }
 
 unittest { test.header("TEST engine.inproc: fully enabled passing of signals over a only signing junction");
@@ -417,9 +429,11 @@ unittest { test.header("TEST engine.inproc: fully enabled passing of signals ove
     auto junctionId = randomUUID;
 
     auto sm1 = createSpace(spc1Domain);
-    auto ems = sm1.addEntity("sending", fqn!TestSendingContext, fqn!TestSendingConfig);
-    ems.config.as!TestSendingConfig.dstEntity = "receiving";
-    ems.config.as!TestSendingConfig.dstSpace = spc2Domain;
+    auto ems = sm1.addEntity("sending");
+    ems.context ~= new TestSendingContext;
+    auto cfg = new TestSendingConfig; ems.context ~= cfg;
+    cfg.dstEntity = "receiving";
+    cfg.dstSpace = spc2Domain;
     ems.addTick(fqn!UnicastSendingTestTick);
     ems.addTick(fqn!AnycastSendingTestTick);
     ems.addTick(fqn!MulticastSendingTestTick);
@@ -510,7 +524,8 @@ f7REu8EKldYyWHIR
 -----END CERTIFICATE-----";
 
     auto sm2 = createSpace(spc2Domain);
-    auto emr = sm2.addEntity("receiving", fqn!TestReceivingContext);
+    auto emr = sm2.addEntity("receiving");
+    emr.context ~= new TestReceivingContext;
     emr.addReceptor(fqn!TestUnicast, fqn!UnicastReceivingTestTick);
     emr.addReceptor(fqn!TestAnycast, fqn!AnycastReceivingTestTick);
     emr.addReceptor(fqn!TestMulticast, fqn!MulticastReceivingTestTick);
@@ -615,13 +630,13 @@ DuRfSEERdBHjYgvyYN3Q5tlWea/uvQ==
     auto nsm1 = spc1.snap();
     auto nsm2 = spc2.snap();
 
-    assert(nsm2.entities[0].context.as!TestReceivingContext.unicast !is null, "didn't get test unicast");
-    assert(nsm2.entities[0].context.as!TestReceivingContext.anycast !is null, "didn't get test anycast");
-    assert(nsm2.entities[0].context.as!TestReceivingContext.multicast !is null, "didn't get test multicast");
+    assert(nsm2.entities[0].context[0].as!TestReceivingContext.unicast !is null, "didn't get test unicast");
+    assert(nsm2.entities[0].context[0].as!TestReceivingContext.anycast !is null, "didn't get test anycast");
+    assert(nsm2.entities[0].context[0].as!TestReceivingContext.multicast !is null, "didn't get test multicast");
 
-    assert(nsm1.entities[0].context.as!TestSendingContext.unicast, "didn't confirm test unicast");
-    assert(nsm1.entities[0].context.as!TestSendingContext.anycast, "didn't confirm test anycast");
-    assert(nsm1.entities[0].context.as!TestSendingContext.multicast, "didn't confirm test multicast");
+    assert(nsm1.entities[0].context[0].as!TestSendingContext.unicast, "didn't confirm test unicast");
+    assert(nsm1.entities[0].context[0].as!TestSendingContext.anycast, "didn't confirm test anycast");
+    assert(nsm1.entities[0].context[0].as!TestSendingContext.multicast, "didn't confirm test multicast");
 test.footer(); }
 
 
@@ -640,9 +655,11 @@ unittest { test.header("TEST engine.inproc: fully enabled passing of signals ove
     auto junctionId = randomUUID;
 
     auto sm1 = createSpace(spc1Domain);
-    auto ems = sm1.addEntity("sending", fqn!TestSendingContext, fqn!TestSendingConfig);
-    ems.config.as!TestSendingConfig.dstEntity = "receiving";
-    ems.config.as!TestSendingConfig.dstSpace = spc2Domain;
+    auto ems = sm1.addEntity("sending");
+    ems.context ~= new TestSendingContext;
+    auto cfg = new TestSendingConfig; ems.context ~= cfg;
+    cfg.dstEntity = "receiving";
+    cfg.dstSpace = spc2Domain;
     ems.addTick(fqn!UnicastSendingTestTick);
     ems.addTick(fqn!AnycastSendingTestTick);
     ems.addTick(fqn!MulticastSendingTestTick);
@@ -734,7 +751,8 @@ f7REu8EKldYyWHIR
 -----END CERTIFICATE-----";
 
     auto sm2 = createSpace(spc2Domain);
-    auto emr = sm2.addEntity("receiving", fqn!TestReceivingContext);
+    auto emr = sm2.addEntity("receiving");
+    emr.context ~= new TestReceivingContext;
     emr.addReceptor(fqn!TestUnicast, fqn!UnicastReceivingTestTick);
     emr.addReceptor(fqn!TestAnycast, fqn!AnycastReceivingTestTick);
     emr.addReceptor(fqn!TestMulticast, fqn!MulticastReceivingTestTick);
@@ -840,11 +858,11 @@ DuRfSEERdBHjYgvyYN3Q5tlWea/uvQ==
     auto nsm1 = spc1.snap();
     auto nsm2 = spc2.snap();
 
-    assert(nsm2.entities[0].context.as!TestReceivingContext.unicast !is null, "didn't get test unicast");
-    assert(nsm2.entities[0].context.as!TestReceivingContext.anycast !is null, "didn't get test anycast");
-    assert(nsm2.entities[0].context.as!TestReceivingContext.multicast !is null, "didn't get test multicast");
+    assert(nsm2.entities[0].context[0].as!TestReceivingContext.unicast !is null, "didn't get test unicast");
+    assert(nsm2.entities[0].context[0].as!TestReceivingContext.anycast !is null, "didn't get test anycast");
+    assert(nsm2.entities[0].context[0].as!TestReceivingContext.multicast !is null, "didn't get test multicast");
 
-    assert(nsm1.entities[0].context.as!TestSendingContext.unicast, "didn't confirm test unicast");
-    assert(nsm1.entities[0].context.as!TestSendingContext.anycast, "didn't confirm test anycast");
-    assert(nsm1.entities[0].context.as!TestSendingContext.multicast, "didn't confirm test multicast");
+    assert(nsm1.entities[0].context[0].as!TestSendingContext.unicast, "didn't confirm test unicast");
+    assert(nsm1.entities[0].context[0].as!TestSendingContext.anycast, "didn't confirm test anycast");
+    assert(nsm1.entities[0].context[0].as!TestSendingContext.multicast, "didn't confirm test multicast");
 test.footer(); }

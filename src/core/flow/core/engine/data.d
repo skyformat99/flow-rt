@@ -123,8 +123,8 @@ class EntityMeta : Data {
     mixin data;
 
     mixin field!(EntityPtr, "ptr");
-    mixin field!(Data, "config");
-    mixin field!(Data, "context");
+    mixin field!(Data[], "config");
+    mixin field!(Data[], "context");
     mixin field!(ushort, "level");
     mixin field!(Event[], "events");
     mixin field!(Receptor[], "receptors");

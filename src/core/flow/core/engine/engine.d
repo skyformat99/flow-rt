@@ -31,15 +31,16 @@ abstract class Tick {
     /// lock to use for synchronizing entity context access across parallel casual strings
     protected @property ReadWriteMutex sync() {return this.entity.sync;}
 
-    /** config of hosting entity
-    warning you have to sync as reader when accessing it reading
-    and as writer when accessing it writing */
-    protected @property Data config() {return this.entity.meta.config;}
-
     /** context of hosting entity
     warning you have to sync as reader when accessing it reading
     and as writer when accessing it writing */
-    protected @property Data context() {return this.entity.meta.context;}
+    protected T context(T)(size_t i = 0) if(is(T:Data)) {
+        if(typeid(T) in this.entity.context)
+            if(this.entity.context[typeid(T)].length > i)
+                return this.entity.context[typeid(T)][i].as!T;
+        
+        return null;
+    }
 
     /// check if execution of tick is accepted
     public @property bool accept() {return true;}
@@ -432,6 +433,7 @@ private class Ticker : StateMachine!SystemState {
 
 /// hosts an entity construct
 private class Entity : StateMachine!SystemState {
+    import flow.core.data;
     /** mutex dedicated to sync context accesses */
     ReadWriteMutex sync;
     /** mutex dedicated to sync meta except context accesses */
@@ -441,12 +443,17 @@ private class Entity : StateMachine!SystemState {
 
     Ticker[UUID] ticker;
 
+    Data[][TypeInfo] context;
+
     this(Space s, EntityMeta m) {
         this.sync = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
         this.metaLock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
         m.ptr.space = s.meta.id;
         this.meta = m;
         this.space = s;
+
+        foreach(ref c; m.context)
+            this.context[typeid(c)] ~= c;
 
         super();
     }
@@ -770,7 +777,10 @@ class EntityController {
     @property SystemState state() {return this._entity.state;}
 
     /// deep clone of entity context
-    @property Data context() {return this._entity.meta.context.clone;}
+    @property Data[] context() {return this._entity.meta.context;}
+
+    /// deep clone of entity context
+    @property Damage[] damages() {return this._entity.meta.damages;}
 
     private this(Entity e) {
         this._entity = e;
@@ -1517,23 +1527,21 @@ SpaceMeta createSpace(string id, size_t worker = 1) {
 }
 
 /// creates entity metadata
-EntityMeta createEntity(string id, string contextType, string configType = string.init, ushort level = 0) {
+EntityMeta createEntity(string id, ushort level = 0) {
     import flow.core.data : createData;
 
     auto em = new EntityMeta;
     em.ptr = new EntityPtr;
     em.ptr.id = id;
-    em.context = createData(contextType);
-    if(configType != string.init)
-        em.config = createData(configType);
     em.level = level;
 
     return em;
 }
 
 /// creates entity metadata and appends it to a spaces metadata
-EntityMeta addEntity(SpaceMeta sm, string id, string contextType, string configType = string.init, ushort level = 0) {
-    auto em = id.createEntity(contextType, configType, level);
+EntityMeta addEntity(SpaceMeta sm, string id, ushort level = 0) {
+    import flow.core.data : createData;
+    auto em = id.createEntity(level);
     sm.entities ~= em;
 
     return em;
@@ -1702,14 +1710,14 @@ version(unittest) {
 
     class OnTickingEventTestTick : Tick {
         override void run() {
-            auto c = this.context.as!TestEventingContext;
+            auto c = this.context!TestEventingContext;
             c.firedOnTicking = true;
         }
     }
 
     class OnFreezingEventTestTick : Tick {
         override void run() {
-            auto c = this.context.as!TestEventingContext;
+            auto c = this.context!TestEventingContext;
             c.firedOnFreezing = true;
         }
     }
@@ -1718,8 +1726,8 @@ version(unittest) {
         override void run() {
             import std.datetime.systime : Clock;
 
-            auto cfg = this.config.as!TestDelayConfig;
-            auto ctx = this.context.as!TestDelayContext;
+            auto cfg = this.context!TestDelayConfig;
+            auto ctx = this.context!TestDelayContext;
             ctx.startTime = Clock.currTime;
             this.next(fqn!DelayedTestTick, cfg.delay);
         }
@@ -1731,52 +1739,52 @@ version(unittest) {
 
             auto endTime = Clock.currTime;
 
-            auto c = this.context.as!TestDelayContext;
+            auto c = this.context!TestDelayContext;
             c.endTime = endTime;
         }
     }
 
     class UnicastSendingTestTick : Tick {
         override void run() {
-            auto cfg = this.config.as!TestSendingConfig;
-            auto ctx = this.context.as!TestSendingContext;
+            auto cfg = this.context!TestSendingConfig;
+            auto ctx = this.context!TestSendingContext;
             ctx.unicast = this.send(new TestUnicast, cfg.dstEntity, cfg.dstSpace);
         }
     }
 
     class AnycastSendingTestTick : Tick {
         override void run() {
-            auto cfg = this.config.as!TestSendingConfig;
-            auto ctx = this.context.as!TestSendingContext;
+            auto cfg = this.context!TestSendingConfig;
+            auto ctx = this.context!TestSendingContext;
             ctx.anycast = this.send(new TestAnycast, cfg.dstSpace);
         }
     }
 
     class MulticastSendingTestTick : Tick {
         override void run() {
-            auto cfg = this.config.as!TestSendingConfig;
-            auto ctx = this.context.as!TestSendingContext;
+            auto cfg = this.context!TestSendingConfig;
+            auto ctx = this.context!TestSendingContext;
             ctx.multicast = this.send(new TestMulticast, cfg.dstSpace);
         }
     }
 
     class UnicastReceivingTestTick : Tick {
         override void run() {
-            auto c = this.context.as!TestReceivingContext;
+            auto c = this.context!TestReceivingContext;
             c.unicast = this.trigger.as!Unicast;
         }
     }
 
     class AnycastReceivingTestTick : Tick {
         override void run() {
-            auto c = this.context.as!TestReceivingContext;
+            auto c = this.context!TestReceivingContext;
             c.anycast = this.trigger.as!Anycast;
         }
     }
 
     class MulticastReceivingTestTick : Tick {
         override void run() {
-            auto c = this.context.as!TestReceivingContext;
+            auto c = this.context!TestReceivingContext;
             c.multicast = this.trigger.as!Multicast;
         }
     }
@@ -1794,7 +1802,8 @@ unittest { test.header("TEST core.engine: events");
 
     auto sm = createSpace(spcDomain);
 
-    auto em = sm.addEntity("test", fqn!TestEventingContext);
+    auto em = sm.addEntity("test");
+    em.context ~= new TestEventingContext;
     em.addEvent(EventType.OnTicking, fqn!OnTickingEventTestTick);
     em.addEvent(EventType.OnFreezing, fqn!OnFreezingEventTestTick);
 
@@ -1808,8 +1817,8 @@ unittest { test.header("TEST core.engine: events");
 
     auto nsm = spc.snap();
 
-    assert(nsm.entities[0].context.as!TestEventingContext.firedOnTicking, "didn't get fired for OnTicking");
-    assert(nsm.entities[0].context.as!TestEventingContext.firedOnFreezing, "didn't get fired for OnFreezing");
+    assert(nsm.entities[0].context[0].as!TestEventingContext.firedOnTicking, "didn't get fired for OnTicking");
+    assert(nsm.entities[0].context[0].as!TestEventingContext.firedOnFreezing, "didn't get fired for OnFreezing");
 test.footer(); }
 
 unittest { test.header("TEST core.engine: event error handling");
@@ -1826,7 +1835,7 @@ unittest { test.header("TEST core.engine: event error handling");
     auto spcDomain = "spc.test.engine.ipc.flow";
 
     auto sm = createSpace(spcDomain);
-    auto em = sm.addEntity("test", fqn!Data);
+    auto em = sm.addEntity("test");
     em.addEvent(EventType.OnTicking, fqn!ErrorTestTick);
 
     auto spc = proc.add(sm);
@@ -1859,7 +1868,7 @@ unittest { test.header("TEST core.engine: damage error handling");
     auto spcDomain = "spc.test.engine.ipc.flow";
 
     auto sm = createSpace(spcDomain);
-    auto em = sm.addEntity("test", fqn!Data);
+    auto em = sm.addEntity("test");
     em.addTick(fqn!ErrorTestTick);
 
     auto spc = proc.add(sm);
@@ -1889,8 +1898,10 @@ unittest { test.header("TEST core.engine: delayed next");
     auto delay = 100.msecs;
 
     auto sm = createSpace(spcDomain);
-    auto em = sm.addEntity("test", fqn!TestDelayContext, fqn!TestDelayConfig);
-    em.config.as!TestDelayConfig.delay = delay;
+    auto em = sm.addEntity("test");
+    auto ctx = new TestDelayContext; em.context ~= ctx;
+    auto cfg = new TestDelayConfig; em.context ~= cfg;
+    cfg.delay = delay;
     em.addEvent(EventType.OnTicking, fqn!DelayTestTick);
 
     auto spc = proc.add(sm);
@@ -1903,7 +1914,7 @@ unittest { test.header("TEST core.engine: delayed next");
 
     auto nsm = spc.snap();
 
-    auto measuredDelay = nsm.entities[0].context.as!TestDelayContext.endTime - nsm.entities[0].context.as!TestDelayContext.startTime;
+    auto measuredDelay = nsm.entities[0].context[0].as!TestDelayContext.endTime - nsm.entities[0].context[0].as!TestDelayContext.startTime;
     auto hnsecs = delay.total!"hnsecs";
     auto tolHnsecs = hnsecs * 1.05; // we allow +5% (5msecs) tolerance for passing the test
     auto measuredHnsecs = measuredDelay.total!"hnsecs";
@@ -1928,21 +1939,24 @@ unittest { test.header("TEST core.engine: send and receipt of all signal types a
     auto sm = createSpace(spcDomain);
 
     auto group = randomUUID;
-    auto ems = sm.addEntity("sending", fqn!TestSendingContext, fqn!TestSendingConfig);
+    auto ems = sm.addEntity("sending");
+    ems.context ~= new TestSendingContext;
+    auto cfg = new TestSendingConfig;
+    cfg.as!TestSendingConfig.dstEntity = "receiving";
+    cfg.as!TestSendingConfig.dstSpace = spcDomain;
+    ems.context ~= cfg;
 
-    /* first the receiving entity should come up
-    (order of entries in space equals order of starting ticking) */
-    auto emr = sm.addEntity("receiving", fqn!TestReceivingContext);
-    emr.addReceptor(fqn!TestUnicast, fqn!UnicastReceivingTestTick);
-    emr.addReceptor(fqn!TestAnycast, fqn!AnycastReceivingTestTick);
-    emr.addReceptor(fqn!TestMulticast, fqn!MulticastReceivingTestTick);
-
-    // then it can send
-    ems.config.as!TestSendingConfig.dstEntity = "receiving";
-    ems.config.as!TestSendingConfig.dstSpace = spcDomain;
     ems.addTick(fqn!UnicastSendingTestTick, group);
     ems.addTick(fqn!AnycastSendingTestTick, group);
     ems.addTick(fqn!MulticastSendingTestTick, group);
+
+    /* first the receiving entity should come up
+    (order of entries in space equals order of starting ticking) */
+    auto emr = sm.addEntity("receiving");
+    emr.context ~= new TestReceivingContext;
+    emr.addReceptor(fqn!TestUnicast, fqn!UnicastReceivingTestTick);
+    emr.addReceptor(fqn!TestAnycast, fqn!AnycastReceivingTestTick);
+    emr.addReceptor(fqn!TestMulticast, fqn!MulticastReceivingTestTick);
 
     auto spc = proc.add(sm);
 
@@ -1954,12 +1968,12 @@ unittest { test.header("TEST core.engine: send and receipt of all signal types a
 
     auto nsm = spc.snap();
 
-    auto rCtx = nsm.entities[1].context.as!TestReceivingContext;
+    auto rCtx = nsm.entities[1].context[0].as!TestReceivingContext;
     assert(rCtx.unicast !is null, "didn't get test unicast");
     assert(rCtx.anycast !is null, "didn't get test anycast");
     assert(rCtx.multicast !is null, "didn't get test multicast");
 
-    auto sCtx = nsm.entities[0].context.as!TestSendingContext;
+    auto sCtx = nsm.entities[0].context[0].as!TestSendingContext;
     assert(sCtx.unicast, "didn't confirm test unicast");
     assert(sCtx.anycast, "didn't confirm test anycast");
     assert(sCtx.multicast, "didn't confirm test multicast");
