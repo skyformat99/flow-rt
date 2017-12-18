@@ -19,9 +19,10 @@ hive
 *.exe
 
 # Crypto
-*.crt
-*.csr
-*.key
+/util/ssl/*.crt
+/util/ssl/*.csr
+/util/ssl/*.key
+/util/ssl/*.pem
 
 # Build
 */build

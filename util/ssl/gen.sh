@@ -4,6 +4,9 @@ rootDir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 cd $rootDir
 
+USER=$(stat -c %U $rootDir)
+GROUP=$(stat -c %G $rootDir)
+
 CNF=/etc/ssl/openssl.cnf
 
 CAKEY=/etc/ssl/private/cakey.pem
@@ -14,7 +17,7 @@ IDXA=/etc/ssl/index.txt.attr
 SERIAL=/etc/ssl/serial
 
 if [ "$EUID" -ne 0 ]
-    then echo "Please run as root"
+    then echo "Please run as (required for CA generation)"
     exit
 fi
 
@@ -67,3 +70,6 @@ openssl ca -batch -config $CNF -in revoked.csr -out revoked.pem &&
 openssl x509 -in revoked.pem -out revoked.crt &&
 openssl ca -batch -config $CNF -revoke revoked.pem
 echo ""
+
+echo "### setting ownership"
+chown -R ${USER}:${GROUP} $rootDir
