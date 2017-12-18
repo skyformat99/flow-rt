@@ -114,7 +114,7 @@ struct PropertyInfo {
 }
 
 /// base class of all data
-abstract class Data {
+abstract class Data : ReadWriteMutex {
     /// returns all properties of data type
     @property shared(PropertyInfo[string]) properties(){return null;}
 
@@ -133,6 +133,11 @@ abstract class Data {
             
             return true;
         } else return false;
+    }
+
+    this() {
+        import flow.core.util;
+        super(ReadWriteMutex.Policy.PREFER_WRITERS);
     }
 
     override ulong toHash() {

@@ -1,7 +1,7 @@
 module flow.core.util.state;
 
 private import flow.core.util.error;
-private import flow.core.util.rwmutex;
+private import flow.core.util.mutex;
 version(unittest) private static import test = flow.core.util.test;
 private import std.traits;
 

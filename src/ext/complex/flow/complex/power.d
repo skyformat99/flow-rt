@@ -41,7 +41,7 @@ class React : Tick {
         import std.algorithm.mutation, std.algorithm.sorting, std.algorithm.iteration;
 
         auto s = this.trigger.as!Act;
-        auto c = this.context!Actuality;
+        auto c = this.aspect!Actuality;
         
         debug(tick) this.msg(LL.Debug, "React::accept: s.power="~s.power.to!string);
         debug(tick) this.msg(LL.Debug, "React::accept: before sync");
@@ -120,7 +120,7 @@ class Exist : Tick {
         import core.thread;
         import std.math, std.conv, std.range.primitives, std.algorithm.iteration;
 
-        auto c = this.context!Actuality;
+        auto c = this.aspect!Actuality;
 
         debug(tick) this.msg(LL.Debug, "Exist::run: before sync");
         Relation[] relations;
@@ -196,7 +196,7 @@ SpaceMeta createPower(string id, size_t amount, string[string] params) {
                 c.relations ~= r;
             }
         }
-        em.context ~= c;
+        em.aspects ~= c;
 
         auto rr = new Receptor;
         rr.signal = "flow.complex.power.Act";

@@ -13,6 +13,9 @@ Also it can send signals to other entities.
 
 ![Unicast](media/signal_unicast.png)
 
+#### Aspect
+An entity has aspects which are information combined with adequate function for beein an... aspect of the entity. 
+
 ### Signal
 Is data which is getting exchanged between entities.
 

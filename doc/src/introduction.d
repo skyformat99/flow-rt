@@ -1,11 +1,11 @@
 // neccessary imports
-import flow.core;   // core functionality of flow
+import flow.core;   // runtime of flow
 
 /* This scenario tests the signal passing through a junction */
 
 // you can inherit other data types
-/// configuration for the sending entity
-class TestSendingConfig : Data {
+/// aspect of a sending entity
+class TestSendingAspect : Data {
     // mixing data functinality
     /* this is also required when inheriting
     from a custom data type */
@@ -29,11 +29,6 @@ class TestSendingConfig : Data {
     however is is not required for this certain scenario */
     /// for sure you should document the array too
     mixin field!(string[], "foo");
-}
-
-/// context/memory of the sending entity
-class TestSendingContext : Data {
-    mixin data;
 
     /** here sender nots if
     the unicast was confirmed */
@@ -48,8 +43,8 @@ class TestSendingContext : Data {
 
 // receipting entity has no configuration
 
-/// context of the receipting entity
-class TestReceiptingContext : Data {
+/// aspect of a receipting entity
+class TestReceiptingAspect : Data {
     mixin data;
 
     /** used by receipting entity
@@ -80,7 +75,7 @@ class TestMulticast : Multicast {
     mixin data;
 }
 
-/** tick defining the change of setting TestSendingContext.unicast = true
+/** tick defining the change of setting TestSendingAspect.unicast = true
 and what needs to happen for this change aplly */
 class UnicastSendingTestTick : Tick { // only derriving from Tick
     /** checks if the entity can accept the signal.
@@ -95,20 +90,18 @@ class UnicastSendingTestTick : Tick { // only derriving from Tick
     override void error(Throwable thr) {}
 
     /** assigns space to deliver an unicast to configured entity in its space.
-    it notes if signal was accepted into context.unicast */
+    it notes if signal was accepted into aspect.unicast */
     override void run() {
-        auto cfg = this.context!TestSendingConfig;
-        auto ctx = this.context!TestSendingContext;
-        ctx.unicast = this.send(new TestUnicast, cfg.dstEntity, cfg.dstSpace);
+        auto asp = this.aspect!TestSendingAspect;
+        asp.unicast = this.send(new TestUnicast, asp.dstEntity, asp.dstSpace);
     }
 }
 
 /** ... */
 class AnycastSendingTestTick : Tick {
     override void run() {
-        auto cfg = this.context!TestSendingConfig;
-        auto ctx = this.context!TestSendingContext;
-        ctx.anycast = this.send(new TestAnycast, cfg.dstSpace);
+        auto asp = this.aspect!TestSendingAspect;
+        asp.anycast = this.send(new TestAnycast, asp.dstSpace);
     }
 }
 
@@ -116,16 +109,15 @@ class AnycastSendingTestTick : Tick {
 /** ... */
 class MulticastSendingTestTick : Tick {
     override void run() {
-        auto cfg = this.context!TestSendingConfig;
-        auto ctx = this.context!TestSendingContext;
-        ctx.multicast = this.send(new TestMulticast, cfg.dstSpace);
+        auto asp = this.aspect!TestSendingAspect;
+        asp.multicast = this.send(new TestMulticast, asp.dstSpace);
     }
 }
 
-/** stores triggering signal into context TestReceiptingContext */
+/** stores triggering signal into aspect's information TestReceiptingAspect */
 class UnicastReceiptingTestTick : Tick {
     override void run() {
-        auto c = this.context!TestReceiptingContext;
+        auto c = this.aspect!TestReceiptingAspect;
         c.unicast = this.trigger.as!Unicast;
     }
 }
@@ -133,7 +125,7 @@ class UnicastReceiptingTestTick : Tick {
 /** ... */
 class AnycastReceiptingTestTick : Tick {
     override void run() {
-        auto c = this.context!TestReceiptingContext;
+        auto c = this.aspect!TestReceiptingAspect;
         c.anycast = this.trigger.as!Anycast;
     }
 }
@@ -141,7 +133,7 @@ class AnycastReceiptingTestTick : Tick {
 /** ... */
 class MulticastReceiptingTestTick : Tick {
     override void run() {
-        auto c = this.context!TestReceiptingContext;
+        auto c = this.aspect!TestReceiptingAspect;
         c.multicast = this.trigger.as!Multicast;
     }
 }
@@ -170,16 +162,13 @@ void main() {
     first space hosting sending entity */
     auto ssm = createSpace(sDomain); { // the own scope is just for readability
         /* adds the entity "sending" having
-        a context TestSendingContext
-        and are configured by a TestSendingConfig */
+        a sending aspect */
         auto ems = ssm.addEntity("sending"); {
-            // adding context
-            ems.context ~= new TestSendingContext;
-            // adding config
-            auto cfg = new TestSendingConfig; ems.context ~= cfg;
-            /* setting the destination of the signals */
-            cfg.dstEntity = "receiving";
-            cfg.dstSpace = rDomain;
+            // adds sending aspect
+            auto asp = new TestSendingAspect; ems.aspects ~= asp;
+            /* sets the destination of the signals */
+            asp.dstEntity = "receiving";
+            asp.dstSpace = rDomain;
 
             /* when entity starts ticking
             what implies that it is not freezed anymore
@@ -197,8 +186,8 @@ void main() {
     second space hosting receipting entity */
     auto rsm = createSpace(rDomain);
     auto emr = rsm.addEntity("receiving"); {
-        // adding context
-        emr.context ~= new TestReceiptingContext;
+        // adding receipting aspect
+        emr.aspects ~= new TestReceiptingAspect;
         /* when entity receipts a signal Test***cast
         it triggers a tick of type ***castReceiptingTestTick */
         emr.addReceptor(fqn!TestUnicast, fqn!UnicastReceiptingTestTick);
@@ -230,14 +219,14 @@ void main() {
     auto nrsm = rSpc.snap();
 
     // checks if all got their testsignal
-    auto rCtx = nrsm.entities[0].context[0].as!TestReceiptingContext;
+    auto rCtx = nrsm.entities[0].aspects[0].as!TestReceiptingAspect;
     assert(rCtx.unicast !is null, "didn't get test unicast");
     assert(rCtx.anycast !is null, "didn't get test anycast");
     assert(rCtx.multicast !is null, "didn't get test multicast");
 
     // checks if all got a confirmation for their testsignal
-    auto sCtx = nssm.entities[0].context[0].as!TestSendingContext;
+    auto sCtx = nssm.entities[0].aspects[0].as!TestSendingAspect;
     assert(sCtx.unicast, "didn't confirm test unicast");
     assert(sCtx.anycast, "didn't confirm test anycast");
-    assert(sCtx.as!TestSendingContext.multicast, "didn't confirm test multicast");
+    assert(sCtx.as!TestSendingAspect.multicast, "didn't confirm test multicast");
 }

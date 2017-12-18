@@ -5,6 +5,8 @@ private import flow.core.engine.proc;
 private import flow.core.util;
 private import std.uuid;
 
+// https://d.godbolt.org/
+
 private enum SystemState {
     Frozen,
     Ticking
@@ -34,7 +36,7 @@ abstract class Tick {
     /** context of hosting entity
     warning you have to sync as reader when accessing it reading
     and as writer when accessing it writing */
-    protected T context(T)(size_t i = 0) if(is(T:Data)) {return this.entity.get!T(i);}
+    protected T aspect(T)(size_t i = 0) if(is(T:Data)) {return this.entity.get!T(i);}
 
     /// check if execution of tick is accepted
     public @property bool accept() {return true;}
@@ -430,24 +432,21 @@ private class Entity : StateMachine!SystemState {
     import flow.core.data;
     /** mutex dedicated to sync context accesses */
     ReadWriteMutex sync;
-    /** mutex dedicated to sync meta except context accesses */
-    ReadWriteMutex metaLock;
     Space space;
     EntityMeta meta;
 
     Ticker[UUID] ticker;
 
-    Data[][TypeInfo] context;
+    Data[][TypeInfo] aspects;
 
     this(Space s, EntityMeta m) {
         this.sync = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
-        this.metaLock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
         m.ptr.space = s.meta.id;
         this.meta = m;
         this.space = s;
 
-        foreach(ref c; m.context)
-            this.context[typeid(c)] ~= c;
+        foreach(ref c; m.aspects)
+            this.aspects[typeid(c)] ~= c;
 
         super();
     }
@@ -464,7 +463,7 @@ private class Entity : StateMachine!SystemState {
         import core.memory : GC;
         synchronized(this.lock.writer) {
             if(t.next !is null)
-                synchronized(this.metaLock)
+                synchronized(this.meta.writer)
                     this.meta.ticks ~= t.next.meta;
             this.ticker.remove(t.id);
         }
@@ -495,7 +494,7 @@ private class Entity : StateMachine!SystemState {
         import core.memory : GC;
         import std.algorithm.iteration;
 
-        synchronized(this.metaLock.reader) {
+        synchronized(this.meta.reader) {
             // running OnTicking ticks
             foreach(e; this.meta.events.filter!(e => e.type == EventType.OnTicking)) {
                 auto t = this.meta.createTickMeta(e.tick).createTick(this);
@@ -522,7 +521,7 @@ private class Entity : StateMachine!SystemState {
         import core.memory : GC;
         import std.algorithm.iteration;
 
-        synchronized(this.metaLock.reader) {
+        synchronized(this.meta.reader) {
             // running onFreezing ticks
             foreach(e; this.meta.events.filter!(e => e.type == EventType.OnFreezing)) {
                 auto t = this.meta.createTickMeta(e.tick).createTick(this);
@@ -583,19 +582,19 @@ private class Entity : StateMachine!SystemState {
         // entity cannot operate in damaged state
         this.freeze();
 
-        synchronized(this.metaLock.writer)
+        synchronized(this.meta.writer)
             this.meta.damages ~= thr.damage;
     }
 
     /// adds data to context and returns its typed index
     size_t add(Data d) {
         import std.algorithm.searching;
-        if(d !is null) synchronized(this.metaLock.reader)
-            if(!this.meta.context.any!((x)=>x is d))
-                synchronized(this.metaLock.writer){
-                    this.meta.context ~= d;
-                    this.context[typeid(d)] ~= d;
-                    foreach_reverse(i, c; this.context[typeid(d)])
+        if(d !is null) synchronized(this.meta.reader)
+            if(!this.meta.aspects.any!((x)=>x is d))
+                synchronized(this.meta.writer){
+                    this.meta.aspects ~= d;
+                    this.aspects[typeid(d)] ~= d;
+                    foreach_reverse(i, c; this.aspects[typeid(d)])
                         if(c is d) return i;
                 }
         
@@ -606,22 +605,22 @@ private class Entity : StateMachine!SystemState {
     void remove(Data d) {
         import std.algorithm.searching;
         import std.algorithm.mutation;
-        if(d !is null) synchronized(this.metaLock.reader)
-            if(this.meta.context.any!((x)=>x is d))
-                synchronized(this.metaLock.writer) {
+        if(d !is null) synchronized(this.meta.reader)
+            if(this.meta.aspects.any!((x)=>x is d))
+                synchronized(this.meta.writer) {
                     // removing it from context cache
                     TypeInfo ft = typeid(d);
-                    if(ft in this.context)
-                        foreach_reverse(i, c; this.context[ft])
+                    if(ft in this.aspects)
+                        foreach_reverse(i, c; this.aspects[ft])
                             if(c is d) {
-                                this.context[ft].remove(i);
+                                this.aspects[ft].remove(i);
                                 break;
                             }
 
                     // removing it from context
-                    foreach_reverse(i, c; this.meta.context)
+                    foreach_reverse(i, c; this.meta.aspects)
                         if(c is d) {
-                            this.meta.context.remove(i);
+                            this.meta.aspects.remove(i);
                             break;
                         }
                 }
@@ -629,10 +628,10 @@ private class Entity : StateMachine!SystemState {
 
     /// gets data by type and index from context
     T get(T)(size_t i = 0) {
-        synchronized(this.metaLock.reader) {
-            if(typeid(T) in this.context)
-                if(this.context[typeid(T)].length > i)
-                    return this.context[typeid(T)][i].as!T;
+        synchronized(this.meta.reader) {
+            if(typeid(T) in this.aspects)
+                if(this.aspects[typeid(T)].length > i)
+                    return this.aspects[typeid(T)][i].as!T;
         }
         
         return null;
@@ -640,7 +639,7 @@ private class Entity : StateMachine!SystemState {
 
     /// registers a receptor if not registered
     void register(string s, string t) {
-        synchronized(this.metaLock.writer) {
+        synchronized(this.meta.writer) {
             foreach(r; this.meta.receptors)
                 if(r.signal == s && r.tick == t)
                     return; // nothing to do
@@ -656,7 +655,7 @@ private class Entity : StateMachine!SystemState {
     void deregister(string s, string t) {
         import std.algorithm.mutation : remove;
 
-        synchronized(this.metaLock.writer) {
+        synchronized(this.meta.writer) {
             foreach(i, r; this.meta.receptors) {
                 if(r.signal == s && r.tick == t) {
                     this.meta.receptors.remove(i);
@@ -668,7 +667,7 @@ private class Entity : StateMachine!SystemState {
 
     /// registers an event if not registered
     void register(EventType et, string t) {
-        synchronized(this.metaLock.writer) {
+        synchronized(this.meta.writer) {
             foreach(e; this.meta.events)
                 if(e.type == et && e.tick == t)
                     return; // nothing to do
@@ -684,7 +683,7 @@ private class Entity : StateMachine!SystemState {
     void deregister(EventType et, string t) {
         import std.algorithm.mutation : remove;
 
-        synchronized(this.metaLock.writer) {
+        synchronized(this.meta.writer) {
             foreach(i, e; this.meta.events) {
                 if(e.type == et && e.tick == t) {
                     this.meta.events.remove(i);
@@ -698,7 +697,7 @@ private class Entity : StateMachine!SystemState {
     bool receipt(Signal s) {
         auto ret = false;
         Tick[] ticks;
-        synchronized(this.metaLock.reader) {
+        synchronized(this.meta.reader) {
             // looping all registered receptors
             foreach(r; this.meta.receptors) {
                 if(s.dataType == r.signal) {
@@ -731,7 +730,7 @@ private class Entity : StateMachine!SystemState {
                         ticker.tick();
                     }
                 } else {
-                    synchronized(this.metaLock.writer)
+                    synchronized(this.meta.writer)
                         this.meta.ticks ~= t.meta;
                 }   
                 return true;
@@ -747,7 +746,7 @@ private class Entity : StateMachine!SystemState {
 
         this.ensureState(SystemState.Ticking);
 
-        synchronized(this.metaLock.reader) {
+        synchronized(this.meta.reader) {
             if(s.dst == this.meta.ptr)
                 new EntityException("entity cannot send signals to itself, use next or fork");
 
@@ -762,7 +761,7 @@ private class Entity : StateMachine!SystemState {
     bool send(Anycast s) {
         this.ensureState(SystemState.Ticking);
 
-        synchronized(this.metaLock.reader)
+        synchronized(this.meta.reader)
             // ensure correct source entity pointer
             s.src = this.meta.ptr;
 
@@ -773,7 +772,7 @@ private class Entity : StateMachine!SystemState {
     bool send(Multicast s) {
         this.ensureState(SystemState.Ticking);
 
-        synchronized(this.metaLock.reader)
+        synchronized(this.meta.reader)
             // ensure correct source entity pointer
             s.src = this.meta.ptr;
 
@@ -783,7 +782,7 @@ private class Entity : StateMachine!SystemState {
     /** creates a snapshot of entity(deep clone)
     if entity is not in frozen state an exception is thrown */
     EntityMeta snap() {
-        synchronized(this.metaLock.reader) {
+        synchronized(this.meta.reader) {
             this.ensureState(SystemState.Frozen);
             // if someone snaps using this function, it is another entity. it will only get a deep clone.
             return this.meta.clone;
@@ -822,7 +821,7 @@ class EntityController {
     @property SystemState state() {return this._entity.state;}
 
     /// deep clone of entity context
-    @property Data[] context() {return this._entity.meta.context;}
+    @property Data[] aspects() {return this._entity.meta.aspects;}
 
     /// deep clone of entity context
     @property Damage[] damages() {return this._entity.meta.damages;}
@@ -1684,7 +1683,7 @@ version(unittest) {
 
 /// data of entities
 version(unittest) {
-    class TestEventingContext : Data {
+    class TestEventingAspect : Data {
         mixin data;
 
         mixin field!(bool, "firedOnTicking");
@@ -1698,7 +1697,7 @@ version(unittest) {
         mixin field!(Duration, "delay");
     }
 
-    class TestDelayContext : Data {
+    class TestDelayAspect : Data {
         private import std.datetime.systime : SysTime;
 
         mixin data;
@@ -1714,7 +1713,7 @@ version(unittest) {
         mixin field!(string, "dstSpace");
     }
 
-    class TestSendingContext : Data {
+    class TestSendingAspect : Data {
         mixin data;
 
         mixin field!(bool, "unicast");
@@ -1722,7 +1721,7 @@ version(unittest) {
         mixin field!(bool, "multicast");
     }
 
-    class TestReceivingContext : Data {
+    class TestReceivingAspect : Data {
         mixin data;
 
         mixin field!(Unicast, "unicast");
@@ -1758,14 +1757,14 @@ version(unittest) {
 
     class OnTickingEventTestTick : Tick {
         override void run() {
-            auto c = this.context!TestEventingContext;
+            auto c = this.aspect!TestEventingAspect;
             c.firedOnTicking = true;
         }
     }
 
     class OnFreezingEventTestTick : Tick {
         override void run() {
-            auto c = this.context!TestEventingContext;
+            auto c = this.aspect!TestEventingAspect;
             c.firedOnFreezing = true;
         }
     }
@@ -1774,8 +1773,8 @@ version(unittest) {
         override void run() {
             import std.datetime.systime : Clock;
 
-            auto cfg = this.context!TestDelayConfig;
-            auto ctx = this.context!TestDelayContext;
+            auto cfg = this.aspect!TestDelayConfig;
+            auto ctx = this.aspect!TestDelayAspect;
             ctx.startTime = Clock.currTime;
             this.next(fqn!DelayedTestTick, cfg.delay);
         }
@@ -1787,52 +1786,52 @@ version(unittest) {
 
             auto endTime = Clock.currTime;
 
-            auto c = this.context!TestDelayContext;
+            auto c = this.aspect!TestDelayAspect;
             c.endTime = endTime;
         }
     }
 
     class UnicastSendingTestTick : Tick {
         override void run() {
-            auto cfg = this.context!TestSendingConfig;
-            auto ctx = this.context!TestSendingContext;
+            auto cfg = this.aspect!TestSendingConfig;
+            auto ctx = this.aspect!TestSendingAspect;
             ctx.unicast = this.send(new TestUnicast, cfg.dstEntity, cfg.dstSpace);
         }
     }
 
     class AnycastSendingTestTick : Tick {
         override void run() {
-            auto cfg = this.context!TestSendingConfig;
-            auto ctx = this.context!TestSendingContext;
+            auto cfg = this.aspect!TestSendingConfig;
+            auto ctx = this.aspect!TestSendingAspect;
             ctx.anycast = this.send(new TestAnycast, cfg.dstSpace);
         }
     }
 
     class MulticastSendingTestTick : Tick {
         override void run() {
-            auto cfg = this.context!TestSendingConfig;
-            auto ctx = this.context!TestSendingContext;
+            auto cfg = this.aspect!TestSendingConfig;
+            auto ctx = this.aspect!TestSendingAspect;
             ctx.multicast = this.send(new TestMulticast, cfg.dstSpace);
         }
     }
 
     class UnicastReceivingTestTick : Tick {
         override void run() {
-            auto c = this.context!TestReceivingContext;
+            auto c = this.aspect!TestReceivingAspect;
             c.unicast = this.trigger.as!Unicast;
         }
     }
 
     class AnycastReceivingTestTick : Tick {
         override void run() {
-            auto c = this.context!TestReceivingContext;
+            auto c = this.aspect!TestReceivingAspect;
             c.anycast = this.trigger.as!Anycast;
         }
     }
 
     class MulticastReceivingTestTick : Tick {
         override void run() {
-            auto c = this.context!TestReceivingContext;
+            auto c = this.aspect!TestReceivingAspect;
             c.multicast = this.trigger.as!Multicast;
         }
     }
@@ -1851,7 +1850,7 @@ unittest { test.header("TEST core.engine: events");
     auto sm = createSpace(spcDomain);
 
     auto em = sm.addEntity("test");
-    em.context ~= new TestEventingContext;
+    em.aspects ~= new TestEventingAspect;
     em.addEvent(EventType.OnTicking, fqn!OnTickingEventTestTick);
     em.addEvent(EventType.OnFreezing, fqn!OnFreezingEventTestTick);
 
@@ -1865,8 +1864,8 @@ unittest { test.header("TEST core.engine: events");
 
     auto nsm = spc.snap();
 
-    assert(nsm.entities[0].context[0].as!TestEventingContext.firedOnTicking, "didn't get fired for OnTicking");
-    assert(nsm.entities[0].context[0].as!TestEventingContext.firedOnFreezing, "didn't get fired for OnFreezing");
+    assert(nsm.entities[0].aspects[0].as!TestEventingAspect.firedOnTicking, "didn't get fired for OnTicking");
+    assert(nsm.entities[0].aspects[0].as!TestEventingAspect.firedOnFreezing, "didn't get fired for OnFreezing");
 test.footer(); }
 
 unittest { test.header("TEST core.engine: event error handling");
@@ -1947,8 +1946,8 @@ unittest { test.header("TEST core.engine: delayed next");
 
     auto sm = createSpace(spcDomain);
     auto em = sm.addEntity("test");
-    auto ctx = new TestDelayContext; em.context ~= ctx;
-    auto cfg = new TestDelayConfig; em.context ~= cfg;
+    auto ctx = new TestDelayAspect; em.aspects ~= ctx;
+    auto cfg = new TestDelayConfig; em.aspects ~= cfg;
     cfg.delay = delay;
     em.addEvent(EventType.OnTicking, fqn!DelayTestTick);
 
@@ -1962,7 +1961,7 @@ unittest { test.header("TEST core.engine: delayed next");
 
     auto nsm = spc.snap();
 
-    auto measuredDelay = nsm.entities[0].context[0].as!TestDelayContext.endTime - nsm.entities[0].context[0].as!TestDelayContext.startTime;
+    auto measuredDelay = nsm.entities[0].aspects[0].as!TestDelayAspect.endTime - nsm.entities[0].aspects[0].as!TestDelayAspect.startTime;
     auto hnsecs = delay.total!"hnsecs";
     auto tolHnsecs = hnsecs * 1.05; // we allow +5% (5msecs) tolerance for passing the test
     auto measuredHnsecs = measuredDelay.total!"hnsecs";
@@ -1988,11 +1987,11 @@ unittest { test.header("TEST core.engine: send and receipt of all signal types a
 
     auto group = randomUUID;
     auto ems = sm.addEntity("sending");
-    ems.context ~= new TestSendingContext;
+    ems.aspects ~= new TestSendingAspect;
     auto cfg = new TestSendingConfig;
     cfg.as!TestSendingConfig.dstEntity = "receiving";
     cfg.as!TestSendingConfig.dstSpace = spcDomain;
-    ems.context ~= cfg;
+    ems.aspects ~= cfg;
 
     ems.addTick(fqn!UnicastSendingTestTick, group);
     ems.addTick(fqn!AnycastSendingTestTick, group);
@@ -2001,7 +2000,7 @@ unittest { test.header("TEST core.engine: send and receipt of all signal types a
     // first the receiving entity should come up
     // (order of entries in space equals order of starting ticking)
     auto emr = sm.addEntity("receiving");
-    emr.context ~= new TestReceivingContext;
+    emr.aspects ~= new TestReceivingAspect;
     emr.addReceptor(fqn!TestUnicast, fqn!UnicastReceivingTestTick);
     emr.addReceptor(fqn!TestAnycast, fqn!AnycastReceivingTestTick);
     emr.addReceptor(fqn!TestMulticast, fqn!MulticastReceivingTestTick);
@@ -2016,12 +2015,12 @@ unittest { test.header("TEST core.engine: send and receipt of all signal types a
 
     auto nsm = spc.snap();
 
-    auto rCtx = nsm.entities[1].context[0].as!TestReceivingContext;
+    auto rCtx = nsm.entities[1].aspects[0].as!TestReceivingAspect;
     assert(rCtx.unicast !is null, "didn't get test unicast");
     assert(rCtx.anycast !is null, "didn't get test anycast");
     assert(rCtx.multicast !is null, "didn't get test multicast");
 
-    auto sCtx = nsm.entities[0].context[0].as!TestSendingContext;
+    auto sCtx = nsm.entities[0].aspects[0].as!TestSendingAspect;
     assert(sCtx.unicast, "didn't confirm test unicast");
     assert(sCtx.anycast, "didn't confirm test anycast");
     assert(sCtx.multicast, "didn't confirm test multicast");

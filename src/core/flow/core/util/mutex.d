@@ -1,21 +1,11 @@
 /** MADE UPGRADEABLE FOR FLOW, USE ONLY FOR RECYCLING THREADS */
 
-/**
- * The read/write mutex module provides a primitive for maintaining shared read
- * access and mutually exclusive write access.
- *
- * Copyright: Copyright Sean Kelly 2005 - 2009.
- * License:   $(LINK2 http://www.boost.org/LICENSE_1_0.txt, Boost License 1.0)
- * Authors:   Sean Kelly
- * Source:    $(DRUNTIMESRC core/sync/_rwmutex.d)
- */
-
 /*          Copyright Sean Kelly 2005 - 2009.
  * Distributed under the Boost Software License, Version 1.0.
  *    (See accompanying file LICENSE or copy at
  *          http://www.boost.org/LICENSE_1_0.txt)
  */
-module flow.core.util.rwmutex;
+module flow.core.util.mutex;
 
 public import core.sync.exception;
 private import core.sync.condition;
@@ -548,7 +538,7 @@ unittest
 }
 
 // this test will loop forever if it fails
-unittest { test.header("TEST util.rwmutex");
+unittest { test.header("TEST util.mutex");
 
 	// lock upgrade
     ReadWriteMutex m = new ReadWriteMutex;
