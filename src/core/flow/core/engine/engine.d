@@ -30,11 +30,8 @@ abstract class Tick {
     protected @property TickInfo previous() {return this.meta.previous !is null ? this.meta.previous.clone : null;}
     protected @property Data data() {return this.meta.data;}
 
-    /// lock to use for synchronizing entity context access across parallel casual strings
-    protected @property ReadWriteMutex sync() {return this.entity.sync;}
-
     /** context of hosting entity
-    warning you have to sync as reader when accessing it reading
+    warning you have to sync it as reader when accessing it reading
     and as writer when accessing it writing */
     protected T aspect(T)(size_t i = 0) if(is(T:Data)) {return this.entity.get!T(i);}
 
@@ -430,8 +427,6 @@ private class Ticker : StateMachine!SystemState {
 /// hosts an entity construct
 private class Entity : StateMachine!SystemState {
     import flow.core.data;
-    /** mutex dedicated to sync context accesses */
-    ReadWriteMutex sync;
     Space space;
     EntityMeta meta;
 
@@ -440,7 +435,6 @@ private class Entity : StateMachine!SystemState {
     Data[][TypeInfo] aspects;
 
     this(Space s, EntityMeta m) {
-        this.sync = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
         m.ptr.space = s.meta.id;
         this.meta = m;
         this.space = s;

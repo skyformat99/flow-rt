@@ -218,13 +218,6 @@ testCore &&
 buildExt ipc-nanomsg -I$rootDir/src/lib/nanomsg -L-l:libnanomsg.so &&
 testExt ipc-nanomsg -I$rootDir/src/lib/nanomsg -L-l:libnanomsg.so &&
 
-buildExt complex &&
-testExt complex &&
-
-# BINARIES
-buildBin complex-gen -I$rootDir/ifc/ext/complex -L-l:libflow-complex.so &&
-#testBin complex-gen -L-l:libflow-complex.so &&
-
 buildBin run &&
 #testBin run &&
 
