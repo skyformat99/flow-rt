@@ -1,4 +1,4 @@
-module flow.core.engine.engine;
+module flow.core.engine.gears;
 
 private import flow.core.engine.data;
 private import flow.core.engine.proc;
@@ -1001,13 +1001,14 @@ abstract class Junction : StateMachine!JunctionState {
     }
 
     private bool initCrypto() {
-        this.crypto = new Crypto(this.meta.info.space, this.meta.key, this.meta.info.crt, this.meta.info.cipher, this.meta.info.hash);
+        if(this._meta.key !is null)
+            this.crypto = new Crypto(this.meta.info.space, this.meta.key, this.meta.info.crt, this.meta.info.cipher, this.meta.info.hash);
         return true;
     }
 
     private void deinitCrypto() {
         import core.memory : GC;
-        if(this.crypto !is null) {
+        if(this._meta.key !is null && this.crypto !is null) {
             this.crypto.dispose; GC.free(&this.crypto); this.crypto = null;
         }
     }
@@ -1183,7 +1184,7 @@ private bool containsWildcard(string dst) {
     return dst.canFind("*");
 }
 
-unittest { test.header("TEST core.engine: wildcards checker");
+unittest { test.header("engine.gears: wildcards checker");
     assert("*".containsWildcard);
     assert(!"a".containsWildcard);
     assert("*.aa.bb".containsWildcard);
@@ -1192,7 +1193,7 @@ unittest { test.header("TEST core.engine: wildcards checker");
     assert(!"aa.bb.cc".containsWildcard);
 test.footer(); }
 
-unittest { test.header("TEST core.engine: domain matching");    
+unittest { test.header("engine.gears: domain matching");    
     assert(matches("a.b.c", "a.b.c"), "1:1 matching failed");
     assert(matches("a.b.c", "a.b.*"), "first level * matching failed");
     assert(matches("a.b.c", "a.*.c"), "second level * matching failed");
@@ -1831,7 +1832,7 @@ version(unittest) {
     }
 }
 
-unittest { test.header("TEST core.engine: events");    
+unittest { test.header("engine.gears: events");    
     import core.thread;
     import flow.core.engine.data;
     import flow.core.util;
@@ -1862,7 +1863,7 @@ unittest { test.header("TEST core.engine: events");
     assert(nsm.entities[0].aspects[0].as!TestEventingAspect.firedOnFreezing, "didn't get fired for OnFreezing");
 test.footer(); }
 
-unittest { test.header("TEST core.engine: event error handling");
+unittest { test.header("engine.gears: event error handling");
     import core.thread;
     import core.time;
     import flow.core.engine.data;
@@ -1895,7 +1896,7 @@ unittest { test.header("TEST core.engine: event error handling");
     assert(ex !is null, "exception wasn't thrown");
 test.footer(); }
 
-unittest { test.header("TEST core.engine: damage error handling");
+unittest { test.header("engine.gears: damage error handling");
     import core.thread;
     import core.time;
     import flow.core.engine.data;
@@ -1927,7 +1928,7 @@ unittest { test.header("TEST core.engine: damage error handling");
     assert(ec._entity.meta.damages.length == 1, "entity has wrong amount of damages");
 test.footer(); }
 
-unittest { test.header("TEST core.engine: delayed next");
+unittest { test.header("engine.gears: delayed next");
     import core.thread;
     import flow.core.engine.data;
     import flow.core.util;
@@ -1965,7 +1966,7 @@ unittest { test.header("TEST core.engine: delayed next");
     assert(tolHnsecs >= measuredHnsecs, "delayed longer than allowed");
 test.footer(); }
 
-unittest { test.header("TEST core.engine: send and receipt of all signal types and pass their group");
+unittest { test.header("engine.gears: send and receipt of all signal types and pass their group");
     import core.thread;
     import flow.core.engine.data;
     import flow.core.util;
@@ -2022,6 +2023,6 @@ unittest { test.header("TEST core.engine: send and receipt of all signal types a
     assert(rCtx.unicast.group == group, "unicast didn't pass group");
     assert(rCtx.anycast.group == group, "anycast didn't pass group");
     assert(rCtx.multicast.group == group, "multicast didn't pass group");
-test.footer(); }
+test.footer();}
 
-//unittest { test.header("TEST engine: "); test.footer(); }
+//unittest { test.header("engine: "); test.footer(); }

@@ -183,7 +183,7 @@ version(unittest) {
     }
 }
 
-unittest { test.header("TEST util.state: state machine");
+unittest { test.header("util.state: state machine");
     auto t = new TestStateMachine;
     assert(t.state1Set, "initial state change wasn't executed");
     

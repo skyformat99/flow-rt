@@ -7,7 +7,7 @@
             "label": "rebuild",
             "type": "shell",
             "command": "dmd",
-            "args": [ "-run", "make.d", "rebuild" ],
+            "args": [ "-debug", "-run", "make.d", "rebuild" ],
             "group": "build",
             "presentation": {
                 // Reveal the output only if unrecognized errors occur.
@@ -32,8 +32,7 @@
             "label": "clean",
             "type": "shell",
             "command": "dmd",
-            "args": [ "-run", "make.d", "clean" ],
-            "args": [ ],
+            "args": [ "-debug", "-run", "make.d", "clean" ],
             "group": "build",
             "presentation": {
                 // Reveal the output only if unrecognized errors occur.
@@ -58,7 +57,7 @@
             "label": "build",
             "type": "shell",
             "command": "dmd",
-            "args": [ "-run", "make.d", "build" ],
+            "args": [ "-debug", "-run", "make.d", "build" ],
             "group": "build",
             "presentation": {
                 // Reveal the output only if unrecognized errors occur.
@@ -80,7 +79,32 @@
             //"problemMatcher": "$msCompile"
         },
         {
-            "label": "build build",
+            "label": "init git repo",
+            "type": "shell",
+            "command": "git",
+            "args": [ "submodule", "update", "--init" ],
+            "group": "build",
+            "presentation": {
+                // Reveal the output only if unrecognized errors occur.
+                "reveal": "silent"
+            },
+            "problemMatcher": {
+                "owner": "d",
+                "fileLocation": ["relative", "${workspaceRoot}"],
+                "pattern": {
+                    "regexp": "^(.*)\\((\\d+),(\\d+)\\):\\s+(Warning|Error):\\s+(.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "message": 5
+                }
+            }
+            // Use the standard MS compiler pattern to detect errors, warnings and infos
+            //"problemMatcher": "$msCompile"
+        },
+        {
+            "label": "build debug of buildsystem",
             "type": "shell",
             "command": "/usr/bin/dmd",
             "args": [ "-of${workspaceRoot}/make","-debug","-g","-fPIC","-vcolumns","-w","${workspaceRoot}/make.d" ],

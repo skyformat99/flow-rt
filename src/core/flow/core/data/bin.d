@@ -418,7 +418,7 @@ private void _unbin(ref ubyte[] arr, Data d, PropertyInfo pi, string[][string] t
     }
 }
 
-unittest { test.header("TEST engine.data.bin: binary serialization of data and member");
+unittest { test.header("data.bin: binary serialization of data and member");
     import flow.core.data.engine : TestData, InheritedTestData, TestEnum;
     import std.uuid : parseUUID;
 
@@ -476,7 +476,7 @@ ubyte[] unpack(ref ubyte[] data) {
     return hasByte ? data._unbin!(ubyte[])(t) : null;
 }
 
-unittest { test.header("TEST engine.data.bin: packing/unpacking");
+unittest { test.header("data.bin: byte packing/unpacking");
     import std.conv : to;
 
     ubyte[] a = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];

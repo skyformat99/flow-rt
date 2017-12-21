@@ -538,7 +538,7 @@ unittest
 }
 
 // this test will loop forever if it fails
-unittest { test.header("TEST util.mutex");
+unittest { test.header("util.mutex");
 
 	// lock upgrade
     ReadWriteMutex m = new ReadWriteMutex;

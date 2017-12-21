@@ -6,16 +6,27 @@ static if(vendor == Vendor.digitalMars) {
 } else static if(vendor == Vendor.llvm) {
     immutable DC = "ldc";
     immutable LD = "ldc";
-} else static assert(false, "supporting only dmd and ldc yet");
+} else static assert(false, "!!! supporting only dmd and ldc yet");
 
-version(Posix) {
-    immutable defaultlib = "libphobos2.so";
-    immutable defCflags = ["-c","-debug","-g","-fPIC","-vcolumns","-w","-defaultlib="~defaultlib];
-    immutable defLflags = ["-L-l:"~defaultlib];
-}
-version(Windows) {
-    immutable defaultlib = "libphobos2.dll";
-    immutable defCflags = ["-c","-debug","-g","-vcolumns","-w","-defaultlib="~defaultlib];
+static if(vendor == Vendor.digitalMars) {
+    version(Posix) {
+        immutable defaultlib = "libphobos2.so";
+        debug {immutable defCflags = ["-c","-debug","-g","-fPIC","-vcolumns","-w","-defaultlib="~defaultlib];}
+        else {immutable defCflags = ["-c","-fPIC","-w","-defaultlib="~defaultlib];}
+        immutable defLflags = ["-L-l:"~defaultlib];
+    }
+    version(Windows) {
+        immutable defaultlib = "libphobos2.dll";
+        debug {immutable defCflags = ["-c","-debug","-g","-vcolumns","-w","-defaultlib="~defaultlib];}
+        else {immutable defCflags = ["-c","-w","-defaultlib="~defaultlib];}
+        immutable defLflags = ["-L-l:"~defaultlib];
+    }
+} else static if(vendor == Vendor.llvm) {
+    version(Posix) {immutable defaultlib = "libphobos2-ldc.so"; }
+    version(Windows) {immutable defaultlib = "libphobos2-ldc.dll"; }
+    
+    debug {immutable defCflags = ["-c","-d-debug","-g","-vcolumns","-w","-defaultlib="~defaultlib];}
+    else {immutable defCflags = ["-c","-w","-defaultlib="~defaultlib];}
     immutable defLflags = ["-L-l:"~defaultlib];
 }
 
@@ -116,7 +127,7 @@ class Build {
 
     final bool checkDeps() {
         foreach(d; this.deps) {
-            assert(d in reg, "dependecy \""~d~"\" of \""~this.of~"\" not found");
+            assert(d in reg, "!!! dependecy \""~d~"\" of \""~this.of~"\" not found");
             
             if(!Build.reg[d].clean)
                 return false;
@@ -226,7 +237,7 @@ class Build {
 
     final void buildDeps() {
         foreach(d; this.deps) {
-            assert(d in reg, "dependecy \""~d~"\" of \""~this.of~"\" not found");
+            assert(d in reg, "!!! dependecy \""~d~"\" of \""~this.of~"\" not found");
             
             if(!Build.reg[d].done)
                 Build.reg[d].exec();
@@ -242,7 +253,7 @@ class Build {
         this.clean = this.check(this.obj) && this.checkDeps();
         if(!this.clean) {
             this.compile(this.cflags, this.obj);
-            this.link(this.lflags, this.of);
+            this.link(this.lflags, this.obj, this.of);
         } else writeln("+++ up to date");
 
         this.done = true;
@@ -250,25 +261,32 @@ class Build {
 
     final void compile(string[] cflags, string obj) {
         import std.conv : to;
+        import std.datetime.stopwatch : benchmark;
         import std.range : array;
-        import std.stdio : stdin, stdout, stderr;
+        import std.stdio : stdin, stdout, stderr, writeln;
         import std.process : spawnProcess, wait, Config;
         // search path for source files
 
-        auto dcPid = spawnProcess(
-            [/*"echo", */DC, "-of"~obj]~this.buildCflags~cflags~this.src,
-            stdin, stdout, stderr, null, Config.none, this.srcRoot);
-        assert(dcPid.wait() == 0, ">>> compiling error");
+        auto f = {
+            auto dcPid = spawnProcess(
+                [DC, "-of"~obj]~this.buildCflags~cflags~this.src,
+                stdin, stdout, stderr, null, Config.none, this.srcRoot);
+            assert(dcPid.wait() == 0, "!!! compiling error");
+        };
+
+        auto b = benchmark!(f)(1);
+        writeln("+++ ", b[0]);        
     }
 
-    final void link(string[] lflags, string of) {
-        import std.stdio : stdin, stdout, stderr;
+    final void link(string[] lflags, string obj, string of) {
+        import std.datetime.stopwatch : benchmark;
+        import std.stdio : stdin, stdout, stderr, writeln;
         import std.process : spawnProcess, wait, Config;
-
+        
         auto ldPid = spawnProcess(
-            [/*"echo", */LD, "-of"~of]~this.buildLflags~lflags~this.obj,
+            [LD, "-of"~of]~this.buildLflags~lflags~[obj],
             stdin, stdout, stderr, null, Config.none, this.srcRoot);
-        assert(ldPid.wait() == 0, ">>> linking error");
+        assert(ldPid.wait() == 0, "!!! linking error");      
     }
 }
 
@@ -302,7 +320,7 @@ class Test : Build {
         this.clean = this.check(this.testObj) && this.checkDeps();
         if(!this.clean) {
             this.compile(this.cflags~["-unittest", "-main"], this.testObj);
-            this.link(this.lflags~["-unittest", "-main"], this.testOf);
+            this.link(this.lflags, this.testObj, this.testOf);
         }
 
         this.test(this.testOf);
@@ -312,17 +330,16 @@ class Test : Build {
 
     void test(string test) {
         import core.time;
-        import std.stdio : writeln;
         import std.conv : to;
         import std.datetime.stopwatch : benchmark;
-        import std.stdio : stdin, stdout, stderr;
+        import std.stdio : stdin, stdout, stderr, writeln;
         import std.process : spawnProcess, wait, Config;
 
         auto f = {
             string[string] env;
             env["LD_LIBRARY_PATH"] = rootDir.buildPath("lib");
             auto tstPid = spawnProcess([test], stdin, stdout, stderr, env, Config.none, rootDir);
-            assert(tstPid.wait() == 0, ">>> testing error");
+            assert(tstPid.wait() == 0, "!!! testing error");
         };
 
         auto b = benchmark!(f)(1);
@@ -348,7 +365,7 @@ void loadCore() {
 
     auto jsons = rootDir.dirEntries("core.json", SpanMode.depth).array;
     if(!jsons.empty) {
-        if(jsons.length > 1) assert("there cannot be multiple core definitions");
+        if(jsons.length > 1) assert("!!! there cannot be multiple core definitions");
         auto j = jsons.front;
         auto name = "core";
         writeln("*** adding flow core");

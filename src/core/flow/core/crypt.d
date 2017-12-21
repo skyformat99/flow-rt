@@ -644,6 +644,22 @@ private class Peer {
     }
 }
 
+private void loadSSL() {
+    import deimos.openssl.conf;
+
+    // initializing ssl
+    ERR_load_CRYPTO_strings();
+    OpenSSL_add_all_algorithms();
+    OPENSSL_config(null);
+}
+
+private void cleanSSL() {
+    import deimos.openssl.err;
+
+    EVP_cleanup();
+    ERR_free_strings();
+}
+
 package final class Crypto {
     private import core.thread;
     private import core.time;
@@ -693,26 +709,15 @@ package final class Crypto {
         else throw new CryptoException("peer \""~p~"\" not found");
     }
 
-    shared static this() {
-        import deimos.openssl.conf;
-
-        // initializing ssl
-        ERR_load_CRYPTO_strings();
-        OpenSSL_add_all_algorithms();
-        OPENSSL_config(null);
-    }
-
-    static dispose() {
-        import deimos.openssl.err;
-
-        EVP_cleanup();
-        ERR_free_strings();
-    }
+    shared static bool initSSL;
 
     //https://www.youtube.com/watch?v=uwzWVG_LDGA
 
     this(string addr, string key, string crt, string cipher, string hash, bool check = true, Duration cipherValidity = 10.minutes) {
         this.lock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
+
+        synchronized if(!initSSL)
+            loadSSL();
 
         this.addr = addr;
         this.key = key;
@@ -842,7 +847,7 @@ version(unittest) {
     }
 }
 
-unittest { test.header("TEST core.crypt: rsa encrypt/decrypt");
+unittest { test.header("crypt: rsa encrypt/decrypt");
     import core.exception : AssertError;
     import deimos.openssl.ssl;
     import flow.core.data : bin, unbin;
@@ -879,7 +884,7 @@ unittest { test.header("TEST core.crypt: rsa encrypt/decrypt");
     invalidC.dispose;
 test.footer; }
 
-unittest { test.header("TEST core.crypt: rsa sign/verify");
+unittest { test.header("crypt: rsa sign/verify");
     import deimos.openssl.ssl;
     import flow.core.data : bin, unbin;
 
@@ -912,7 +917,7 @@ unittest { test.header("TEST core.crypt: rsa sign/verify");
 test.footer; }
 
 version(unittest) {
-    void runCipherTest(string cipher, string hash) { test.header("TEST core.crypt: "~cipher~" using "~hash~" cipher encrypt/decrypt");
+    void runCipherTest(string cipher, string hash) { test.header("crypt: "~cipher~" using "~hash~" cipher encrypt/decrypt");
         import flow.core.data : bin, unbin;
 
 
@@ -940,7 +945,7 @@ version(unittest) {
     test.footer; }
 }
 
-unittest { test.header("TEST core.crypt: cipher encrypt/decrypt");
+unittest { test.header("crypt: cipher encrypt/decrypt");
     import deimos.openssl.ssl;
 
     assert(TestKeys.loaded, "keys were not loaded! did you execute util/ssl/gen.sh on a CA free host?");
@@ -954,7 +959,7 @@ unittest { test.header("TEST core.crypt: cipher encrypt/decrypt");
 test.footer; }
 
 // not to support yet
-//unittest { test.header("TEST core.crypt: self signed certificates check behavior"); test.footer(); }
-//unittest { test.header("TEST core.crypt: signed certificates check behavior"); test.footer(); }
-//unittest { test.header("TEST core.crypt: invalid certificates check behavior"); test.footer(); }
-//unittest { test.header("TEST core.crypt: revoked certificates check behavior"); test.footer(); }
+//unittest { test.header("crypt: self signed certificates check behavior"); test.footer(); }
+//unittest { test.header("crypt: signed certificates check behavior"); test.footer(); }
+//unittest { test.header("crypt: invalid certificates check behavior"); test.footer(); }
+//unittest { test.header("crypt: revoked certificates check behavior"); test.footer(); }

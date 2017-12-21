@@ -412,7 +412,7 @@ if(is(T : Data)) {
     } else return Variant();
 }
 
-unittest { test.header("TEST data.json: json serialization of data and member");
+unittest { test.header("data.json: json serialization of data and member");
     import flow.core.data.engine : TestData, InheritedTestData, TestEnum;
     import flow.core.util.templates : as;
     import std.json : parseJSON;

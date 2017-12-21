@@ -4,12 +4,10 @@ version(unittest) {
     import std.stdio;
 
     void header(string title) {
-        writeln("**********************************************************************");
-        writeln(title);  
+        writeln("\t>>> ", title);
     }
 
     void footer() {
-        writeln("______________________________________________________________________");
     }
 
     void write(S...)(S msg) {

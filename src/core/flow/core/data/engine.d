@@ -498,7 +498,7 @@ version(unittest) class InheritedTestData : TestData {
     mixin field!(string, "additional");
 }
 
-unittest { test.header("TEST data.engine: static data usage");
+unittest { test.header("data.engine: static data usage");
     import std.range : empty;
     
     auto d = new InheritedTestData;
@@ -523,7 +523,7 @@ unittest { test.header("TEST data.engine: static data usage");
     d.nanA ~= double.nan; assert(d.nanA.length == 1 && d.nanA[0] is double.nan, "could not set second level basic scalar");
 test.footer(); }
 
-unittest { test.header("TEST data.engine: clone and == of data and member");
+unittest { test.header("data.engine: clone and == of data and member");
     import flow.core.util.templates : as;
 
     auto d = new InheritedTestData;
