@@ -6,8 +6,8 @@
         {
             "label": "rebuild",
             "type": "shell",
-            "command": "./rebuild",
-            "args": [ ],
+            "command": "dmd",
+            "args": [ "-run", "make.d", "rebuild" ],
             "group": "build",
             "presentation": {
                 // Reveal the output only if unrecognized errors occur.
@@ -31,7 +31,8 @@
         {
             "label": "clean",
             "type": "shell",
-            "command": "./clean",
+            "command": "dmd",
+            "args": [ "-run", "make.d", "clean" ],
             "args": [ ],
             "group": "build",
             "presentation": {
@@ -56,8 +57,8 @@
         {
             "label": "build",
             "type": "shell",
-            "command": "./build",
-            "args": [ ],
+            "command": "dmd",
+            "args": [ "-run", "make.d", "build" ],
             "group": "build",
             "presentation": {
                 // Reveal the output only if unrecognized errors occur.
@@ -79,10 +80,10 @@
             //"problemMatcher": "$msCompile"
         },
         {
-            "label": "build test",
+            "label": "build build",
             "type": "shell",
             "command": "/usr/bin/dmd",
-            "args": [ "-debug", "-g", "-fPIC", "-w", "-of${workspaceRoot}/tmp/test", "${workspaceRoot}/tmp/test.d" ],
+            "args": [ "-of${workspaceRoot}/make","-debug","-g","-fPIC","-vcolumns","-w","${workspaceRoot}/make.d" ],
             "group": "build",
             "presentation": {
                 // Reveal the output only if unrecognized errors occur.

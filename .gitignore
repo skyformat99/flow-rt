@@ -1,36 +1,18 @@
 # External Projects
 hive
 
-# Compiled Object files
-*.o
-*.obj
-*.di
-
-# Compiled Dynamic libraries
-*.so
-*.dylib
-*.dll
-
-# Compiled Static libraries
-*.a
-*.lib
-
-# Executables
-*.exe
+/ifc
+/obj
+/bin
+/lib
+/ext
+/test
 
 # Crypto
 /util/ssl/*.crt
 /util/ssl/*.csr
 /util/ssl/*.key
 /util/ssl/*.pem
-
-# Build
-*/build
-
-/bin
-/lib
-/ext
-/test
 
 # tmp/cfg
 tmp/cfg
@@ -50,12 +32,6 @@ __test__library__
 # Logs
 *.log
 
-# CMake
-/CMakeFiles
-*.cmake
-/CMakeCache.txt
-Makefile
-
-# CTest
-/CTestCostData.txt
-/Testing
+# Build
+make
+make.o

@@ -140,10 +140,10 @@ abstract class Data : ReadWriteMutex {
         super(ReadWriteMutex.Policy.PREFER_WRITERS);
     }
 
-    override ulong toHash() {
+    /*override ulong toHash() {
         // TODO collect all hashes of properties and generate collective hash
         return super.toHash;
-    }
+    }*/
 
     /// deep clones data object (copies whole memory)
     @property Data clone() {

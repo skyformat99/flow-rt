@@ -1,0 +1,8 @@
+{
+    "limit": "deimos",
+    "deps": [],
+    "cflags": [],
+    "lflags": [],
+    "posixlibs": ["libssl.so.1.0.0", "libcrypto.so.1.0.0"],
+    "winlibs": ["ssleay32.lib", "libeay32.lib"]
+}

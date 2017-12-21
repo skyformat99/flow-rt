@@ -1,0 +1,5 @@
+{
+    "deps": ["core", "nanomsg"],
+    "cflags": [],
+    "lflags": []
+}

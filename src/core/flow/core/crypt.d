@@ -15,7 +15,7 @@ private RSA* load(T)(string key) if(is(T==RSA)) {
         BIO* bio = BIO_new_mem_buf(key.ptr.as!(void*), key.length.to!int);
         BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL);
         scope(exit) BIO_free(bio);
-
+        
         return PEM_read_bio_RSAPrivateKey(bio, null, null, null);
     }
 
