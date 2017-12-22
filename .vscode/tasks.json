@@ -7,15 +7,19 @@
             "label": "rebuild",
             "type": "shell",
             "command": "dmd",
-            "args": [ "-debug", "-run", "make.d", "rebuild" ],
+            "args": [
+                "-debug",
+                "-run",
+                "make.d",
+                "rebuild"
+            ],
             "group": "build",
-            /*"presentation": {
-                // Reveal the output only if unrecognized errors occur.
-                "reveal": "silent"
-            },*/
             "problemMatcher": {
                 "owner": "d",
-                "fileLocation": ["relative", "${workspaceRoot}"],
+                "fileLocation": [
+                    "relative",
+                    "${workspaceRoot}"
+                ],
                 "pattern": {
                     "regexp": "^(.*)\\((\\d+),(\\d+)\\):\\s+(Warning|Error):\\s+(.*)$",
                     "file": 1,
@@ -25,17 +29,24 @@
                     "message": 5
                 }
             }
-            //"problemMatcher": "$msCompile"
         },
         {
             "label": "clean",
             "type": "shell",
             "command": "dmd",
-            "args": [ "-debug", "-run", "make.d", "clean" ],
+            "args": [
+                "-debug",
+                "-run",
+                "make.d",
+                "clean"
+            ],
             "group": "build",
             "problemMatcher": {
                 "owner": "d",
-                "fileLocation": ["relative", "${workspaceRoot}"],
+                "fileLocation": [
+                    "relative",
+                    "${workspaceRoot}"
+                ],
                 "pattern": {
                     "regexp": "^(.*)\\((\\d+),(\\d+)\\):\\s+(Warning|Error):\\s+(.*)$",
                     "file": 1,
@@ -50,11 +61,19 @@
             "label": "build",
             "type": "shell",
             "command": "dmd",
-            "args": [ "-debug", "-run", "make.d", "build" ],
+            "args": [
+                "-debug",
+                "-run",
+                "make.d",
+                "build"
+            ],
             "group": "build",
             "problemMatcher": {
                 "owner": "d",
-                "fileLocation": ["relative", "${workspaceRoot}"],
+                "fileLocation": [
+                    "relative",
+                    "${workspaceRoot}"
+                ],
                 "pattern": {
                     "regexp": "^(.*)\\((\\d+),(\\d+)\\):\\s+(Warning|Error):\\s+(.*)$",
                     "file": 1,
@@ -69,11 +88,22 @@
             "label": "build debug of buildsystem",
             "type": "shell",
             "command": "/usr/bin/dmd",
-            "args": [ "-of${workspaceRoot}/make","-debug","-g","-fPIC","-vcolumns","-w","${workspaceRoot}/make.d" ],
+            "args": [
+                "-of${workspaceRoot}/make",
+                "-debug",
+                "-g",
+                "-fPIC",
+                "-vcolumns",
+                "-w",
+                "${workspaceRoot}/make.d"
+            ],
             "group": "build",
             "problemMatcher": {
                 "owner": "d",
-                "fileLocation": ["relative", "${workspaceRoot}"],
+                "fileLocation": [
+                    "relative",
+                    "${workspaceRoot}"
+                ],
                 "pattern": {
                     "regexp": "^(.*)\\((\\d+),(\\d+)\\):\\s+(Warning|Error):\\s+(.*)$",
                     "file": 1,
@@ -88,15 +118,23 @@
             "label": "init git repo",
             "type": "shell",
             "command": "git",
-            "args": [ "submodule", "update", "--init" ],
+            "args": [
+                "submodule",
+                "update",
+                "--init"
+            ],
             "group": "build",
+            "problemMatcher": []
         },
         {
             "label": "generate unittest keys (careful req root and might overwrite systems SSL Certificate Authority(s))",
             "type": "shell",
             "command": "/usr/bin/sudo",
-            "args": [ "./gen" ],
+            "args": [
+                "./gen"
+            ],
             "group": "build",
+            "problemMatcher": [],
             "options": {
                 "cwd": "${workspaceRoot}/util/ssl"
             }

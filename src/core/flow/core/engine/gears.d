@@ -71,7 +71,7 @@ abstract class Tick {
         import std.datetime.systime : Clock;
 
         auto stdTime = Clock.currStdTime;
-        auto t = this.entity.meta.createTickMeta(tick, this.meta.info.group).createTick(this.entity);
+        auto t = this.entity.pop(this.entity.meta.createTickMeta(tick, this.meta.info.group));
         if(t !is null) {
             // TODO max delay??????
             t.time = stdTime + delay.total!"hnsecs";
@@ -90,7 +90,7 @@ abstract class Tick {
     /** fork causal string by starting a new ticker
     given data will be deep cloned, since tick data has not to be synced */
     protected bool fork(string tick, Data data = null) {
-        auto t = this.ticker.entity.meta.createTickMeta(tick, this.meta.info.group).createTick(this.entity);
+        auto t = this.entity.pop(this.ticker.entity.meta.createTickMeta(tick, this.meta.info.group));
         if(t !is null) {
             t.ticker = this.ticker;
             t.meta.trigger = this.meta.trigger;
@@ -257,17 +257,6 @@ private TickMeta createTickMeta(EntityMeta entity, string type, UUID group = ran
     return m;
 }
 
-private Tick createTick(TickMeta m, Entity e) {
-    if(m !is null && m.info !is null) {
-        auto t = Object.factory(m.info.type).as!Tick;
-        if(t !is null) {
-            t.meta = m;
-            t.entity = e;
-        }
-        return t;
-    } else return null;
-}
-
 /// executes an entity centric string of discrete causality
 private class Ticker : StateMachine!SystemState {
     bool sync;
@@ -384,7 +373,7 @@ private class Ticker : StateMachine!SystemState {
         Log.msg(LL.FDebug, this.logPrefix~"finished tick", this.actual.meta);
         
         // if everything was successful cleanup and process next
-        this.actual.dispose(); GC.free(&this.actual); this.actual = null;
+        this.entity.put(this.actual); this.actual = null;
         this.process();
     }
 
@@ -403,7 +392,7 @@ private class Ticker : StateMachine!SystemState {
 
         Log.msg(LL.FDebug, this.logPrefix~"finished handling error", this.actual.meta);
 
-        this.actual.dispose(); GC.free(&this.actual); this.actual = null;
+        this.entity.put(this.actual); this.actual = null;
         this.process();
     }
 
@@ -414,7 +403,7 @@ private class Ticker : StateMachine!SystemState {
         // if even handling exception failes notify that an error occured
         Log.msg(LL.Error, this.logPrefix~"handling error failed", thr);
         
-        this.actual.dispose(); GC.free(&this.actual); this.actual = null;
+        this.entity.put(this.actual); this.actual = null;
 
         // BOOM BOOM BOOM
         if(this.sync) {
@@ -425,8 +414,12 @@ private class Ticker : StateMachine!SystemState {
 }
 
 /// hosts an entity construct
-private class Entity : StateMachine!SystemState {
+private class Entity : StateMachine!SystemState {private import core.sync.mutex;    
+    import core.sync.mutex : Mutex;
     import flow.core.data;
+    
+    private Mutex _poolLock;
+    private Tick[][string] _pool;
     Space space;
     EntityMeta meta;
 
@@ -435,6 +428,7 @@ private class Entity : StateMachine!SystemState {
     Data[][TypeInfo] aspects;
 
     this(Space s, EntityMeta m) {
+        this._poolLock = new Mutex;
         m.ptr.space = s.meta.id;
         this.meta = m;
         this.space = s;
@@ -443,6 +437,41 @@ private class Entity : StateMachine!SystemState {
             this.aspects[typeid(c)] ~= c;
 
         super();
+    }
+
+    private Tick pop(TickMeta m) {
+        import core.time : seconds;
+        import std.datetime.systime : Clock;
+        import std.range : empty, front, popFront;
+        if(m !is null && m.info !is null) {
+            synchronized(this._poolLock) {
+                Tick t;
+                if(m.info.type in this._pool && !this._pool[m.info.type].empty) { // clean up and then take first
+                    while(_pool[m.info.type].length > 1 && _pool[m.info.type].front.time + 1.seconds.total!"hnsecs" < Clock.currStdTime)
+                        this._pool[m.info.type].popFront;
+                    
+                    t = this._pool[m.info.type].front;
+                    this._pool[m.info.type].popFront;
+                } else { // create one which is added when released
+                    t = Object.factory(m.info.type).as!Tick;
+                    t.entity = this;
+                }
+                
+                if(t !is null) {
+                    t.meta = m;
+                }
+                return t;
+            }
+        } else return null;
+    }
+
+    private void put(Tick t) {
+        synchronized(this._poolLock) {
+            if(t.meta.info.type !in this._pool)
+                this._pool[t.meta.info.type] = (Tick[]).init;
+            
+            this._pool[t.meta.info.type] ~= t;
+        }
     }
 
     void dispose() {
@@ -491,7 +520,7 @@ private class Entity : StateMachine!SystemState {
         synchronized(this.meta.reader) {
             // running OnTicking ticks
             foreach(e; this.meta.events.filter!(e => e.type == EventType.OnTicking)) {
-                auto t = this.meta.createTickMeta(e.tick).createTick(this);
+                auto t = this.pop(this.meta.createTickMeta(e.tick));
                 if(t.checkAccept) {
                     auto ticker = new Ticker(this, t);
                     ticker.tick(true);
@@ -518,7 +547,7 @@ private class Entity : StateMachine!SystemState {
         synchronized(this.meta.reader) {
             // running onFreezing ticks
             foreach(e; this.meta.events.filter!(e => e.type == EventType.OnFreezing)) {
-                auto t = this.meta.createTickMeta(e.tick).createTick(this);
+                auto t = this.pop(this.meta.createTickMeta(e.tick));
                 if(t.checkAccept) {
                     auto ticker = new Ticker(this, t);
                     ticker.tick(true);
@@ -563,7 +592,7 @@ private class Entity : StateMachine!SystemState {
 
         // creating and starting ticker for all frozen ticks
         foreach(t; this.meta.ticks) {
-            auto ticker = new Ticker(this, t.createTick(this));
+            auto ticker = new Ticker(this, this.pop(t));
             this.ticker[ticker.id] = ticker;
             ticker.tick();
         }
@@ -696,7 +725,7 @@ private class Entity : StateMachine!SystemState {
             foreach(r; this.meta.receptors) {
                 if(s.dataType == r.signal) {
                     // creating given tick
-                    auto t = this.meta.createTickMeta(r.tick, s.group).createTick(this);
+                    auto t = this.pop(this.meta.createTickMeta(r.tick, s.group));
                     t.meta.trigger = s;
                     ticks ~= t;
                 }

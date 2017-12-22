@@ -28,7 +28,7 @@
             }
         },*/
         {
-            "name": "flow-core",
+            "name": "test/core",
             "type": "gdb",
             "request": "launch",
             "autorun": [
@@ -37,7 +37,7 @@
                 "handle SIGUSR2 nostop noprint",
                 "break onInvalidMemoryOperationError"
             ],
-            "target": "test_flow-core",
+            "target": "${workspaceRoot}/test/core",
             "cwd": "${workspaceRoot}/test"
         },
         {
