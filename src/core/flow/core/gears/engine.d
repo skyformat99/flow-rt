@@ -941,6 +941,16 @@ class EntityController {
     EntityMeta snap() {
         return this._entity.snap();
     }
+    
+    /// makes entity freezing
+    void freeze() {
+        this._entity.freeze();
+    }
+
+    /// makes entity ticking
+    void tick() {
+        this._entity.tick();
+    }
 }
 
 private enum JunctionState {
