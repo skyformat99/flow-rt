@@ -383,9 +383,9 @@ private class Ticker : StateMachine!SystemState {
                     if(this.next !is null) {
                         switch(this.next.meta.info.type) {
                             case fqn!FreezeTick:
+                                this.freeze();
                                 if(this.next.meta.control)
                                     this.entity.freeze();
-                                this.freeze();
                                 break;
                             default:
                                 // check if entity is still running after getting the sync

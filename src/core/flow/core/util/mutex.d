@@ -19,6 +19,13 @@ version( Posix )
     private import core.sys.posix.pthread;
 }
 
+interface ILockChildren {
+    void readerLockChilds();
+    void writerLockChilds();
+    void readerUnlockChilds();
+    void writerUnlockChilds();
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////
 // ReadWriteMutex
@@ -79,7 +86,7 @@ class ReadWriteMutex
      * Throws:
      *  SyncError on error.
      */
-    this( Policy policy = Policy.PREFER_WRITERS )
+    this( Policy policy = Policy.PREFER_WRITERS, ILockChildren cl = null )
     {
         m_commonMutex = new Mutex;
         if( !m_commonMutex )
@@ -94,8 +101,8 @@ class ReadWriteMutex
             throw new SyncError( "Unable to initialize mutex" );
 
         m_policy = policy;
-        m_reader = new Reader;
-        m_writer = new Writer;
+        m_reader = new Reader(cl);
+        m_writer = new Writer(cl);
     }
 
     ////////////////////////////////////////////////////////////////////////////
@@ -159,7 +166,7 @@ class ReadWriteMutex
         /**
          * Initializes a read/write mutex reader proxy object.
          */
-        this()
+        this(ILockChildren cl)
         {
             m_proxy.link = this;
             this.__monitor = &m_proxy;
@@ -179,6 +186,9 @@ class ReadWriteMutex
                 while( shouldQueueReader )
                     m_readerQueue.wait();
 				addActiveReader();
+
+                if(m_cl !is null)
+                    m_cl.readerLockChilds();
             }
         }
 
@@ -190,6 +200,9 @@ class ReadWriteMutex
         {
             synchronized( m_commonMutex )
             {
+                if(m_cl !is null)
+                    m_cl.readerUnlockChilds();
+
                 if( removeActiveReader() < 1 )
                 {
                     if( m_numQueuedWriters > 0 )
@@ -197,7 +210,6 @@ class ReadWriteMutex
                 }
             }
         }
-
 
         /**
          * Attempts to acquire a read lock on the enclosing mutex.  If one can
@@ -209,6 +221,7 @@ class ReadWriteMutex
          */
         bool tryLock()
         {
+            if(m_cl !is null) assert(false, "child locking is not supporting tryLock");
             synchronized( m_commonMutex )
             {
                 if( shouldQueueReader )
@@ -220,6 +233,8 @@ class ReadWriteMutex
 
 
     private:
+        ILockChildren m_cl;
+
         @property bool shouldQueueReader()
         {
             if( m_numActiveWriters > 0 )
@@ -262,7 +277,7 @@ class ReadWriteMutex
         /**
          * Initializes a read/write mutex writer proxy object.
          */
-        this()
+        this(ILockChildren cl)
         {
             m_proxy.link = this;
             this.__monitor = &m_proxy;
@@ -282,6 +297,9 @@ class ReadWriteMutex
                 while( shouldQueueWriter )
                     m_writerQueue.wait();
                 ++m_numActiveWriters;
+
+                if(m_cl !is null)
+                    m_cl.readerLockChilds();
             }
         }
 
@@ -293,6 +311,9 @@ class ReadWriteMutex
         {
             synchronized( m_commonMutex )
             {
+                if(m_cl !is null)
+                    m_cl.readerUnlockChilds();
+
                 if( --m_numActiveWriters < 1 )
                 {
                     switch( m_policy )
@@ -325,6 +346,7 @@ class ReadWriteMutex
          */
         bool tryLock()
         {
+            if(m_cl !is null) assert(false, "child locking is not supporting tryLock");
             synchronized( m_commonMutex )
             {
                 if( shouldQueueWriter )
@@ -336,6 +358,8 @@ class ReadWriteMutex
 
 
     private:
+        ILockChildren m_cl;
+
         @property bool shouldQueueWriter()
         {
             if( m_numActiveWriters > 0 ||

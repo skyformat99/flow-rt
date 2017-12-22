@@ -81,6 +81,10 @@ struct PropertyInfo {
     private Variant function(Data) _getter;
 	private bool function(Data, Variant) _setter;
 	private bool function(Data, Data) _equals;
+	private void function(Data) _lockReader;
+	private void function(Data) _lockWriter;
+	private void function(Data) _unlockReader;
+	private void function(Data) _unlockWriter;
 
     /// returns the type informations
     @property TypeInfo info() {return this._info;}
@@ -114,9 +118,13 @@ struct PropertyInfo {
 }
 
 /// base class of all data
-abstract class Data : ReadWriteMutex {
+abstract class Data : ILockChildren {
     /// returns all properties of data type
     @property shared(PropertyInfo[string]) properties(){return null;}
+
+    private ReadWriteMutex lock;
+    ReadWriteMutex.Reader reader() {return this.lock.reader;}
+    ReadWriteMutex.Writer writer() {return this.lock.writer;}
 
     /// returns data type name
     abstract @property string dataType();
@@ -137,7 +145,28 @@ abstract class Data : ReadWriteMutex {
 
     this() {
         import flow.core.util;
-        super(ReadWriteMutex.Policy.PREFER_WRITERS);
+
+        this.lock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS, this);
+    }
+
+    void readerLockChilds() {
+        foreach(pi; this.properties)
+            pi.as!PropertyInfo._lockReader(this);
+    }
+
+    void writerLockChilds() {
+        foreach(pi; this.properties)
+            pi.as!PropertyInfo._lockWriter(this);
+    }
+
+    void readerUnlockChilds() {
+        foreach(pi; this.properties)
+            pi.as!PropertyInfo._unlockReader(this);
+    }
+
+    void writerUnlockChilds() {
+        foreach(pi; this.properties)
+            pi.as!PropertyInfo._unlockWriter(this);
     }
 
     /*override ulong toHash() {
@@ -221,7 +250,35 @@ if (canHandle!T && (!isArray!T || is(T==string))) {
                 return a.as!(typeof(this))."~__name~" == b.as!(typeof(this))."~__name~";
         };");
 
-        Properties[__name] = TPropertyHelper!(T, __name).getFieldInfo(getter, setter, equals).as!(shared(PropertyInfo));
+        void function(Data) lockReader = (d) {
+            static if(is(T : Data))
+                d.reader.lock();
+        };
+
+        void function(Data) lockWriter = (d) {
+            static if(is(T : Data))
+                d.writer.lock();
+        };
+
+        void function(Data) unlockReader = (d) {
+            static if(is(T : Data))
+                d.reader.unlock();
+        };
+
+        void function(Data) unlockWriter = (d) {
+            static if(is(T : Data))
+                d.writer.unlock();
+        };
+
+        Properties[__name] = TPropertyHelper!(T, __name).fieldInfo(
+            getter,
+            setter,
+            equals,
+            lockReader,
+            lockWriter,
+            unlockReader,
+            unlockWriter
+        ).as!(shared(PropertyInfo));
     }
 
     // field
@@ -273,7 +330,39 @@ if(
             }
         };");
 
-        Properties[__name] = TPropertyHelper!(T, __name).getArrayInfo(getter, setter, equals).as!(shared(PropertyInfo));
+        void function(Data) lockReader = (a) {
+            static if(is(ElementType!T : Data))
+                foreach(d; a)
+                    d.reader.lock();
+        };
+
+        void function(Data) lockWriter = (a) {
+            static if(is(ElementType!T : Data))
+                foreach(d; a)
+                    d.writer.lock();
+        };
+
+        void function(Data) unlockReader = (a) {
+            static if(is(ElementType!T : Data))
+                foreach(d; a)
+                    d.reader.unlock();
+        };
+
+        void function(Data) unlockWriter = (a) {
+            static if(is(ElementType!T : Data))
+                foreach(d; a)
+                    d.writer.unlock();
+        };
+
+        Properties[__name] = TPropertyHelper!(T, __name).arrayInfo(
+            getter,
+            setter,
+            equals,
+            lockReader,
+            lockWriter,
+            unlockReader,
+            unlockWriter
+        ).as!(shared(PropertyInfo));
     }
     
     // array
@@ -284,7 +373,15 @@ if(
 template TPropertyHelper(T, string name) {
     private import std.variant;
 
-    PropertyInfo getFieldInfo(Variant function(Data) getter, bool function(Data, Variant) setter, bool function(Data, Data) equals) {
+    PropertyInfo fieldInfo(
+        Variant function(Data) getter,
+        bool function(Data, Variant) setter,
+        bool function(Data, Data) equals,
+        void function(Data) lockReader,
+        void function(Data) lockWriter,
+        void function(Data) unlockReader,
+        void function(Data) unlockWriter
+    ) {
         import std.datetime : SysTime, DateTime, Date, Duration;
         import std.traits : OriginalType, isScalarType;
         import std.uuid : UUID;
@@ -301,9 +398,14 @@ template TPropertyHelper(T, string name) {
 
         pi._name = name;
         pi._array = false;
+
         pi._getter = getter;
         pi._setter = setter;
         pi._equals = equals;
+        pi._lockReader = lockReader;
+        pi._lockWriter = lockWriter;
+        pi._unlockReader = unlockReader;
+        pi._unlockWriter = unlockWriter;
 
         if(isScalarType!T) pi._desc = TypeDesc.Scalar;
         else if(is(T : Data)) pi._desc = TypeDesc.Data;
@@ -317,7 +419,15 @@ template TPropertyHelper(T, string name) {
         return pi;
     }
 
-    PropertyInfo getArrayInfo(Variant function(Data) getter, bool function(Data, Variant) setter, bool function(Data, Data) equals) {
+    PropertyInfo arrayInfo(
+        Variant function(Data) getter,
+        bool function(Data, Variant) setter,
+        bool function(Data, Data) equals,
+        void function(Data) lockReader,
+        void function(Data) lockWriter,
+        void function(Data) unlockReader,
+        void function(Data) unlockWriter
+    ) {
         import std.datetime : SysTime, DateTime, Date, Duration;
         import std.traits : OriginalType, isScalarType;
         import std.uuid : UUID;
@@ -334,9 +444,14 @@ template TPropertyHelper(T, string name) {
         
         pi._name = name;
         pi._array = true;
+
         pi._getter = getter;
         pi._setter = setter;
         pi._equals = equals;
+        pi._lockReader = lockReader;
+        pi._lockWriter = lockWriter;
+        pi._unlockReader = unlockReader;
+        pi._unlockWriter = unlockWriter;
 
         if(isScalarType!T) pi._desc = TypeDesc.Scalar;
         else if(is(T : Data)) pi._desc = TypeDesc.Data;
