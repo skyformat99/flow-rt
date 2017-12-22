@@ -1,4 +1,4 @@
-module flow.core.engine.error;
+module flow.core.gears.error;
 
 private import flow.core.util.error;
 

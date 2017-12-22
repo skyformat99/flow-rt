@@ -1,8 +1,8 @@
-module flow.core.engine.inproc;
+module flow.core.gears.inproc;
 
 private import flow.core.data;
-private import flow.core.engine.data;
-private import flow.core.engine.gears;
+private import flow.core.gears.data;
+private import flow.core.gears.engine;
 private import flow.core.util;
 private import std.uuid;
 
@@ -171,12 +171,12 @@ JunctionMeta addInProcJunction(
     bool indifferent,
     bool introvert
 ) {
-    import flow.core.engine.inproc : InProcessJunctionMeta;
+    import flow.core.gears.inproc : InProcessJunctionMeta;
     import flow.core.util : as;
     
     auto jm = sm.addJunction(
-        "flow.core.engine.inproc.InProcessJunctionMeta",
-        "flow.core.engine.inproc.InProcessJunction",
+        "flow.core.gears.inproc.InProcessJunctionMeta",
+        "flow.core.gears.inproc.InProcessJunction",
         level,
         hiding,
         indifferent,
@@ -187,7 +187,7 @@ JunctionMeta addInProcJunction(
     return jm;
 }
 
-unittest { test.header("engine.inproc: fully enabled passing of signals");
+unittest { test.header("gears.inproc: fully enabled passing of signals");
     import core.thread;
     import flow.core.util;
     import std.uuid;
@@ -243,7 +243,7 @@ unittest { test.header("engine.inproc: fully enabled passing of signals");
     assert(nsm1.entities[0].aspects[0].as!TestSendingAspect.multicast, "didn't confirm test multicast");
 test.footer(); }
 
-unittest { test.header("engine.inproc: hiding (not) passing of signals");
+unittest { test.header("gears.inproc: hiding (not) passing of signals");
     import core.thread;
     import flow.core.util;
     import std.uuid;
@@ -301,7 +301,7 @@ unittest { test.header("engine.inproc: hiding (not) passing of signals");
     assert(nsm1.entities[0].aspects[0].as!TestSendingAspect.multicast, "didn't confirm test multicast");
 test.footer(); }
 
-unittest { test.header("engine.inproc: indifferent (not) passing of signals");
+unittest { test.header("gears.inproc: indifferent (not) passing of signals");
     import core.thread;
     import flow.core.util;
     import std.uuid;
@@ -358,7 +358,7 @@ unittest { test.header("engine.inproc: indifferent (not) passing of signals");
     assert(nsm1.entities[0].aspects[0].as!TestSendingAspect.multicast, "didn't confirm test multicast");
 test.footer(); }
 
-unittest { test.header("engine.inproc: introvert (not) passing of signals");
+unittest { test.header("gears.inproc: introvert (not) passing of signals");
     import core.thread;
     import flow.core.util;
     import std.uuid;
@@ -415,7 +415,7 @@ unittest { test.header("engine.inproc: introvert (not) passing of signals");
     assert(!nsm1.entities[0].aspects[0].as!TestSendingAspect.multicast, "confirmed test multicast but shouldn't");
 test.footer(); }
 
-unittest { test.header("engine.inproc: fully enabled passing of signals over a only signing junction");
+unittest { test.header("gears.inproc: fully enabled passing of signals over a only signing junction");
     import core.thread;
     import flow.core.util;
     import std.uuid;
@@ -639,7 +639,7 @@ DuRfSEERdBHjYgvyYN3Q5tlWea/uvQ==
     assert(nsm1.entities[0].aspects[0].as!TestSendingAspect.multicast, "didn't confirm test multicast");
 test.footer(); }
 
-unittest { test.header("engine.inproc: fully enabled passing of signals over an encrypting junction");
+unittest { test.header("gears.inproc: fully enabled passing of signals over an encrypting junction");
     import core.thread;
     import flow.core.util;
     import std.uuid;

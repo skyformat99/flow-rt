@@ -1,7 +1,7 @@
-module flow.core.engine.gears;
+module flow.core.gears.engine;
 
-private import flow.core.engine.data;
-private import flow.core.engine.proc;
+private import flow.core.gears.data;
+private import flow.core.gears.proc;
 private import flow.core.util;
 private import std.uuid;
 
@@ -20,6 +20,7 @@ abstract class Tick {
 
     private TickMeta meta;
     private Entity entity;
+    private EntityController control;
     private Ticker ticker;
     private long time;
 
@@ -36,16 +37,16 @@ abstract class Tick {
     protected T aspect(T)(size_t i = 0) if(is(T:Data)) {return this.entity.get!T(i);}
 
     /// check if execution of tick is accepted
-    public @property bool accept() {return true;}
+    @property bool accept() {return true;}
 
     /// predicted costs of tick (default=0)
-    public @property size_t costs() {return 0;}
+    @property size_t costs() {return 0;}
 
     /// algorithm implementation of tick
-    public void run() {}
+    void run() {}
 
     /// exception handling implementation of tick
-    public void error(Throwable thr) {
+    void error(Throwable thr) {
         throw thr;
     }
     
@@ -68,81 +69,114 @@ abstract class Tick {
 
     /// set next tick in causal string with delay
     protected bool next(string tick, Duration delay, Data data = null) {
+        import flow.core.gears.error : TickException;
         import std.datetime.systime : Clock;
 
         auto stdTime = Clock.currStdTime;
-        auto t = this.entity.pop(this.entity.meta.createTickMeta(tick, this.meta.info.group));
-        if(t !is null) {
-            // TODO max delay??????
-            t.time = stdTime + delay.total!"hnsecs";
-            t.ticker = this.ticker;
-            t.meta.trigger = this.meta.trigger;
-            t.meta.previous = this.meta.info;
-            t.meta.data = data;
+        if(this.meta.control || tick != fqn!FreezeTick) {
+            auto t = this.entity.pop(this.entity.meta.createTickMeta(tick, this.meta.info.group));
 
-            if(t.checkAccept) {
-                this.ticker.next = t;
-                return true;
+            if(t !is null) {
+                // if this tick has control, pass it
+                if(this.meta.control) {
+                    t.meta.control = true;
+                    t.control = this.control;
+                }
+
+                // TODO max delay??????
+                t.time = stdTime + delay.total!"hnsecs";
+                t.ticker = this.ticker;
+                t.meta.trigger = this.meta.trigger;
+                t.meta.previous = this.meta.info;
+                t.meta.data = data;
+
+                if(t.checkAccept) {
+                    this.ticker.next = t;
+                    return true;
+                } else return false;
             } else return false;
-        } else return false;
+        } else throw new TickException("tick is not in control");
     }
 
     /** fork causal string by starting a new ticker
     given data will be deep cloned, since tick data has not to be synced */
     protected bool fork(string tick, Data data = null) {
+        import flow.core.gears.error : TickException;
+
         auto t = this.entity.pop(this.ticker.entity.meta.createTickMeta(tick, this.meta.info.group));
-        if(t !is null) {
-            t.ticker = this.ticker;
-            t.meta.trigger = this.meta.trigger;
-            t.meta.previous = this.meta.info;
-            t.meta.data = data;
-            return this.ticker.entity.start(t);
-        } else return false;
+
+        if(this.meta.control || tick != fqn!FreezeTick) {
+            // if this tick has control, pass it
+            if(this.meta.control) {
+                t.meta.control = true;
+                t.control = this.control;
+            }
+
+            if(t !is null) {
+                t.ticker = this.ticker;
+                t.meta.trigger = this.meta.trigger;
+                t.meta.previous = this.meta.info;
+                t.meta.data = data;
+                return this.ticker.entity.start(t);
+            } else return false;
+        } else throw new TickException("tick is not in control");
     }
 
     /// gets the entity controller of a given entity located in common space
     protected EntityController get(EntityPtr entity) {
-        import flow.core.engine.error : TickException;
+        import flow.core.gears.error : TickException;
 
-        if(entity.space != this.entity.space.meta.id)
-            throw new TickException("an entity not belonging to own space cannot be controlled");
-        else return this.get(entity.id);
+        if(this.meta.control) {
+            if(entity.space != this.entity.space.meta.id)
+                throw new TickException("an entity not belonging to own space cannot be controlled");
+            else return this.get(entity.id);
+        } else throw new TickException("tick is not in control");
     }
 
     private EntityController get(string e) {
-        import flow.core.engine.error : TickException;
+        import flow.core.gears.error : TickException;
 
-        if(this.entity.meta.ptr.id == e)
-            throw new TickException("entity cannot controll itself");
-        else return this.entity.space.get(e);
+        if(this.meta.control) {
+            if(this.entity.meta.ptr.id == e)
+                throw new TickException("entity cannot controll itself");
+            else return this.entity.space.get(e);
+        } else throw new TickException("tick is not in control");
     }
 
     /// spawns a new entity in common space
     protected EntityController spawn(EntityMeta entity) {
-        return this.entity.space.spawn(entity);
+        import flow.core.gears.error : TickException;
+
+        if(this.meta.control)
+            return this.entity.space.spawn(entity);
+        else throw new TickException("tick is not in control");
     }
 
     /// kills a given entity in common space
     protected void kill(EntityPtr entity) {
-        import flow.core.engine.error : TickException;
+        import flow.core.gears.error : TickException;
         
-        if(entity.space != this.entity.space.meta.id)
-            throw new TickException("an entity not belonging to own space cannot be killed");
-        this.kill(entity.id);
+        if(this.meta.control) {
+            if(entity.space != this.entity.space.meta.id)
+                throw new TickException("an entity not belonging to own space cannot be killed");
+            this.kill(entity.id);
+        } else throw new TickException("tick is not in control");
     }
 
     private void kill(string e) {
-        import flow.core.engine.error : TickException;
+        import flow.core.gears.error : TickException;
         
-        if(this.entity.meta.ptr.addr == e)
-            throw new TickException("entity cannot kill itself");
-        else
-            this.entity.space.kill(e);
+        if(this.meta.control) {
+            if(this.entity.meta.ptr.addr == e)
+                throw new TickException("entity cannot kill itself");
+            else
+                this.entity.space.kill(e);
+        } else throw new TickException("tick is not in control");
     }
 
     /// registers a receptor for signal which runs a tick
     protected void register(string signal, string tick) {
-        import flow.core.engine.error : TickException;
+        import flow.core.gears.error : TickException;
         import flow.core.data : createData;
         
         auto s = createData(signal).as!Signal;
@@ -167,7 +201,7 @@ abstract class Tick {
 
     /// send an unicast signal to a destination
     protected bool send(Unicast s, EntityPtr e = null) {
-        import flow.core.engine.error : TickException;
+        import flow.core.gears.error : TickException;
         
         if(s is null)
             throw new TickException("cannot sand an empty unicast");
@@ -184,7 +218,7 @@ abstract class Tick {
 
     /// send an anycast signal to spaces matching space pattern
     protected bool send(Anycast s, string dst = string.init) {
-        import flow.core.engine.error : TickException;
+        import flow.core.gears.error : TickException;
         
         if(dst != string.init) s.dst = dst;
 
@@ -198,7 +232,7 @@ abstract class Tick {
 
     /// send an anycast signal to spaces matching space pattern
     protected bool send(Multicast s, string dst = string.init) {
-        import flow.core.engine.error : TickException;
+        import flow.core.gears.error : TickException;
         
         if(dst != string.init) s.dst = dst;
 
@@ -214,6 +248,8 @@ abstract class Tick {
         this.destroy;
     }
 }
+
+class FreezeTick : Tick {}
 
 private bool checkAccept(Tick t) {
     try {
@@ -244,7 +280,7 @@ string logPrefix(Junction t) {
 }
 
 private TickMeta createTickMeta(EntityMeta entity, string type, UUID group = randomUUID) {
-    import flow.core.engine.data : TickMeta, TickInfo;
+    import flow.core.gears.data : TickMeta, TickInfo;
     import std.uuid : randomUUID;
 
     auto m = new TickMeta;
@@ -345,12 +381,20 @@ private class Ticker : StateMachine!SystemState {
             if(this.next !is null) {
                     // create a new tick of given type or notify failing and stop
                     if(this.next !is null) {
-                        // check if entity is still running after getting the sync
-                        this.actual = this.next;
-                        this.next = null;
+                        switch(this.next.meta.info.type) {
+                            case fqn!FreezeTick:
+                                if(this.next.meta.control)
+                                    this.entity.freeze();
+                                this.freeze();
+                                break;
+                            default:
+                                // check if entity is still running after getting the sync
+                                this.actual = this.next;
+                                this.next = null;
 
-                        this.job = Job(&this.run, &this.error, this.actual.time);
-                        this.entity.space.proc.run(&this.job);
+                                this.job = Job(&this.run, &this.error, this.actual.time);
+                                this.entity.space.proc.run(&this.job);
+                        }
                     } else {
                         Log.msg(LL.Error, this.logPrefix~"could not run tick -> ending", this.actual.meta);
                         this.freeze(); // now it has to be frozen
@@ -367,12 +411,14 @@ private class Ticker : StateMachine!SystemState {
     /// execute tick meant to be called by processor
     private void run() {
         import core.memory : GC;
+        import std.datetime.systime : Clock;
         // run tick
         Log.msg(LL.FDebug, this.logPrefix~"running tick", this.actual.meta);
         this.actual.run();
         Log.msg(LL.FDebug, this.logPrefix~"finished tick", this.actual.meta);
         
         // if everything was successful cleanup and process next
+        this.actual.time = Clock.currStdTime;
         this.entity.put(this.actual); this.actual = null;
         this.process();
     }
@@ -388,21 +434,26 @@ private class Ticker : StateMachine!SystemState {
 
     private void runError() {
         import core.memory : GC;
+        import std.datetime.systime : Clock;
         this.actual.error(this.thr);
 
         Log.msg(LL.FDebug, this.logPrefix~"finished handling error", this.actual.meta);
 
+        // if everything was successful cleanup and process next
+        this.actual.time = Clock.currStdTime;
         this.entity.put(this.actual); this.actual = null;
         this.process();
     }
 
     private void fatal(Throwable thr) {
         import core.memory : GC;
+        import std.datetime.systime : Clock;
         this.thr = thr;
 
         // if even handling exception failes notify that an error occured
         Log.msg(LL.Error, this.logPrefix~"handling error failed", thr);
         
+        this.actual.time = Clock.currStdTime; // set endtime for informing pool
         this.entity.put(this.actual); this.actual = null;
 
         // BOOM BOOM BOOM
@@ -418,10 +469,13 @@ private class Entity : StateMachine!SystemState {private import core.sync.mutex;
     import core.sync.mutex : Mutex;
     import flow.core.data;
     
-    private Mutex _poolLock;
-    private Tick[][string] _pool;
+    Mutex _poolLock;
+    Tick[][string] _pool;
+    size_t activity;
+     
     Space space;
     EntityMeta meta;
+    EntityController control;
 
     Ticker[UUID] ticker;
 
@@ -436,18 +490,22 @@ private class Entity : StateMachine!SystemState {private import core.sync.mutex;
         foreach(ref c; m.aspects)
             this.aspects[typeid(c)] ~= c;
 
+        this.control = new EntityController(this);
+
         super();
     }
 
-    private Tick pop(TickMeta m) {
+    Tick pop(TickMeta m) {
         import core.time : seconds;
         import std.datetime.systime : Clock;
         import std.range : empty, front, popFront;
         if(m !is null && m.info !is null) {
             synchronized(this._poolLock) {
                 Tick t;
-                if(m.info.type in this._pool && !this._pool[m.info.type].empty) { // clean up and then take first
-                    while(_pool[m.info.type].length > 1 && _pool[m.info.type].front.time + 1.seconds.total!"hnsecs" < Clock.currStdTime)
+                if(m.info.type in this._pool
+                && !this._pool[m.info.type].empty) { // clean up and then take first
+                    while(_pool[m.info.type].length > 1
+                    && _pool[m.info.type].front.time + 1.seconds.total!"hnsecs" < Clock.currStdTime)
                         this._pool[m.info.type].popFront;
                     
                     t = this._pool[m.info.type].front;
@@ -459,13 +517,16 @@ private class Entity : StateMachine!SystemState {private import core.sync.mutex;
                 
                 if(t !is null) {
                     t.meta = m;
+                    if(m.control) t.control = this.control;
                 }
+
+                this.activity++; // someone pops, increase activity counter
                 return t;
             }
         } else return null;
     }
 
-    private void put(Tick t) {
+    void put(Tick t) {
         synchronized(this._poolLock) {
             if(t.meta.info.type !in this._pool)
                 this._pool[t.meta.info.type] = (Tick[]).init;
@@ -521,6 +582,13 @@ private class Entity : StateMachine!SystemState {private import core.sync.mutex;
             // running OnTicking ticks
             foreach(e; this.meta.events.filter!(e => e.type == EventType.OnTicking)) {
                 auto t = this.pop(this.meta.createTickMeta(e.tick));
+
+                // if its meant to get control, give it
+                if(e.control) {
+                    t.meta.control = true;
+                    t.control = this.control;
+                }
+
                 if(t.checkAccept) {
                     auto ticker = new Ticker(this, t);
                     ticker.tick(true);
@@ -548,6 +616,13 @@ private class Entity : StateMachine!SystemState {private import core.sync.mutex;
             // running onFreezing ticks
             foreach(e; this.meta.events.filter!(e => e.type == EventType.OnFreezing)) {
                 auto t = this.pop(this.meta.createTickMeta(e.tick));
+
+                // if its meant to get control, give it
+                if(e.control) {
+                    t.meta.control = true;
+                    t.control = this.control;
+                }
+
                 if(t.checkAccept) {
                     auto ticker = new Ticker(this, t);
                     ticker.tick(true);
@@ -726,6 +801,12 @@ private class Entity : StateMachine!SystemState {private import core.sync.mutex;
                 if(s.dataType == r.signal) {
                     // creating given tick
                     auto t = this.pop(this.meta.createTickMeta(r.tick, s.group));
+
+                    // if its meant to get control, give it
+                    if(r.control) {
+                        t.meta.control = true;
+                        t.control = this.control;
+                }
                     t.meta.trigger = s;
                     ticks ~= t;
                 }
@@ -765,7 +846,7 @@ private class Entity : StateMachine!SystemState {private import core.sync.mutex;
 
     /// send an unicast signal into own space
     bool send(Unicast s) {
-        import flow.core.engine.error : EntityException;
+        import flow.core.gears.error : EntityException;
 
         this.ensureState(SystemState.Ticking);
 
@@ -838,29 +919,22 @@ class EntityController {
     private Entity _entity;
 
     /// deep clone of entity pointer of controlled entity
-    @property EntityPtr entity() {return this._entity.meta.ptr.clone;}
+    EntityPtr entity() @property {return this._entity.meta.ptr.clone;}
 
     /// state of entity
-    @property SystemState state() {return this._entity.state;}
+    SystemState state() @property {return this._entity.state;}
+
+    /// activity counter of entity
+    size_t activity() @property {return this._entity.activity;}
 
     /// deep clone of entity context
-    @property Data[] aspects() {return this._entity.meta.aspects;}
+    Data[] aspects() @property {return this._entity.meta.aspects;}
 
     /// deep clone of entity context
-    @property Damage[] damages() {return this._entity.meta.damages;}
+    Damage[] damages() @property {return this._entity.meta.damages;}
 
     private this(Entity e) {
         this._entity = e;
-    }
-
-    /// makes entity freezing
-    void freeze() {
-        this._entity.freeze();
-    }
-
-    /// makes entity ticking
-    void tick() {
-        this._entity.tick();
     }
 
     /// snapshots entity (only working when entity is frozen)
@@ -1213,7 +1287,7 @@ private bool containsWildcard(string dst) {
     return dst.canFind("*");
 }
 
-unittest { test.header("engine.gears: wildcards checker");
+unittest { test.header("gears.engine: wildcards checker");
     assert("*".containsWildcard);
     assert(!"a".containsWildcard);
     assert("*.aa.bb".containsWildcard);
@@ -1222,7 +1296,7 @@ unittest { test.header("engine.gears: wildcards checker");
     assert(!"aa.bb.cc".containsWildcard);
 test.footer(); }
 
-unittest { test.header("engine.gears: domain matching");    
+unittest { test.header("gears.engine: domain matching");    
     assert(matches("a.b.c", "a.b.c"), "1:1 matching failed");
     assert(matches("a.b.c", "a.b.*"), "first level * matching failed");
     assert(matches("a.b.c", "a.*.c"), "second level * matching failed");
@@ -1308,7 +1382,7 @@ class Space : StateMachine!SystemState {
     }
 
     private void onCreated() {
-        import flow.core.engine.error : SpaceException;
+        import flow.core.gears.error : SpaceException;
 
         // creating processor;
         // default is one core
@@ -1367,12 +1441,12 @@ class Space : StateMachine!SystemState {
     /// gets a controller for an entity contained in space (null if not existing)
     EntityController get(string e) {
         synchronized(this.lock.reader)
-            return (e in this.entities).as!bool ? new EntityController(this.entities[e]) : null;
+            return (e in this.entities).as!bool ? this.entities[e].control : null;
     }
 
     /// spawns a new entity into space
     EntityController spawn(EntityMeta m) {
-        import flow.core.engine.error : SpaceException;
+        import flow.core.gears.error : SpaceException;
 
         synchronized(this.lock.reader) {
             if(m.ptr.id in this.entities)
@@ -1385,7 +1459,7 @@ class Space : StateMachine!SystemState {
                     this.meta.entities ~= m;
                     Entity e = new Entity(this, m);
                     this.entities[m.ptr.id] = e;
-                    return new EntityController(e);
+                    return e.control;
                 }
             }
         }
@@ -1394,7 +1468,7 @@ class Space : StateMachine!SystemState {
     /// kills an existing entity in space
     void kill(string en) {
         import core.memory : GC;
-        import flow.core.engine.error : SpaceException;
+        import flow.core.gears.error : SpaceException;
 
         synchronized(this.lock.reader) {
             if(en in this.entities) {
@@ -1538,7 +1612,7 @@ class Process {
     /// ensure it is executed in main thread or not at all
     private void ensureThread() {
         import core.thread : thread_isMainThread;
-        import flow.core.engine.error : ProcessError;
+        import flow.core.gears.error : ProcessError;
 
         if(!thread_isMainThread)
             throw new ProcessError("process can be only controlled by main thread");
@@ -1546,7 +1620,7 @@ class Process {
 
     /// add a space
     Space add(SpaceMeta s) {   
-        import flow.core.engine.error : ProcessException;
+        import flow.core.gears.error : ProcessException;
 
         this.ensureThread();
         
@@ -1573,7 +1647,7 @@ class Process {
     /// removes an existing space
     void remove(string sn) {
         import core.memory : GC;
-        import flow.core.engine.error : ProcessException;
+        import flow.core.gears.error : ProcessException;
 
         this.ensureThread();
         
@@ -1686,7 +1760,7 @@ JunctionMeta addJunction(
 
 /// imports for tests
 version(unittest) {
-    private import flow.core.engine.data;
+    private import flow.core.gears.data;
     private import flow.core.data;
     private import flow.core.util;
 }
@@ -1758,7 +1832,7 @@ version(unittest) {
 version(unittest) {
     class ErrorTestTick : Tick {
         override void run() {
-            import flow.core.engine.error : TickException;
+            import flow.core.gears.error : TickException;
             throw new TickException("test error");
         }
 
@@ -1769,12 +1843,12 @@ version(unittest) {
 
     class ErrorHandlerErrorTestTick : Tick {
         override void run() {
-            import flow.core.engine.error : TickException;
+            import flow.core.gears.error : TickException;
             throw new TickException("test error");
         }
 
         override void error(Throwable thr) {
-            import flow.core.engine.error : TickException;
+            import flow.core.gears.error : TickException;
             throw new TickException("test errororhandler error");
         }
     }
@@ -1861,9 +1935,9 @@ version(unittest) {
     }
 }
 
-unittest { test.header("engine.gears: events");    
+unittest { test.header("gears.engine: events");    
     import core.thread;
-    import flow.core.engine.data;
+    import flow.core.gears.data;
     import flow.core.util;
 
     auto proc = new Process;
@@ -1892,11 +1966,11 @@ unittest { test.header("engine.gears: events");
     assert(nsm.entities[0].aspects[0].as!TestEventingAspect.firedOnFreezing, "didn't get fired for OnFreezing");
 test.footer(); }
 
-unittest { test.header("engine.gears: event error handling");
+unittest { test.header("gears.engine: event error handling");
     import core.thread;
     import core.time;
-    import flow.core.engine.data;
-    import flow.core.engine.error;
+    import flow.core.gears.data;
+    import flow.core.gears.error;
     import flow.core.util;
     import std.range;   
 
@@ -1925,10 +1999,10 @@ unittest { test.header("engine.gears: event error handling");
     assert(ex !is null, "exception wasn't thrown");
 test.footer(); }
 
-unittest { test.header("engine.gears: damage error handling");
+unittest { test.header("gears.engine: damage error handling");
     import core.thread;
     import core.time;
-    import flow.core.engine.data;
+    import flow.core.gears.data;
     import flow.core.util;
     import std.range;
     
@@ -1957,9 +2031,9 @@ unittest { test.header("engine.gears: damage error handling");
     assert(ec._entity.meta.damages.length == 1, "entity has wrong amount of damages");
 test.footer(); }
 
-unittest { test.header("engine.gears: delayed next");
+unittest { test.header("gears.engine: delayed next");
     import core.thread;
-    import flow.core.engine.data;
+    import flow.core.gears.data;
     import flow.core.util;
 
     auto proc = new Process;
@@ -1995,9 +2069,9 @@ unittest { test.header("engine.gears: delayed next");
     assert(tolHnsecs >= measuredHnsecs, "delayed longer than allowed");
 test.footer(); }
 
-unittest { test.header("engine.gears: send and receipt of all signal types and pass their group");
+unittest { test.header("gears.engine: send and receipt of all signal types and pass their group");
     import core.thread;
-    import flow.core.engine.data;
+    import flow.core.gears.data;
     import flow.core.util;
     import std.uuid;
 

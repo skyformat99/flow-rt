@@ -1,4 +1,4 @@
-module flow.core.engine.data;
+module flow.core.gears.data;
 
 private import flow.core.data.engine;
 private import flow.core.data.data;
@@ -120,9 +120,12 @@ class JunctionMeta : Data {
 
 /// metadata of an entity
 class EntityMeta : Data {
+        private import core.time : Duration;
+
     mixin data;
 
     mixin field!(EntityPtr, "ptr");
+    mixin field!(Duration, "freeze");
     mixin field!(Data[], "config");
     mixin field!(Data[], "aspects");
     mixin field!(ushort, "level");
@@ -155,6 +158,7 @@ class Event : Data {
 
     mixin field!(EventType, "type");
     mixin field!(string, "tick");
+    mixin field!(bool, "control");
 }
 
 /// metadata of a tick
@@ -162,6 +166,7 @@ public class TickMeta : Data {
     mixin data;
 
     mixin field!(TickInfo, "info");
+    mixin field!(bool, "control");
     mixin field!(Signal, "trigger");
     mixin field!(TickInfo, "previous");
     mixin field!(Data, "data");
@@ -184,4 +189,5 @@ class Receptor : Data {
 
     mixin field!(string, "signal");
     mixin field!(string, "tick");
+    mixin field!(bool, "control");
 }
