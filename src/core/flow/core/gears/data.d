@@ -120,12 +120,9 @@ class JunctionMeta : Data {
 
 /// metadata of an entity
 class EntityMeta : Data {
-        private import core.time : Duration;
-
     mixin data;
 
     mixin field!(EntityPtr, "ptr");
-    mixin field!(Duration, "freeze");
     mixin field!(Data[], "config");
     mixin field!(Data[], "aspects");
     mixin field!(ushort, "level");
@@ -169,6 +166,7 @@ public class TickMeta : Data {
     mixin field!(bool, "control");
     mixin field!(Signal, "trigger");
     mixin field!(TickInfo, "previous");
+    mixin field!(long, "time");
     mixin field!(Data, "data");
 }
 

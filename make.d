@@ -83,12 +83,14 @@ class Build {
     string[] winlibs;
     bool done = false;
     bool clean = false;
+    bool execute = false;
 
-    this(string n, LinkType t, string m, bool f, string j) {
+    this(string n, LinkType t, string m, bool f, string j, bool e = false) {
         this.name = n;
         this.type = t;
         this.main = m;
         this.flow = f;
+        this.execute = e;
 
         this.load(j);
     }
@@ -256,6 +258,9 @@ class Build {
             this.link(this.lflags, this.obj, this.of);
         } else writeln("+++ up to date");
 
+        if(this.execute && this.type == LinkType.Bin)
+            this.run(this.of);
+
         this.done = true;
     }
 
@@ -288,12 +293,30 @@ class Build {
             stdin, stdout, stderr, null, Config.none, this.srcRoot);
         assert(ldPid.wait() == 0, "!!! linking error");      
     }
+
+    final void run(string exec) {
+        import core.time;
+        import std.conv : to;
+        import std.datetime.stopwatch : benchmark;
+        import std.stdio : stdin, stdout, stderr, writeln;
+        import std.process : spawnProcess, wait, Config;
+
+        auto f = {
+            string[string] env;
+            env["LD_LIBRARY_PATH"] = rootDir.buildPath("lib");
+            auto tstPid = spawnProcess([exec], stdin, stdout, stderr, env, Config.none, rootDir);
+            assert(tstPid.wait() == 0, "!!! execution error");
+        };
+
+        auto b = benchmark!(f)(1);
+        writeln("--- ", b[0]);
+    }
 }
 
 class Test : Build {
     static Test[string] reg;
 
-    static void run() {
+    static void execute() {
         foreach(n, t; reg)
             t.exec();
     }
@@ -323,27 +346,9 @@ class Test : Build {
             this.link(this.lflags, this.testObj, this.testOf);
         }
 
-        this.test(this.testOf);
+        this.run(this.testOf);
 
         this.done = true;
-    }
-
-    void test(string test) {
-        import core.time;
-        import std.conv : to;
-        import std.datetime.stopwatch : benchmark;
-        import std.stdio : stdin, stdout, stderr, writeln;
-        import std.process : spawnProcess, wait, Config;
-
-        auto f = {
-            string[string] env;
-            env["LD_LIBRARY_PATH"] = rootDir.buildPath("lib");
-            auto tstPid = spawnProcess([test], stdin, stdout, stderr, env, Config.none, rootDir);
-            assert(tstPid.wait() == 0, "!!! testing error");
-        };
-
-        auto b = benchmark!(f)(1);
-        writeln("--- ", b[0]);
     }
 }
 
@@ -397,6 +402,17 @@ void loadBins() {
     }
 }
 
+void loadDocs() {
+    import std.stdio : writeln;
+
+    auto jsons = rootDir.dirEntries("*.doc.json", SpanMode.depth);
+    foreach(j; jsons) {
+        auto name = j.baseName(".doc.json");
+        writeln("*** adding doc ", name);
+        Build.reg[name] = new Build(name, LinkType.Bin, j.dirName.buildPath(name), true, j.readText, true);
+    }
+}
+
 int main(string[] args) {
     import std.stdio : writeln;
 
@@ -435,9 +451,10 @@ int main(string[] args) {
         loadCore();
         loadExts();
         loadBins();
+        loadDocs();
         
         Build.make();
-        Test.run();
+        Test.execute();
     }
 
     return 0;

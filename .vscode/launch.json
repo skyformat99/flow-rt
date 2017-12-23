@@ -78,8 +78,8 @@
                 "handle SIGUSR2 nostop noprint",
                 "break onInvalidMemoryOperationError"
             ],
-            "target": "doc_introduction.d",
-            "cwd": "${workspaceRoot}/test"
+            "target": "${workspaceRoot}/bin/flow-introduction",
+            "cwd": "${workspaceRoot}/bin"
         },
         {
             "name": "run test",

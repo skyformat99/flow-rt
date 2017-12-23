@@ -5,13 +5,13 @@
  *    (See accompanying file LICENSE or copy at
  *          http://www.boost.org/LICENSE_1_0.txt)
  */
-module flow.core.util.mutex;
+module flow.core.data.mutex;
 
 public import core.sync.exception;
 private import core.sync.condition;
 private import core.sync.mutex;
 private import core.memory;
-private import core.thread;
+//private import core.thread;
 version(unittest) private static import test = flow.core.util.test;
 
 version( Posix )
@@ -363,7 +363,7 @@ class ReadWriteMutex
         @property bool shouldQueueWriter()
         {
             if( m_numActiveWriters > 0 ||
-                hasForeignReaders() )
+                m_numActiveReaders > 0 )
                 return true;
             switch( m_policy )
             {
@@ -397,25 +397,18 @@ private:
     Condition   m_writerQueue;
 
     int         m_numQueuedReaders;
-	int[Thread] m_numActiveReaders;
+	int         m_numActiveReaders;
     int         m_numQueuedWriters;
     int         m_numActiveWriters;
 
 	void addActiveReader() {
-		++m_numActiveReaders[Thread.getThis];
+		++m_numActiveReaders;
 	}
 
 	int removeActiveReader() {
-		auto left = --m_numActiveReaders[Thread.getThis];
-		if(left == 0)
-			m_numActiveReaders.remove(Thread.getThis);
+		auto left = --m_numActiveReaders;
 		
 		return left;
-	}
-
-	int hasForeignReaders() {
-		import std.range : front;
-		return m_numActiveReaders.keys.length > 1 || (m_numActiveReaders.keys.length == 1 && m_numActiveReaders.keys.front != Thread.getThis);
 	}
 }
 
@@ -560,20 +553,3 @@ unittest
     runTest(ReadWriteMutex.Policy.PREFER_READERS);
     runTest(ReadWriteMutex.Policy.PREFER_WRITERS);
 }
-
-// this test will loop forever if it fails
-unittest { test.header("util.mutex");
-
-	// lock upgrade
-    ReadWriteMutex m = new ReadWriteMutex;
-	synchronized(m.reader) {
-		synchronized(m.writer) {
-			assert(true, "couldn't set write lock");
-		}
-	}
-
-	import core.thread;
-	Thread.sleep(10.msecs);
-    // TODO tests with taskpool
-
-test.footer(); }

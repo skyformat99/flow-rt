@@ -64,6 +64,7 @@ class InProcessChannel : Channel {
 
 /// junction allowing direct signalling between spaces hosted in same process
 class InProcessJunction : Junction {
+    private import core.sync.rwmutex : ReadWriteMutex;
     private import std.uuid : UUID;
 
     private static __gshared ReadWriteMutex pLock;
@@ -195,17 +196,16 @@ unittest { test.header("gears.inproc: fully enabled passing of signals");
     auto proc = new Process;
     scope(exit) proc.dispose;
 
-    auto spc1Domain = "spc1.test.inproc.ipc.flow";
-    auto spc2Domain = "spc2.test.inproc.ipc.flow";
+    auto spc1Domain = "spc1.test.inproc.gears.core.flow";
+    auto spc2Domain = "spc2.test.inproc.gears.core.flow";
 
     auto junctionId = randomUUID;
 
     auto sm1 = createSpace(spc1Domain);
     auto ems = sm1.addEntity("sending");
-    ems.aspects ~= new TestSendingAspect;
-    auto cfg = new TestSendingConfig; ems.aspects ~= cfg;
-    cfg.dstEntity = "receiving";
-    cfg.dstSpace = spc2Domain;
+    auto a = new TestSendingAspect; ems.aspects ~= a;
+    a.dstEntity = "receiving";
+    a.dstSpace = spc2Domain;
     ems.addTick(fqn!UnicastSendingTestTick);
     ems.addTick(fqn!AnycastSendingTestTick);
     ems.addTick(fqn!MulticastSendingTestTick);
@@ -251,17 +251,16 @@ unittest { test.header("gears.inproc: hiding (not) passing of signals");
     auto proc = new Process;
     scope(exit) proc.dispose;
 
-    auto spc1Domain = "spc1.test.inproc.ipc.flow";
-    auto spc2Domain = "spc2.test.inproc.ipc.flow";
+    auto spc1Domain = "spc1.test.inproc.gears.core.flow";
+    auto spc2Domain = "spc2.test.inproc.gears.core.flow";
 
     auto junctionId = randomUUID;
 
     auto sm1 = createSpace(spc1Domain);
     auto ems = sm1.addEntity("sending");
-    ems.aspects ~= new TestSendingAspect;
-    auto cfg = new TestSendingConfig; ems.aspects ~= cfg;
-    cfg.dstEntity = "receiving";
-    cfg.dstSpace = spc2Domain;
+    auto a = new TestSendingAspect; ems.aspects ~= a;
+    a.dstEntity = "receiving";
+    a.dstSpace = spc2Domain;
     ems.addTick(fqn!UnicastSendingTestTick);
     ems.addTick(fqn!AnycastSendingTestTick);
     ems.addTick(fqn!MulticastSendingTestTick);
@@ -309,17 +308,16 @@ unittest { test.header("gears.inproc: indifferent (not) passing of signals");
     auto proc = new Process;
     scope(exit) proc.dispose;
 
-    auto spc1Domain = "spc1.test.inproc.ipc.flow";
-    auto spc2Domain = "spc2.test.inproc.ipc.flow";
+    auto spc1Domain = "spc1.test.inproc.gears.core.flow";
+    auto spc2Domain = "spc2.test.inproc.gears.core.flow";
 
     auto junctionId = randomUUID;
 
     auto sm1 = createSpace(spc1Domain);
     auto ems = sm1.addEntity("sending");
-    ems.aspects ~= new TestSendingAspect;
-    auto cfg = new TestSendingConfig; ems.aspects ~= cfg;
-    cfg.dstEntity = "receiving";
-    cfg.dstSpace = spc2Domain;
+    auto a = new TestSendingAspect; ems.aspects ~= a;
+    a.dstEntity = "receiving";
+    a.dstSpace = spc2Domain;
     ems.addTick(fqn!UnicastSendingTestTick);
     ems.addTick(fqn!AnycastSendingTestTick);
     ems.addTick(fqn!MulticastSendingTestTick);
@@ -366,17 +364,16 @@ unittest { test.header("gears.inproc: introvert (not) passing of signals");
     auto proc = new Process;
     scope(exit) proc.dispose;
 
-    auto spc1Domain = "spc1.test.inproc.ipc.flow";
-    auto spc2Domain = "spc2.test.inproc.ipc.flow";
+    auto spc1Domain = "spc1.test.inproc.gears.core.flow";
+    auto spc2Domain = "spc2.test.inproc.gears.core.flow";
 
     auto junctionId = randomUUID;
 
     auto sm1 = createSpace(spc1Domain);
     auto ems = sm1.addEntity("sending");
-    ems.aspects ~= new TestSendingAspect;
-    auto cfg = new TestSendingConfig; ems.aspects ~= cfg;
-    cfg.dstEntity = "receiving";
-    cfg.dstSpace = spc2Domain;
+    auto a = new TestSendingAspect; ems.aspects ~= a;
+    a.dstEntity = "receiving";
+    a.dstSpace = spc2Domain;
     ems.addTick(fqn!UnicastSendingTestTick);
     ems.addTick(fqn!AnycastSendingTestTick);
     ems.addTick(fqn!MulticastSendingTestTick);
@@ -423,17 +420,16 @@ unittest { test.header("gears.inproc: fully enabled passing of signals over a on
     auto proc = new Process;
     scope(exit) proc.dispose;
 
-    auto spc1Domain = "spc1.test.inproc.ipc.flow";
-    auto spc2Domain = "spc2.test.inproc.ipc.flow";
+    auto spc1Domain = "spc1.test.inproc.gears.core.flow";
+    auto spc2Domain = "spc2.test.inproc.gears.core.flow";
 
     auto junctionId = randomUUID;
 
     auto sm1 = createSpace(spc1Domain);
     auto ems = sm1.addEntity("sending");
-    ems.aspects ~= new TestSendingAspect;
-    auto cfg = new TestSendingConfig; ems.aspects ~= cfg;
-    cfg.dstEntity = "receiving";
-    cfg.dstSpace = spc2Domain;
+    auto a = new TestSendingAspect; ems.aspects ~= a;
+    a.dstEntity = "receiving";
+    a.dstSpace = spc2Domain;
     ems.addTick(fqn!UnicastSendingTestTick);
     ems.addTick(fqn!AnycastSendingTestTick);
     ems.addTick(fqn!MulticastSendingTestTick);
@@ -647,17 +643,16 @@ unittest { test.header("gears.inproc: fully enabled passing of signals over an e
     auto proc = new Process;
     scope(exit) proc.dispose;
 
-    auto spc1Domain = "spc1.test.inproc.ipc.flow";
-    auto spc2Domain = "spc2.test.inproc.ipc.flow";
+    auto spc1Domain = "spc1.test.inproc.gears.core.flow";
+    auto spc2Domain = "spc2.test.inproc.gears.core.flow";
 
     auto junctionId = randomUUID;
 
     auto sm1 = createSpace(spc1Domain);
     auto ems = sm1.addEntity("sending");
-    ems.aspects ~= new TestSendingAspect;
-    auto cfg = new TestSendingConfig; ems.aspects ~= cfg;
-    cfg.dstEntity = "receiving";
-    cfg.dstSpace = spc2Domain;
+    auto a = new TestSendingAspect; ems.aspects ~= a;
+    a.dstEntity = "receiving";
+    a.dstSpace = spc2Domain;
     ems.addTick(fqn!UnicastSendingTestTick);
     ems.addTick(fqn!AnycastSendingTestTick);
     ems.addTick(fqn!MulticastSendingTestTick);

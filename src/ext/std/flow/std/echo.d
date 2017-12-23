@@ -18,7 +18,7 @@ class UPing : Unicast {
 
 /// echo response
 class Pong : Unicast {
-    private import flow.core.data : data, field, array;
+    private import flow.core.data : data, field;
     
     mixin data;
 

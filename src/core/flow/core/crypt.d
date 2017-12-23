@@ -349,6 +349,7 @@ private ubyte[] decrypt(string title, string cipherFunc)(ref ubyte[] crypt, GenC
 kill others ctx by destructing it however
 multiple readers can use it concurrently */
 private class Cipher {
+    private import core.sync.rwmutex : ReadWriteMutex;
     private import core.thread;
     private import std.datetime.systime;
 
@@ -367,7 +368,7 @@ private class Cipher {
     }
 
     /// merged cipher data
-    ubyte[] data() @property {
+    @property ubyte[] data() {
         synchronized(this.lock.writer) {
             this.ensureGen();
             return this.gen.data;
@@ -443,6 +444,7 @@ private void free(RsaPubCtx ctx) {
 }
 
 private class Peer {
+    private import core.sync.rwmutex : ReadWriteMutex;
     private import core.thread;
     private import std.datetime.systime;
 
@@ -453,7 +455,7 @@ private class Peer {
     private string _crt;
 
     private RsaPubCtx[Thread] _ctx;
-    private RsaPubCtx ctx() @property {return this._ctx[Thread.getThis];}
+    private @property RsaPubCtx ctx() {return this._ctx[Thread.getThis];}
 
     /// lazy and per thread loading
     private void ensureCtx() {
@@ -497,15 +499,13 @@ private class Peer {
         this.outgoing = ciph;
     }
 
-    private void ensureOutgoing() @property {
+    private @property void ensureOutgoing() {
         import core.memory : GC;
-        synchronized(this.lock.reader)  {
+        synchronized(this.lock.writer)  {
             if(this.outgoing is null || this.outValidity < Clock.currTime) {
-                synchronized(this.lock.writer) {
-                    if(this.outgoing !is null)
-                        this.outgoing.dispose; GC.free(&this.outgoing);
-                    this.createOutgoing();
-                }
+                if(this.outgoing !is null)
+                    this.outgoing.dispose; GC.free(&this.outgoing);
+                this.createOutgoing();
             }
         }
     }
@@ -536,24 +536,27 @@ private class Peer {
     }
 
     bool check() {
+        this.ensureCtx();
+
         synchronized(this.lock.reader) {
-            this.ensureCtx();
             return false; // TODO check with authority
         }
     }
 
     /// verifies sig of data using peers certificate
     bool verify(ref ubyte[] data, ref ubyte[] sig) {
+        this.ensureCtx();
+
         synchronized(this.lock.reader) {
-            this.ensureCtx();
             return data.verify(sig, this.ctx.rsa);
         }
     }
 
     /// encrypts data via RSA for crt
     private ubyte[] encryptRsa(ref ubyte[] data) {
+        this.ensureCtx();
+
         synchronized(this.lock.reader) {
-            this.ensureCtx();
             return data.encryptRsa(this.ctx.rsa);
         }
     }
@@ -561,9 +564,10 @@ private class Peer {
     ubyte[] encrypt(ref ubyte[] data) {
         import flow.core.data.bin : pack;
         // binary rule: crypted cipher is packed, rest is data
+        this.ensureCtx();
+        this.ensureOutgoing();
+        
         synchronized(this.lock.reader) {
-            this.ensureCtx();
-            this.ensureOutgoing();
             auto crypt = this.outgoing.encrypt(data);
             return this.outCrypt.pack~crypt;
         }
@@ -594,12 +598,12 @@ private class Peer {
             due to rsa encryption of randoms this should be representative */
             auto id = sig[0..ulong.sizeof].unbin!long;
 
-            synchronized(this.lock.reader) {        
+            synchronized(this.lock.writer) {        
                 // if cipher id is known stay in reader mode and return cipher
                 if(id in this.incoming)
                     return this.incoming[id];
                 // otherwise switch to writer mode and create
-                else synchronized(this.lock.writer) {
+                else {
                     // clean what is expired (requires writer mode)
                     this.cleanInCiphers();
 
@@ -628,10 +632,10 @@ private class Peer {
         try {
             // binary rule: crypted cipher is packed, rest is data
             auto cc = crypt.unpack;
-            synchronized(this.lock.reader) {
-                this.ensureCtx();
-                auto ciph = this.addInCipher(cc);
-                
+            this.ensureCtx();
+            auto ciph = this.addInCipher(cc);
+
+            synchronized(this.lock.reader) {                
                 if(ciph !is null)
                     return ciph.decrypt(crypt);
                 else return crypt; // if there is no in cipher, it is assumed pkg is not encrypted;
@@ -661,6 +665,7 @@ private void cleanSSL() {
 }
 
 package final class Crypto {
+    private import core.sync.rwmutex : ReadWriteMutex;
     private import core.thread;
     private import core.time;
 
@@ -671,10 +676,10 @@ package final class Crypto {
     private string crt;
 
     private RsaPrivCtx[Thread] _ctx;
-    private RsaPrivCtx ctx() @property {return this._ctx[Thread.getThis];}
+    private @property RsaPrivCtx ctx() {return this._ctx[Thread.getThis];}
 
     /// lazy and per thread loading
-    private void ensureCtx() @property {
+    private @property void ensureCtx() {
         RsaPrivCtx ctx;
         /* as Cipher.ctx */
         if(Thread.getThis !in this._ctx) {
@@ -741,22 +746,20 @@ package final class Crypto {
 
     /// add peer
     void add(string p, string crt) {
-        synchronized(this.lock.reader)
+        synchronized(this.lock.writer)
             if(p !in this.peers)
-                synchronized(this.lock.writer)
-                    this.peers[p] = new Peer(this, crt, this.cipherValidity, this._check);
+                this.peers[p] = new Peer(this, crt, this.cipherValidity, this._check);
     }
 
     /// remove it again
     void remove(string p) {
         import core.memory : GC;
-        synchronized(this.lock.reader)
-            if(p in this.peers)            
-                synchronized(this.lock.writer) {
-                    auto peer = this.peers[p];
-                    peer.dispose; GC.free(&peer);
-                    this.peers.remove(p);
-                }
+        synchronized(this.lock.writer)
+            if(p in this.peers) {
+                auto peer = this.peers[p];
+                peer.dispose; GC.free(&peer);
+                this.peers.remove(p);
+            }
     }
 
     /// NOTE: unsupported yet
@@ -767,11 +770,11 @@ package final class Crypto {
 
     /** signs data using private key
     returns signature if there is a key else null */
-    ubyte[] sign(ref ubyte[] data) {  
-        synchronized(this.lock.reader) {
-            this.ensureCtx();
+    ubyte[] sign(ref ubyte[] data) {
+        this.ensureCtx();
+
+        synchronized(this.lock.reader)
             return data.sign(this.ctx.rsa, this.hash);
-        }
     }
 
     bool verify(ref ubyte[] data, ref ubyte[] sig, string src) {
@@ -780,31 +783,31 @@ package final class Crypto {
     }
 
     ubyte[] encryptRsa(ref ubyte[] data, string dst) {
-        synchronized(this.lock.reader) {
-            this.ensureCtx();
+        this.ensureCtx();
+
+        synchronized(this.lock.reader)
             return this.get(dst).encryptRsa(data);
-        }
     }
 
     ubyte[] decryptRsa(ref ubyte[] crypt) {
-        synchronized(this.lock.reader) {
-            this.ensureCtx();
+        this.ensureCtx();
+
+        synchronized(this.lock.reader)
             return crypt.decryptRsa(this.ctx.rsa);
-        }
     }
 
     ubyte[] encrypt(ref ubyte[] data, string dst) {
-        synchronized(this.lock.reader) {
-            this.ensureCtx();
+        this.ensureCtx();
+
+        synchronized(this.lock.reader)
             return this.get(dst).encrypt(data);
-        }
     }
 
     ubyte[] decrypt(ref ubyte[] crypt, string src) {
-        synchronized(this.lock.reader) {
-            this.ensureCtx();
+        this.ensureCtx();
+        
+        synchronized(this.lock.reader)
             return this.get(src).decrypt(crypt);
-        }
     }
 }
 

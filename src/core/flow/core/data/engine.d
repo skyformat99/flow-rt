@@ -3,6 +3,7 @@ module flow.core.data.engine;
 private import std.variant;
 private import std.range;
 private import std.traits;
+private import flow.core.data.mutex;
 private import flow.core.util;
 
 /// checks if data engine can handle a certain data type
@@ -50,7 +51,7 @@ template canHandle(T) {
 }
 
 /// returns the datatype string of data
-string fqn(Data d) {return d.dataType;}
+//string fqn(Data d) {return d.dataType;}
 
 /// describes the kind of data
 enum TypeDesc {

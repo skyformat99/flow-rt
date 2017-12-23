@@ -4,7 +4,7 @@ For this you'll need to create a D executable which is linked against lib/libflo
 
 This scenario tests the signal passing through a junction.
 
-[SOURCECODE](src/introduction.d)
+[SOURCECODE](src/introduction/main.d)
 
 ## Neccessary imports
 ```D
@@ -143,24 +143,24 @@ class MulticastSendingTestTick : Tick {
 /** stores triggering signal into aspect's information TestReceiptingAspect */
 class UnicastReceiptingTestTick : Tick {
     override void run() {
-        auto c = this.aspect!TestReceiptingAspect;
-        c.unicast = this.trigger.as!Unicast;
+        auto asp = this.aspect!TestReceiptingAspect;
+        asp.unicast = this.trigger.as!Unicast;
     }
 }
 
 /** ... */
 class AnycastReceiptingTestTick : Tick {
     override void run() {
-        auto c = this.aspect!TestReceiptingAspect;
-        c.anycast = this.trigger.as!Anycast;
+        auto asp = this.aspect!TestReceiptingAspect;
+        asp.anycast = this.trigger.as!Anycast;
     }
 }
 
 /** ... */
 class MulticastReceiptingTestTick : Tick {
     override void run() {
-        auto c = this.aspect!TestReceiptingAspect;
-        c.multicast = this.trigger.as!Multicast;
+        auto asp = this.aspect!TestReceiptingAspect;
+        asp.multicast = this.trigger.as!Multicast;
     }
 }
 ```
@@ -189,9 +189,9 @@ void main() {
 
     // defines domains for our spaces
     /// sender hosting space's domain
-    auto sDomain = "ss.test.inproc.ipc.flow";
+    auto sDomain = "ss.test.doc.flow";
     /// receiver hosting space's domain
-    auto rDomain = "rr.test.inproc.ipc.flow";
+    auto rDomain = "rr.test.doc.flow";
 
     /* defines an id for an in process
     junction spaces can use to communicate */
@@ -258,15 +258,15 @@ void main() {
     auto nrsm = rSpc.snap();
 
     // checks if all got their testsignal
-    auto rCtx = nrsm.entities[0].aspects[0].as!TestReceiptingAspect;
-    assert(rCtx.unicast !is null, "didn't get test unicast");
-    assert(rCtx.anycast !is null, "didn't get test anycast");
-    assert(rCtx.multicast !is null, "didn't get test multicast");
+    auto rAsp = nrsm.entities[0].aspects[0].as!TestReceiptingAspect;
+    assert(rAsp.unicast !is null, "didn't get test unicast");
+    assert(rAsp.anycast !is null, "didn't get test anycast");
+    assert(rAsp.multicast !is null, "didn't get test multicast");
 
     // checks if all got a confirmation for their testsignal
-    auto sCtx = nssm.entities[0].aspects[0].as!TestSendingAspect;
-    assert(sCtx.unicast, "didn't confirm test unicast");
-    assert(sCtx.anycast, "didn't confirm test anycast");
-    assert(sCtx.as!TestSendingAspect.multicast, "didn't confirm test multicast");
+    auto sAsp = nssm.entities[0].aspects[0].as!TestSendingAspect;
+    assert(sAsp.unicast, "didn't confirm test unicast");
+    assert(sAsp.anycast, "didn't confirm test anycast");
+    assert(sAsp.as!TestSendingAspect.multicast, "didn't confirm test multicast");
 }
 ```

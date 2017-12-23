@@ -1,7 +1,6 @@
 module flow.core.util.state;
 
 private import flow.core.util.error;
-private import flow.core.util.mutex;
 version(unittest) private static import test = flow.core.util.test;
 private import std.traits;
 
@@ -13,25 +12,26 @@ class StateRefusedException : FlowException {mixin exception;}
 
 /// state machine mixin template
 abstract class StateMachine(T) if (isScalarType!T) {
+    private import core.sync.rwmutex : ReadWriteMutex;
+
     private ReadWriteMutex _lock;
     protected @property ReadWriteMutex lock(){return this._lock;}
     private T _state;
 
     /// actual state
     @property T state() {
-        synchronized(this.lock.reader)
-            // no lock required since primitives are synced by D
-            return this._state;
+        // no lock required since primitives are synced by D
+        return this._state;
     }
 
     protected @property void state(T value) {
         auto allowed = false;
         T oldState;
         Exception error;
-        synchronized(this.lock.reader) {
+        synchronized(this.lock.writer) {
             if(this._state == value)
                 return; // already in state, do nothing
-            else synchronized(this.lock.writer) {
+            else {
                 try {
                     allowed = this.onStateChanging(this._state, value);
                 } catch(Exception exc) {
@@ -42,12 +42,12 @@ abstract class StateMachine(T) if (isScalarType!T) {
                     oldState = this._state;
                     this._state = value;
                 }
-            }
         
-            if(allowed)
-                this.onStateChanged(oldState, this._state);
-            else
-                throw new StateRefusedException(string.init, null, [error]);
+                if(allowed)
+                    this.onStateChanged(oldState, this._state);
+                else
+                    throw new StateRefusedException(string.init, null, [error]);
+            }
         }
     }
 

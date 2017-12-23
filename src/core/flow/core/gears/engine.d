@@ -7,7 +7,7 @@ private import std.uuid;
 
 // https://d.godbolt.org/
 
-private enum SystemState {
+enum SystemState {
     Frozen,
     Ticking
 }
@@ -20,9 +20,8 @@ abstract class Tick {
 
     private TickMeta meta;
     private Entity entity;
-    private EntityController control;
-    private Ticker ticker;
-    private long time;
+    
+    private Job job;
 
     private Throwable thr;
 
@@ -30,6 +29,7 @@ abstract class Tick {
     protected @property Signal trigger() {return this.meta.trigger !is null ? this.meta.trigger.clone : null;}
     protected @property TickInfo previous() {return this.meta.previous !is null ? this.meta.previous.clone : null;}
     protected @property Data data() {return this.meta.data;}
+    protected @property size_t count() {return this.meta.control ? this.entity.count : size_t.init;}
 
     /** context of hosting entity
     warning you have to sync it as reader when accessing it reading
@@ -49,75 +49,112 @@ abstract class Tick {
     void error(Throwable thr) {
         throw thr;
     }
-    
-    /// set next tick in causal string
-    protected bool next(string tick, Data data = null) {
-        return this.next(tick, Duration.init, data);
+
+    /// execute tick meant to be called by processor
+    private void exec() {
+        import std.datetime.systime : Clock;
+
+        // registering an execution on entity
+        this.entity.execLock.reader.lock();
+        this.entity.count++;
+
+        // run tick
+        Log.msg(LL.FDebug, this.logPrefix~"running tick", this.meta);
+        this.run();
+        Log.msg(LL.FDebug, this.logPrefix~"finished tick", this.meta);
+        
+        // if everything was successful cleanup and process next
+        this.meta.time = Clock.currStdTime;
+        this.entity.put(this);
+
+        // deregistering
+        this.entity.execLock.reader.unlock();
     }
 
-    /// set next tick in causal string with delay
-    protected bool next(string tick, SysTime schedule, Data data = null) {
+    private void catchError(Throwable thr) {
+        Log.msg(LL.Info, this.logPrefix~"handling error", thr, this.meta);
+
+        this.thr = thr;
+
+        this.job = Job(&this.runError, &this.fatal);
+        this.entity.space.proc.run(&this.job);
+    }
+
+    private void runError() {
+        import std.datetime.systime : Clock;
+        this.error(this.thr);
+
+        Log.msg(LL.FDebug, this.logPrefix~"finished handling error", this.meta);
+
+        // if everything was successful cleanup
+        this.meta.time = Clock.currStdTime;
+        this.entity.put(this);
+
+        // deregistering
+        this.entity.execLock.reader.unlock();
+    }
+
+    private void fatal(Throwable thr) {
+        import std.datetime.systime : Clock;
+        this.thr = thr;
+
+        // if even handling exception failes notify that an error occured
+        Log.msg(LL.Error, this.logPrefix~"handling error failed", thr);
+        
+        this.entity.damage(thr); // BOOM BOOM BOOM
+
+        this.meta.time = Clock.currStdTime; // set endtime for informing pool
+        this.entity.put(this);
+
+        // deregistering
+        this.entity.execLock.reader.unlock();
+    }
+    
+    /// invoke tick
+    protected bool invoke(string tick, Data data = null) {
+        return this.invoke(tick, Duration.init, data);
+    }
+
+    /// invoke tick with delay
+    protected bool invoke(string tick, SysTime schedule, Data data = null) {
         import std.datetime.systime : Clock;
 
         auto delay = schedule - Clock.currTime;
 
         if(delay.total!"hnsecs" > 0)
-            return this.next(tick, delay, data);
+            return this.invoke(tick, delay, data);
         else
-            return this.next(tick, data);
+            return this.invoke(tick, data);
     }
 
-    /// set next tick in causal string with delay
-    protected bool next(string tick, Duration delay, Data data = null) {
+    /// invoke tick with delay
+    protected bool invoke(string tick, Duration delay, Data data = null) {
         import flow.core.gears.error : TickException;
         import std.datetime.systime : Clock;
 
         auto stdTime = Clock.currStdTime;
-        if(this.meta.control || tick != fqn!FreezeTick) {
-            auto t = this.entity.pop(this.entity.meta.createTickMeta(tick, this.meta.info.group));
+        if(this.meta.control || (tick != fqn!EntityFreezeTick && tick != fqn!EntityStoreTick)) {
+            auto m = tick.createTickMeta(this.meta.info.group);
 
-            if(t !is null) {
-                // if this tick has control, pass it
-                if(this.meta.control) {
-                    t.meta.control = true;
-                    t.control = this.control;
-                }
-
-                // TODO max delay??????
-                t.time = stdTime + delay.total!"hnsecs";
-                t.ticker = this.ticker;
-                t.meta.trigger = this.meta.trigger;
-                t.meta.previous = this.meta.info;
-                t.meta.data = data;
-
-                if(t.checkAccept) {
-                    this.ticker.next = t;
-                    return true;
-                } else return false;
-            } else return false;
-        } else throw new TickException("tick is not in control");
-    }
-
-    /** fork causal string by starting a new ticker
-    given data will be deep cloned, since tick data has not to be synced */
-    protected bool fork(string tick, Data data = null) {
-        import flow.core.gears.error : TickException;
-
-        auto t = this.entity.pop(this.ticker.entity.meta.createTickMeta(tick, this.meta.info.group));
-
-        if(this.meta.control || tick != fqn!FreezeTick) {
             // if this tick has control, pass it
-            if(this.meta.control) {
-                t.meta.control = true;
-                t.control = this.control;
+            if(this.meta.control)
+                m.control = true;
+
+            m.time = stdTime + delay.total!"hnsecs";
+            m.trigger = this.meta.trigger;
+            m.previous = this.meta.info;
+            m.data = data;
+
+            bool a; { // check if there exists a tick for given meta and if it accepts the request
+                auto t = this.entity.pop(m);
+                scope(exit)
+                    this.entity.put(t);
+                a = t !is null && t.accept;
             }
 
-            if(t !is null) {
-                t.ticker = this.ticker;
-                t.meta.trigger = this.meta.trigger;
-                t.meta.previous = this.meta.info;
-                t.meta.data = data;
-                return this.ticker.entity.start(t);
+            if(a) {
+                this.entity.invoke(m);
+                return true;
             } else return false;
         } else throw new TickException("tick is not in control");
     }
@@ -126,11 +163,9 @@ abstract class Tick {
     protected EntityController get(EntityPtr entity) {
         import flow.core.gears.error : TickException;
 
-        if(this.meta.control) {
-            if(entity.space != this.entity.space.meta.id)
-                throw new TickException("an entity not belonging to own space cannot be controlled");
-            else return this.get(entity.id);
-        } else throw new TickException("tick is not in control");
+        if(entity.space != this.entity.space.meta.id)
+            throw new TickException("an entity not belonging to own space cannot be controlled");
+        else return this.get(entity.id);
     }
 
     private EntityController get(string e) {
@@ -138,7 +173,7 @@ abstract class Tick {
 
         if(this.meta.control) {
             if(this.entity.meta.ptr.id == e)
-                throw new TickException("entity cannot controll itself");
+                throw new TickException("entity cannot controll itself using a controller only using system ticks");
             else return this.entity.space.get(e);
         } else throw new TickException("tick is not in control");
     }
@@ -174,7 +209,7 @@ abstract class Tick {
         } else throw new TickException("tick is not in control");
     }
 
-    /// registers a receptor for signal which runs a tick
+    /// registers a receptor for signal which invokes a tick
     protected void register(string signal, string tick) {
         import flow.core.gears.error : TickException;
         import flow.core.data : createData;
@@ -186,7 +221,7 @@ abstract class Tick {
         this.entity.register(signal, tick);
     }
 
-    /// deregisters an receptor for signal running tick
+    /// deregisters an receptor for signal invoking tick
     protected void deregister(string signal, string tick) {
         this.entity.deregister(signal, tick);
     }
@@ -249,37 +284,22 @@ abstract class Tick {
     }
 }
 
-class FreezeTick : Tick {}
+final class EntityFreezeTick : Tick {}
+final class EntityStoreTick : Tick {}
 
-private bool checkAccept(Tick t) {
-    try {
-        return t.accept();
-    } catch(Throwable thr) {
-        Log.msg(LL.Error, t.logPrefix~"accept failed", thr);
-    }
-    
-    return false;
-}
-
-/// gets the prefix string of ticks, ticker and junctions for logging
+/// gets the prefix string of ticks for logging
 string logPrefix(Tick t) {
     import std.conv : to;
     return "tick@entity("~t.entity.meta.ptr.addr~"): ";
 }
 
-/// gets the prefix string of ticks, ticker and junctions for logging
-string logPrefix(Ticker t) {
-    import std.conv : to;
-    return "ticker@entity("~t.entity.meta.ptr.addr~"): ";
-}
-
-/// gets the prefix string of ticks, ticker and junctions for logging
+/// gets the prefix string of junctions for logging
 string logPrefix(Junction t) {
     import std.conv : to;
     return "junction("~t.meta.info.id.to!string~"): ";
 }
 
-private TickMeta createTickMeta(EntityMeta entity, string type, UUID group = randomUUID) {
+private TickMeta createTickMeta(string type, UUID group = randomUUID) {
     import flow.core.gears.data : TickMeta, TickInfo;
     import std.uuid : randomUUID;
 
@@ -287,65 +307,190 @@ private TickMeta createTickMeta(EntityMeta entity, string type, UUID group = ran
     m.info = new TickInfo;
     m.info.id = randomUUID;
     m.info.type = type;
-    m.info.entity = entity.ptr.clone;
     m.info.group = group;
 
     return m;
 }
 
-/// executes an entity centric string of discrete causality
-private class Ticker : StateMachine!SystemState {
-    bool sync;
+/// hosts an entity construct
+private class Entity : StateMachine!SystemState {
+    private import core.sync.mutex : Mutex;
+    private import core.sync.rwmutex : ReadWriteMutex;
+    private import flow.core.data;
     
-    UUID id;
-    Entity entity;
-    Tick actual;
-    Job job;
-    Tick next;
-    Throwable thr;
+    Mutex _poolLock;
+    Tick[][string] _pool;
+    size_t count;
 
-    private this(Entity b) {
-        this.id = randomUUID;
-        this.entity = b;
+    ReadWriteMutex execLock; // counting tick executions
+    ReadWriteMutex opLock; // counting async operations
+     
+    Space space;
+    EntityMeta meta;
+    EntityController control;
 
+    Data[][TypeInfo] aspects;
+
+    this(Space s, EntityMeta m) {
         super();
+
+        this.execLock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
+        this.opLock = new ReadWriteMutex(ReadWriteMutex.Policy.PREFER_WRITERS);
+
+        this._poolLock = new Mutex;
+        m.ptr.space = s.meta.id;
+        this.meta = m;
+        this.space = s;
+
+        foreach(ref c; m.aspects)
+            this.aspects[typeid(c)] ~= c;
+
+        this.control = new EntityController(this);
     }
 
-    this(Entity b, Tick initial) {
-        this(b);
-        this.next = initial;
-        this.next.ticker = this;
+    Tick pop(TickMeta m) {
+        import core.time : seconds;
+        import std.datetime.systime : Clock;
+        import std.range : empty, front, popFront;
+        if(m !is null && m.info !is null) {
+            synchronized(this._poolLock) {
+                Tick t;
+                if(m.info.type in this._pool
+                && !this._pool[m.info.type].empty) { // clean up and then take first
+                    while(_pool[m.info.type].length > 1
+                    && _pool[m.info.type].front.meta.time + 1.seconds.total!"hnsecs" < Clock.currStdTime) {
+                        this._pool[m.info.type].front.dispose();
+                        this._pool[m.info.type].popFront;
+                    }
+                    
+                    t = this._pool[m.info.type].front;
+                    this._pool[m.info.type].popFront;
+                } else { // create one which is added when released
+                    t = Object.factory(m.info.type).as!Tick;
+                    t.entity = this;
+                }
+                
+                if(t !is null) {
+                    t.meta = m;
+                    t.meta.info.entity = this.meta.ptr.clone;
+
+                    return t;
+                }
+            }
+        }
+        
+        return null;
+    }
+
+    void put(Tick t) {
+        synchronized(this._poolLock) {
+            if(t.meta.info.type !in this._pool)
+                this._pool[t.meta.info.type] = (Tick[]).init;
+            
+            this._pool[t.meta.info.type] ~= t;
+        }
+    }
+
+    private void invoke(TickMeta next) {
+        import std.parallelism : taskPool, task;
+
+        this.opLock.reader.lock();
+        taskPool.put(task((TickMeta nm){
+            scope(exit) 
+                this.opLock.reader.unlock();
+            
+            synchronized(this.lock.reader) { 
+                if(this.state == SystemState.Ticking) {
+                    // create a new tick of given type or notify failing and stop
+                    switch(nm.info.type) {
+                        case fqn!EntityFreezeTick:
+                            auto control = nm.control;
+                            if(control)
+                                this.freezeAsync(); // async for avoiding deadlock
+                            break;
+                        case fqn!EntityStoreTick:
+                            auto control = nm.control;
+                            if(control)
+                                this.storeAsync(); // async for avoiding deadlock
+                            break;
+                        default:
+                            auto n = this.pop(nm);
+                            n.job = Job(&n.exec, &n.catchError, nm.time);
+                            this.space.proc.run(&n.job);
+                            break;
+                    }
+                } else {
+                    this.meta.ticks ~= nm;
+                }
+            }
+        }, next));
     }
 
     void dispose() {
+        import core.thread : Thread;
+        import core.time : msecs;
+
         if(this.state == SystemState.Ticking)
             this.freeze();
 
-        if(!this.sync)
-            this.detach();
-
-        this.destroy;
+        // waiting for all internal operations to finish
+        synchronized(this.opLock.writer)        
+            this.destroy;
     }
 
-    /// starts ticking
-    void tick(bool sync = false) {
-        this.sync = sync;
-        this.state = SystemState.Ticking;
+    /// makes entity tick
+    void tick() {
+        if(this.state != SystemState.Ticking)
+            this.state = SystemState.Ticking;
     }
 
-    void join() {
-        import core.thread : Thread, msecs; // core.thread aliases msecs
-        while(this.state == SystemState.Ticking)
-            Thread.sleep(5.msecs);
-    }
-
+    /// meakes entity freeze
     void freeze() {
-        this.state = SystemState.Frozen;
+        if(this.state != SystemState.Frozen)
+            this.state = SystemState.Frozen;
     }
 
-    /// causes entity to dispose ticker
-    void detach() {
-        this.entity.detach(this);
+    void freezeAsync() {
+        import std.parallelism : taskPool, task;
+
+        this.opLock.reader.lock();
+        taskPool.put(task((){
+            scope(exit)
+                this.opLock.reader.unlock();
+            this.freeze();
+
+        }));
+    }
+
+    // stores actual entity meta to disk
+    void store() {
+        import std.file : mkdirRecurse, write;
+        import std.path : expandTilde, buildPath;
+        import std.process : environment;
+        bool wasFrozen;
+        if(this.state != SystemState.Frozen) { // freeze if necessary
+            this.freeze();
+            wasFrozen = false;
+        } else wasFrozen = true;
+
+        auto t = this.target;
+        t.mkdirRecurse;
+        t = t.buildPath(this.meta.ptr.id);
+        t.write(this.meta.bin);
+
+        if(!wasFrozen) // bring up if neccessary
+            this.tick();
+    }
+
+    void storeAsync() {
+        import std.parallelism : taskPool, task;
+
+        this.opLock.reader.lock();
+        taskPool.put(task((){
+            scope(exit)
+                this.opLock.reader.unlock();
+            this.store();
+        }));
     }
 
     override protected bool onStateChanging(SystemState o, SystemState n) {
@@ -359,303 +504,13 @@ private class Ticker : StateMachine!SystemState {
     }
 
     override protected void onStateChanged(SystemState o, SystemState n) {
-        import core.thread : Thread, msecs; // core.thread aliases msecs
-        switch(n) {
-            case SystemState.Ticking:
-                this.process();
-                break;
-            case SystemState.Frozen:
-                // wait for executing tick to end if there is one
-                while(this.actual !is null)
-                    Thread.sleep(5.msecs);
-                break;
-            default:
-                break;
-        }
-    }
-
-    /// run next tick if possible, is usually called by a processor who calls tick.exec
-    private void process() {        
-        // if in ticking state try to run created tick or notify wha nothing happens
-        if(this.state == SystemState.Ticking) {
-            if(this.next !is null) {
-                    // create a new tick of given type or notify failing and stop
-                    if(this.next !is null) {
-                        switch(this.next.meta.info.type) {
-                            case fqn!FreezeTick:
-                                this.freeze();
-                                if(this.next.meta.control)
-                                    this.entity.freeze();
-                                break;
-                            default:
-                                // check if entity is still running after getting the sync
-                                this.actual = this.next;
-                                this.next = null;
-
-                                this.job = Job(&this.run, &this.error, this.actual.time);
-                                this.entity.space.proc.run(&this.job);
-                        }
-                    } else {
-                        Log.msg(LL.Error, this.logPrefix~"could not run tick -> ending", this.actual.meta);
-                        this.freeze(); // now it has to be frozen
-                    }
-            } else {
-                Log.msg(LL.FDebug, this.logPrefix~"nothing to do, ticker is ending");
-                this.freeze(); // now it has to be frozen
-            }
-        } else {
-            Log.msg(LL.FDebug, this.logPrefix~"ticker is not ticking");
-        }
-    }
-
-    /// execute tick meant to be called by processor
-    private void run() {
-        import core.memory : GC;
-        import std.datetime.systime : Clock;
-        // run tick
-        Log.msg(LL.FDebug, this.logPrefix~"running tick", this.actual.meta);
-        this.actual.run();
-        Log.msg(LL.FDebug, this.logPrefix~"finished tick", this.actual.meta);
-        
-        // if everything was successful cleanup and process next
-        this.actual.time = Clock.currStdTime;
-        this.entity.put(this.actual); this.actual = null;
-        this.process();
-    }
-
-    private void error(Throwable thr) {
-        Log.msg(LL.Info, this.logPrefix~"handling error", thr, this.actual.meta);
-
-        this.thr = thr;
-
-        this.job = Job(&this.runError, &this.fatal);
-        this.entity.space.proc.run(&this.job);
-    }
-
-    private void runError() {
-        import core.memory : GC;
-        import std.datetime.systime : Clock;
-        this.actual.error(this.thr);
-
-        Log.msg(LL.FDebug, this.logPrefix~"finished handling error", this.actual.meta);
-
-        // if everything was successful cleanup and process next
-        this.actual.time = Clock.currStdTime;
-        this.entity.put(this.actual); this.actual = null;
-        this.process();
-    }
-
-    private void fatal(Throwable thr) {
-        import core.memory : GC;
-        import std.datetime.systime : Clock;
-        this.thr = thr;
-
-        // if even handling exception failes notify that an error occured
-        Log.msg(LL.Error, this.logPrefix~"handling error failed", thr);
-        
-        this.actual.time = Clock.currStdTime; // set endtime for informing pool
-        this.entity.put(this.actual); this.actual = null;
-
-        // BOOM BOOM BOOM
-        if(this.sync) {
-            if(this.state == SystemState.Ticking)
-                this.freeze();
-        } else this.entity.damage(thr);
-    }
-}
-
-/// hosts an entity construct
-private class Entity : StateMachine!SystemState {private import core.sync.mutex;    
-    import core.sync.mutex : Mutex;
-    import flow.core.data;
-    
-    Mutex _poolLock;
-    Tick[][string] _pool;
-    size_t activity;
-     
-    Space space;
-    EntityMeta meta;
-    EntityController control;
-
-    Ticker[UUID] ticker;
-
-    Data[][TypeInfo] aspects;
-
-    this(Space s, EntityMeta m) {
-        this._poolLock = new Mutex;
-        m.ptr.space = s.meta.id;
-        this.meta = m;
-        this.space = s;
-
-        foreach(ref c; m.aspects)
-            this.aspects[typeid(c)] ~= c;
-
-        this.control = new EntityController(this);
-
-        super();
-    }
-
-    Tick pop(TickMeta m) {
-        import core.time : seconds;
-        import std.datetime.systime : Clock;
-        import std.range : empty, front, popFront;
-        if(m !is null && m.info !is null) {
-            synchronized(this._poolLock) {
-                Tick t;
-                if(m.info.type in this._pool
-                && !this._pool[m.info.type].empty) { // clean up and then take first
-                    while(_pool[m.info.type].length > 1
-                    && _pool[m.info.type].front.time + 1.seconds.total!"hnsecs" < Clock.currStdTime)
-                        this._pool[m.info.type].popFront;
-                    
-                    t = this._pool[m.info.type].front;
-                    this._pool[m.info.type].popFront;
-                } else { // create one which is added when released
-                    t = Object.factory(m.info.type).as!Tick;
-                    t.entity = this;
-                }
-                
-                if(t !is null) {
-                    t.meta = m;
-                    if(m.control) t.control = this.control;
-                }
-
-                this.activity++; // someone pops, increase activity counter
-                return t;
-            }
-        } else return null;
-    }
-
-    void put(Tick t) {
-        synchronized(this._poolLock) {
-            if(t.meta.info.type !in this._pool)
-                this._pool[t.meta.info.type] = (Tick[]).init;
-            
-            this._pool[t.meta.info.type] ~= t;
-        }
-    }
-
-    void dispose() {
-        if(this.state == SystemState.Ticking)
-            this.freeze();
-        
-        this.destroy;
-    }
-
-    /// disposes a ticker
-    void detach(Ticker t) {
-        import core.memory : GC;
-        synchronized(this.lock.writer) {
-            if(t.next !is null)
-                synchronized(this.meta.writer)
-                    this.meta.ticks ~= t.next.meta;
-            this.ticker.remove(t.id);
-        }
-        t.dispose; GC.free(&t);
-    }
-
-    /// makes entity tick
-    void tick() {
-        this.state = SystemState.Ticking;
-    }
-
-    /// meakes entity freeze
-    void freeze() {
-        this.state = SystemState.Frozen;
-    }
-
-    override protected bool onStateChanging(SystemState o, SystemState n) {
-        switch(n) {
-            case SystemState.Ticking:
-                return o == SystemState.Frozen && this.canGoTicking;
-            case SystemState.Frozen:
-                return o == SystemState.Ticking && this.canGoFreezing;
-            default: return false;
-        }
-    }
-
-    private bool canGoTicking() {
-        import core.memory : GC;
-        import std.algorithm.iteration;
-
-        synchronized(this.meta.reader) {
-            // running OnTicking ticks
-            foreach(e; this.meta.events.filter!(e => e.type == EventType.OnTicking)) {
-                auto t = this.pop(this.meta.createTickMeta(e.tick));
-
-                // if its meant to get control, give it
-                if(e.control) {
-                    t.meta.control = true;
-                    t.control = this.control;
-                }
-
-                if(t.checkAccept) {
-                    auto ticker = new Ticker(this, t);
-                    ticker.tick(true);
-                    ticker.join();
-                    auto thr = ticker.thr;
-                    ticker.dispose; GC.free(&ticker);
-
-                    if(thr !is null) {
-                        // damages entity and falls back negativ
-                        this.meta.damages ~= thr.damage;
-                        return false;
-                    }
-                }
-            }
-        }
-
-        return true;
-    }
-
-    private bool canGoFreezing() {
-        import core.memory : GC;
-        import std.algorithm.iteration;
-
-        synchronized(this.meta.reader) {
-            // running onFreezing ticks
-            foreach(e; this.meta.events.filter!(e => e.type == EventType.OnFreezing)) {
-                auto t = this.pop(this.meta.createTickMeta(e.tick));
-
-                // if its meant to get control, give it
-                if(e.control) {
-                    t.meta.control = true;
-                    t.control = this.control;
-                }
-
-                if(t.checkAccept) {
-                    auto ticker = new Ticker(this, t);
-                    ticker.tick(true);
-                    ticker.join();
-                    auto thr = ticker.thr;
-                    ticker.dispose; GC.free(&ticker);
-
-                    if(thr !is null) {
-                        // doesn't avoid freezing nor further execution of on freezing ticks
-                        this.meta.damages ~= thr.damage;
-                    }
-                }
-            }
-        }
-
-        // stopping and destroying all ticker and freeze next ticks
-        foreach(t; this.ticker.values.dup) {
-            import core.memory : GC;
-            t.sync = true; // first switch it to sync mode
-            t.freeze();
-            if(t.next !is null)
-                this.meta.ticks ~= t.next.meta;
-            this.ticker.remove(t.id);
-            t.dispose; GC.free(&t);
-        }
-
-        return true;
-    }
-
-    override protected void onStateChanged(SystemState o, SystemState n) {
         switch(n) {
             case SystemState.Ticking:
                 this.onTicking();
+                break;
+            case SystemState.Frozen:
+                if(this.meta !is null)
+                    this.onFrozen();
                 break;
             default:
                 break;
@@ -665,31 +520,93 @@ private class Entity : StateMachine!SystemState {private import core.sync.mutex;
     private void onTicking() {
         import std.algorithm.iteration;
 
-        // creating and starting ticker for all frozen ticks
-        foreach(t; this.meta.ticks) {
-            auto ticker = new Ticker(this, this.pop(t));
-            this.ticker[ticker.id] = ticker;
-            ticker.tick();
+        synchronized(this.meta.writer) {
+            // invoking OnTicking ticks
+            foreach(e; this.meta.events.filter!(e => e.type == EventType.OnTicking)) {
+                auto t = this.pop(e.tick.createTickMeta());
+
+                // if its meant to get control, give it
+                if(e.control)
+                    t.meta.control = true;
+
+                if(t.accept) {
+                    t.job = Job(&t.exec, &t.catchError, t.meta.time);
+                    this.space.proc.run(&t.job);
+                }
+            }       
+
+            // creating and starting all frozen ticks
+            foreach(tm; this.meta.ticks) {
+                auto t = this.pop(tm);
+                t.job = Job(&t.exec, &t.catchError, t.meta.time);
+                this.space.proc.run(&t.job);
+            }
+
+            // all frozen ticks are ticking -> empty store
+            this.meta.ticks = TickMeta[].init;
+        }
+    }
+
+    private void onFrozen() {
+        import core.memory : GC;
+        import core.thread : Thread;
+        import core.time : msecs;
+        import std.algorithm.iteration : filter;
+        import std.range : empty;
+
+        synchronized(this.meta.writer) {
+            // invoking OnFreezing ticks
+            foreach(e; this.meta.events.filter!(e => e.type == EventType.OnFreezing)) {
+                auto t = this.pop(e.tick.createTickMeta());
+
+                // if its meant to get control, give it
+                if(e.control)
+                    t.meta.control = true;
+
+                if(t.accept) {
+                    t.job = Job(&t.exec, &t.catchError, t.meta.time);
+                    this.space.proc.run(&t.job);
+                }
+            } 
         }
 
-        // all frozen ticks are ticking -> empty store
-        this.meta.ticks = TickMeta[].init;
+        // waiting for all ticks to finish
+        synchronized(this.execLock.writer) {}
+    }
+
+    @property string target() {
+        import std.file : exists;
+        import std.path : expandTilde, buildPath;
+
+        string t;
+        version(Posix) {
+            auto varT = "/var/lib/flow";
+            t = (varT.exists
+                ? varT
+                : t = "~/.local/share/flow")
+                .expandTilde;
+        }
+        version(Windows) {
+            t = environment.get("APPDATA");
+        }
+        t = t.buildPath(this.space.meta.id);
+
+        return t;
     }
 
     void damage(Throwable thr) {
-        // entity cannot operate in damaged state
-        this.freeze();
-
         synchronized(this.meta.writer)
             this.meta.damages ~= thr.damage;
+
+        // entity cannot operate in damaged state
+        this.freezeAsync(); // async for avoiding deadlock
     }
 
     /// adds data to context and returns its typed index
     size_t add(Data d) {
         import std.algorithm.searching;
-        if(d !is null) synchronized(this.meta.reader)
-            if(!this.meta.aspects.any!((x)=>x is d))
-                synchronized(this.meta.writer){
+        if(d !is null) synchronized(this.meta.writer)
+            if(!this.meta.aspects.any!((x)=>x is d)) {
                     this.meta.aspects ~= d;
                     this.aspects[typeid(d)] ~= d;
                     foreach_reverse(i, c; this.aspects[typeid(d)])
@@ -703,9 +620,8 @@ private class Entity : StateMachine!SystemState {private import core.sync.mutex;
     void remove(Data d) {
         import std.algorithm.searching;
         import std.algorithm.mutation;
-        if(d !is null) synchronized(this.meta.reader)
-            if(this.meta.aspects.any!((x)=>x is d))
-                synchronized(this.meta.writer) {
+        if(d !is null) synchronized(this.meta.writer)
+            if(this.meta.aspects.any!((x)=>x is d)) {
                     // removing it from context cache
                     TypeInfo ft = typeid(d);
                     if(ft in this.aspects)
@@ -794,65 +710,47 @@ private class Entity : StateMachine!SystemState {private import core.sync.mutex;
     /// receipts a signal
     bool receipt(Signal s) {
         auto ret = false;
-        Tick[] ticks;
+        TickMeta[] ticks;
         synchronized(this.meta.reader) {
             // looping all registered receptors
             foreach(r; this.meta.receptors) {
                 if(s.dataType == r.signal) {
                     // creating given tick
-                    auto t = this.pop(this.meta.createTickMeta(r.tick, s.group));
+                    auto tm = r.tick.createTickMeta(s.group);
+                    bool a; { // check if there exists a tick for given meta and if it accepts the request
+                        auto t = this.pop(tm);
+                        scope(exit)
+                            this.put(t);
+                        a = t !is null && t.accept;
+                    }
 
-                    // if its meant to get control, give it
-                    if(r.control) {
-                        t.meta.control = true;
-                        t.control = this.control;
-                }
-                    t.meta.trigger = s;
-                    ticks ~= t;
+                    if(a) {
+                        // if its meant to get control, give it
+                        if(r.control)
+                            tm.control = true;
+                            
+                        tm.trigger = s;
+                        ticks ~= tm;
+                    }
                 }
             }
         }
 
-        foreach(t; ticks)
-            ret = this.start(t) || ret;
+        foreach(tm; ticks) {
+            this.invoke(tm);
+            ret = true;
+        }
         
         return ret;
-    }
-
-    /// starts a ticker
-    bool start(Tick t) {
-        t.meta.info.entity = this.meta.ptr.clone; // ensuring tick belongs to us
-
-        auto accepted = t.checkAccept;
-        
-        synchronized(this.lock.reader) {
-            if(accepted) {
-                if(this.state == SystemState.Ticking) {
-                    synchronized(this.lock.reader) {
-                        auto ticker = new Ticker(this, t);
-                        this.ticker[ticker.id] = ticker;
-                        ticker.tick();
-                    }
-                } else {
-                    synchronized(this.meta.writer)
-                        this.meta.ticks ~= t.meta;
-                }   
-                return true;
-            }
-        }
-
-        return false;
     }
 
     /// send an unicast signal into own space
     bool send(Unicast s) {
         import flow.core.gears.error : EntityException;
 
-        this.ensureState(SystemState.Ticking);
-
         synchronized(this.meta.reader) {
             if(s.dst == this.meta.ptr)
-                new EntityException("entity cannot send signals to itself, use next or fork");
+                new EntityException("entity cannot send signals to itself, just invoke a tick");
 
             // ensure correct source entity pointer
             s.src = this.meta.ptr;
@@ -863,8 +761,6 @@ private class Entity : StateMachine!SystemState {private import core.sync.mutex;
 
     /// send an anycast signal into own space
     bool send(Anycast s) {
-        this.ensureState(SystemState.Ticking);
-
         synchronized(this.meta.reader)
             // ensure correct source entity pointer
             s.src = this.meta.ptr;
@@ -874,8 +770,6 @@ private class Entity : StateMachine!SystemState {private import core.sync.mutex;
 
     /// send an multicast signal into own space
     bool send(Multicast s) {
-        this.ensureState(SystemState.Ticking);
-
         synchronized(this.meta.reader)
             // ensure correct source entity pointer
             s.src = this.meta.ptr;
@@ -919,19 +813,22 @@ class EntityController {
     private Entity _entity;
 
     /// deep clone of entity pointer of controlled entity
-    EntityPtr entity() @property {return this._entity.meta.ptr.clone;}
+    @property EntityPtr entity() {return this._entity.meta.ptr.clone;}
 
     /// state of entity
-    SystemState state() @property {return this._entity.state;}
+    @property SystemState state() {return this._entity.state;}
 
-    /// activity counter of entity
-    size_t activity() @property {return this._entity.activity;}
+    /// tick counter of entity
+    @property size_t count() {return this._entity.count;}
+
+    /// target path for entity storing
+    @property string target() {return this._entity.target;}
 
     /// deep clone of entity context
-    Data[] aspects() @property {return this._entity.meta.aspects;}
+    @property Data[] aspects() {return this._entity.meta.aspects;}
 
     /// deep clone of entity context
-    Damage[] damages() @property {return this._entity.meta.damages;}
+    @property Damage[] damages() {return this._entity.meta.damages;}
 
     private this(Entity e) {
         this._entity = e;
@@ -1207,9 +1104,8 @@ abstract class Junction : StateMachine!JunctionState {
     private bool ship(Unicast s) {
         synchronized(this.lock.reader) {
             auto c = this.get(s.dst.space);
-            if(c !is null) {
+            if(c !is null)
                 return this.push(s, c);
-            }
         }
 
         return false;
@@ -1351,36 +1247,31 @@ class Space : StateMachine!SystemState {
 
     /// makes space and all of its content freezing
     void freeze() {
-        this.state = SystemState.Frozen;
+        if(this.state != SystemState.Frozen)
+            this.state = SystemState.Frozen;
     }
 
     /// makes space and all of its content ticking
     void tick() {
-        this.state = SystemState.Ticking;
+        if(this.state != SystemState.Ticking)
+            this.state = SystemState.Ticking;
     }
 
     override protected bool onStateChanging(SystemState o, SystemState n) {
         switch(n) {
             case SystemState.Ticking:
-                return (o == SystemState.Frozen) && this.canGoTicking;
+                return (o == SystemState.Frozen);
             case SystemState.Frozen:
                 return o == SystemState.Ticking;
             default: return false;
         }
     }
 
-    private bool canGoTicking() {
-        foreach(j; this.junctions)
-            j.attach();
-
-        foreach(e; this.entities)
-            e.tick();
-
-        return true;
-    }
-
     override protected void onStateChanged(SystemState o, SystemState n) {
         switch(n) {
+            case SystemState.Ticking:
+                this.onTicking();
+                break;
             case SystemState.Frozen:
                 if(this.proc is null)
                     this.onCreated();
@@ -1423,6 +1314,13 @@ class Space : StateMachine!SystemState {
             }
         }
     }
+    private void onTicking() {
+        foreach(j; this.junctions)
+            j.attach();
+
+        foreach(e; this.entities)
+            e.tick();
+    }
 
     private void onFrozen() {
         foreach(e; this.entities.values)
@@ -1458,19 +1356,17 @@ class Space : StateMachine!SystemState {
     EntityController spawn(EntityMeta m) {
         import flow.core.gears.error : SpaceException;
 
-        synchronized(this.lock.reader) {
+        synchronized(this.lock.writer) {
             if(m.ptr.id in this.entities)
                 throw new SpaceException("entity with addr \""~m.ptr.addr~"\" is already existing");
             else {
-                synchronized(this.lock.writer) {
-                    // ensure entity belonging to this space
-                    m.ptr.space = this.meta.id;
-                    
-                    this.meta.entities ~= m;
-                    Entity e = new Entity(this, m);
-                    this.entities[m.ptr.id] = e;
-                    return e.control;
-                }
+                // ensure entity belonging to this space
+                m.ptr.space = this.meta.id;
+                
+                this.meta.entities ~= m;
+                Entity e = new Entity(this, m);
+                this.entities[m.ptr.id] = e;
+                return e.control;
             }
         }
     }
@@ -1480,13 +1376,11 @@ class Space : StateMachine!SystemState {
         import core.memory : GC;
         import flow.core.gears.error : SpaceException;
 
-        synchronized(this.lock.reader) {
+        synchronized(this.lock.writer) {
             if(en in this.entities) {
-                synchronized(this.lock.writer) {
-                    auto e = this.entities[en];
-                    e.dispose; GC.free(&e);
-                    this.entities.remove(en);
-                }
+                auto e = this.entities[en];
+                e.dispose; GC.free(&e);
+                this.entities.remove(en);
             } else throw new SpaceException("entity with addr \""~en~"\" is not existing");
         }
     }
@@ -1601,7 +1495,9 @@ class Space : StateMachine!SystemState {
 
 /** hosts one or more spaces and allows to controll them
 whatever happens on this level, it has to happen in main thread or an exception occurs */
-class Process {    
+class Process {  
+    private import core.sync.rwmutex : ReadWriteMutex;
+      
     private ReadWriteMutex lock;
     private Space[string] spaces;
 
@@ -1634,13 +1530,12 @@ class Process {
 
         this.ensureThread();
         
-        synchronized(this.lock.reader) {
+        synchronized(this.lock.writer) {
             if(s.id in this.spaces)
                 throw new ProcessException("space with id \""~s.id~"\" is already existing");
             else {
                 auto space = new Space(this, s);
-                synchronized(this.lock.writer)
-                    this.spaces[s.id] = space;
+                this.spaces[s.id] = space;
                 return space;
             }
         }
@@ -1656,19 +1551,17 @@ class Process {
 
     /// removes an existing space
     void remove(string sn) {
-        import core.memory : GC;
         import flow.core.gears.error : ProcessException;
 
         this.ensureThread();
         
-        synchronized(this.lock.reader)
-            if(sn in this.spaces)
-                synchronized(this.lock.writer) {
-                    auto s = this.spaces[sn];
-                    s.dispose; GC.free(&s);
-                    this.spaces.remove(sn);
-                } else
-                    throw new ProcessException("space with id \""~sn~"\" is not existing");
+        synchronized(this.lock.writer)
+            if(sn in this.spaces) {
+                auto s = this.spaces[sn];
+                s.dispose;
+                this.spaces.remove(sn);
+            } else
+                throw new ProcessException("space with id \""~sn~"\" is not existing");
     }
 }
 
@@ -1798,31 +1691,22 @@ version(unittest) {
         mixin field!(bool, "firedOnFreezing");
     }
 
-    class TestDelayConfig : Data {
-        private import core.time : Duration;
-        mixin data;
-
-        mixin field!(Duration, "delay");
-    }
-
     class TestDelayAspect : Data {
+        private import core.time : Duration;
         private import std.datetime.systime : SysTime;
 
         mixin data;
 
+        mixin field!(Duration, "delay");
         mixin field!(SysTime, "startTime");
         mixin field!(SysTime, "endTime");
     }
 
-    class TestSendingConfig : Data {
+    class TestSendingAspect : Data {
         mixin data;
 
         mixin field!(string, "dstEntity");
         mixin field!(string, "dstSpace");
-    }
-
-    class TestSendingAspect : Data {
-        mixin data;
 
         mixin field!(bool, "unicast");
         mixin field!(bool, "anycast");
@@ -1847,7 +1731,7 @@ version(unittest) {
         }
 
         override void error(Throwable thr) {
-            this.next(fqn!ErrorHandlerErrorTestTick);
+            this.invoke(fqn!ErrorHandlerErrorTestTick);
         }
     }
 
@@ -1865,15 +1749,15 @@ version(unittest) {
 
     class OnTickingEventTestTick : Tick {
         override void run() {
-            auto c = this.aspect!TestEventingAspect;
-            c.firedOnTicking = true;
+            auto a = this.aspect!TestEventingAspect;
+            a.firedOnTicking = true;
         }
     }
 
     class OnFreezingEventTestTick : Tick {
         override void run() {
-            auto c = this.aspect!TestEventingAspect;
-            c.firedOnFreezing = true;
+            auto a = this.aspect!TestEventingAspect;
+            a.firedOnFreezing = true;
         }
     }
 
@@ -1881,10 +1765,9 @@ version(unittest) {
         override void run() {
             import std.datetime.systime : Clock;
 
-            auto cfg = this.aspect!TestDelayConfig;
-            auto ctx = this.aspect!TestDelayAspect;
-            ctx.startTime = Clock.currTime;
-            this.next(fqn!DelayedTestTick, cfg.delay);
+            auto a = this.aspect!TestDelayAspect;
+            a.startTime = Clock.currTime;
+            this.invoke(fqn!DelayedTestTick, a.delay);
         }
     }
 
@@ -1894,53 +1777,50 @@ version(unittest) {
 
             auto endTime = Clock.currTime;
 
-            auto c = this.aspect!TestDelayAspect;
-            c.endTime = endTime;
+            auto a = this.aspect!TestDelayAspect;
+            a.endTime = endTime;
         }
     }
 
     class UnicastSendingTestTick : Tick {
         override void run() {
-            auto cfg = this.aspect!TestSendingConfig;
-            auto ctx = this.aspect!TestSendingAspect;
-            ctx.unicast = this.send(new TestUnicast, cfg.dstEntity, cfg.dstSpace);
+            auto a = this.aspect!TestSendingAspect;
+            a.unicast = this.send(new TestUnicast, a.dstEntity, a.dstSpace);
         }
     }
 
     class AnycastSendingTestTick : Tick {
         override void run() {
-            auto cfg = this.aspect!TestSendingConfig;
-            auto ctx = this.aspect!TestSendingAspect;
-            ctx.anycast = this.send(new TestAnycast, cfg.dstSpace);
+            auto a = this.aspect!TestSendingAspect;
+            a.anycast = this.send(new TestAnycast, a.dstSpace);
         }
     }
 
     class MulticastSendingTestTick : Tick {
         override void run() {
-            auto cfg = this.aspect!TestSendingConfig;
-            auto ctx = this.aspect!TestSendingAspect;
-            ctx.multicast = this.send(new TestMulticast, cfg.dstSpace);
+            auto a = this.aspect!TestSendingAspect;
+            a.multicast = this.send(new TestMulticast, a.dstSpace);
         }
     }
 
     class UnicastReceivingTestTick : Tick {
         override void run() {
-            auto c = this.aspect!TestReceivingAspect;
-            c.unicast = this.trigger.as!Unicast;
+            auto a = this.aspect!TestReceivingAspect;
+            a.unicast = this.trigger.as!Unicast;
         }
     }
 
     class AnycastReceivingTestTick : Tick {
         override void run() {
-            auto c = this.aspect!TestReceivingAspect;
-            c.anycast = this.trigger.as!Anycast;
+            auto a = this.aspect!TestReceivingAspect;
+            a.anycast = this.trigger.as!Anycast;
         }
     }
 
     class MulticastReceivingTestTick : Tick {
         override void run() {
-            auto c = this.aspect!TestReceivingAspect;
-            c.multicast = this.trigger.as!Multicast;
+            auto a = this.aspect!TestReceivingAspect;
+            a.multicast = this.trigger.as!Multicast;
         }
     }
 }
@@ -1976,7 +1856,7 @@ unittest { test.header("gears.engine: events");
     assert(nsm.entities[0].aspects[0].as!TestEventingAspect.firedOnFreezing, "didn't get fired for OnFreezing");
 test.footer(); }
 
-unittest { test.header("gears.engine: event error handling");
+unittest { test.header("gears.engine: first level error handling");
     import core.thread;
     import core.time;
     import flow.core.gears.data;
@@ -1998,18 +1878,17 @@ unittest { test.header("gears.engine: event error handling");
     // do not trigger test runner by writing error messages to stdout
     auto origLL = Log.logLevel;
     Log.logLevel = LL.Message;
-    StateRefusedException ex;
-    try {
-        spc.tick();
-    } catch(StateRefusedException exc) {
-        ex = exc;
-    }
+    spc.tick();
+
+    Thread.sleep(5.msecs); // exceptionhandling takes quite a while
     Log.logLevel = origLL;
 
-    assert(ex !is null, "exception wasn't thrown");
+    assert(spc.get(em.ptr).state == SystemState.Frozen, "entity isn't frozen");
+    assert(!spc.get(em.ptr).damages.empty, "entity isn't damaged");
+    assert(spc.get(em.ptr).damages.length == 1, "entity has wrong amount of damages");
 test.footer(); }
 
-unittest { test.header("gears.engine: damage error handling");
+unittest { test.header("gears.engine: second level -> damage error handling");
     import core.thread;
     import core.time;
     import flow.core.gears.data;
@@ -2027,7 +1906,6 @@ unittest { test.header("gears.engine: damage error handling");
     em.addTick(fqn!ErrorTestTick);
 
     auto spc = proc.add(sm);
-    auto ec = spc.get(em.ptr);
 
     auto origLL = Log.logLevel;
     Log.logLevel = LL.Message;
@@ -2036,9 +1914,9 @@ unittest { test.header("gears.engine: damage error handling");
     Thread.sleep(5.msecs); // exceptionhandling takes quite a while
     Log.logLevel = origLL;
 
-    assert(ec.state == SystemState.Frozen, "entity isn't frozen");
-    assert(!ec._entity.meta.damages.empty, "entity isn't damaged at all");
-    assert(ec._entity.meta.damages.length == 1, "entity has wrong amount of damages");
+    assert(spc.get(em.ptr).state == SystemState.Frozen, "entity isn't frozen");
+    assert(!spc.get(em.ptr).damages.empty, "entity isn't damaged");
+    assert(spc.get(em.ptr).damages.length == 1, "entity has wrong amount of damages");
 test.footer(); }
 
 unittest { test.header("gears.engine: delayed next");
@@ -2054,9 +1932,8 @@ unittest { test.header("gears.engine: delayed next");
 
     auto sm = createSpace(spcDomain);
     auto em = sm.addEntity("test");
-    auto ctx = new TestDelayAspect; em.aspects ~= ctx;
-    auto cfg = new TestDelayConfig; em.aspects ~= cfg;
-    cfg.delay = delay;
+    auto a = new TestDelayAspect; em.aspects ~= a;
+    a.delay = delay;
     em.addEvent(EventType.OnTicking, fqn!DelayTestTick);
 
     auto spc = proc.add(sm);
@@ -2085,7 +1962,6 @@ unittest { test.header("gears.engine: send and receipt of all signal types and p
     import flow.core.util;
     import std.uuid;
 
-
     auto proc = new Process;
     scope(exit) proc.dispose;
 
@@ -2095,11 +1971,9 @@ unittest { test.header("gears.engine: send and receipt of all signal types and p
 
     auto group = randomUUID;
     auto ems = sm.addEntity("sending");
-    ems.aspects ~= new TestSendingAspect;
-    auto cfg = new TestSendingConfig;
-    cfg.as!TestSendingConfig.dstEntity = "receiving";
-    cfg.as!TestSendingConfig.dstSpace = spcDomain;
-    ems.aspects ~= cfg;
+    auto a = new TestSendingAspect; ems.aspects ~= a;
+    a.dstEntity = "receiving";
+    a.dstSpace = spcDomain;
 
     ems.addTick(fqn!UnicastSendingTestTick, group);
     ems.addTick(fqn!AnycastSendingTestTick, group);
@@ -2123,19 +1997,19 @@ unittest { test.header("gears.engine: send and receipt of all signal types and p
 
     auto nsm = spc.snap();
 
-    auto rCtx = nsm.entities[1].aspects[0].as!TestReceivingAspect;
-    assert(rCtx.unicast !is null, "didn't get test unicast");
-    assert(rCtx.anycast !is null, "didn't get test anycast");
-    assert(rCtx.multicast !is null, "didn't get test multicast");
+    auto rA = nsm.entities[1].aspects[0].as!TestReceivingAspect;
+    assert(rA.unicast !is null, "didn't get test unicast");
+    assert(rA.anycast !is null, "didn't get test anycast");
+    assert(rA.multicast !is null, "didn't get test multicast");
 
-    auto sCtx = nsm.entities[0].aspects[0].as!TestSendingAspect;
-    assert(sCtx.unicast, "didn't confirm test unicast");
-    assert(sCtx.anycast, "didn't confirm test anycast");
-    assert(sCtx.multicast, "didn't confirm test multicast");
+    auto sA = nsm.entities[0].aspects[0].as!TestSendingAspect;
+    assert(sA.unicast, "didn't confirm test unicast");
+    assert(sA.anycast, "didn't confirm test anycast");
+    assert(sA.multicast, "didn't confirm test multicast");
 
-    assert(rCtx.unicast.group == group, "unicast didn't pass group");
-    assert(rCtx.anycast.group == group, "anycast didn't pass group");
-    assert(rCtx.multicast.group == group, "multicast didn't pass group");
+    assert(rA.unicast.group == group, "unicast didn't pass group");
+    assert(rA.anycast.group == group, "anycast didn't pass group");
+    assert(rA.multicast.group == group, "multicast didn't pass group");
 test.footer();}
 
 //unittest { test.header("engine: "); test.footer(); }
