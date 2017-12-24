@@ -22,7 +22,7 @@ class CheckStoreTick : Tick {
             //import std.stdio:writeln;writeln(a.last);
             
             if(cnt > a.last + (a.lastStored ? 2 : 1)) {
-                this.invoke(fqn!EntityStoreTick);
+                this.invoke(fqn!EntityStoreSystemTick);
                 a.lastStored = true;
             } else a.lastStored = false;
 
@@ -33,10 +33,11 @@ class CheckStoreTick : Tick {
 }
 
 void addStoringAspect(EntityMeta em, Duration d = 1.seconds) {
+    import std.uuid : UUID;
+    
     auto a = new StoringAspect; em.aspects ~= a;
     a.delay = d;
-    auto tm = em.addTick(fqn!CheckStoreTick);
-    tm.control = true;
+    auto tm = em.addTick(fqn!CheckStoreTick, null, UUID.init, true);
 }
 
 unittest { test.header("aspects.store: in control");
@@ -47,7 +48,7 @@ unittest { test.header("aspects.store: in control");
 
     auto proc = new Process;
     scope(exit)
-        proc.dispose;
+        proc.dispose();
 
     auto spcDomain = "spc.test.store.aspects.core.flow";
 
@@ -66,7 +67,7 @@ unittest { test.header("aspects.store: in control");
     if(target.exists) target.remove;
     spc.tick();
 
-    Thread.sleep(100.msecs);
+    Thread.sleep(20.msecs);
 
     assert(target.exists, "entity wasn't stored");
 
@@ -81,7 +82,7 @@ unittest { test.header("aspects.store: not in control");
 
     auto proc = new Process;
     scope(exit)
-        proc.dispose;
+        proc.dispose();
 
     auto spcDomain = "spc.test.freeze.aspects.core.flow";
 
@@ -90,7 +91,6 @@ unittest { test.header("aspects.store: not in control");
     auto a = new StoringAspect; em.aspects ~= a;
     a.delay = 2.msecs;
     auto tm = em.addTick(fqn!CheckStoreTick);
-    // tm.control = true; << its not in control
 
     // just for executing something else
     auto ta = new TestSendingAspect; em.aspects ~= ta;
@@ -103,7 +103,7 @@ unittest { test.header("aspects.store: not in control");
     if(target.exists) target.remove;
     spc.tick();
 
-    Thread.sleep(100.msecs);
+    Thread.sleep(20.msecs);
 
     assert(!target.exists, "entity stored even tick wasn't in control");
 

@@ -504,7 +504,7 @@ private class Peer {
         synchronized(this.lock.writer)  {
             if(this.outgoing is null || this.outValidity < Clock.currTime) {
                 if(this.outgoing !is null)
-                    this.outgoing.dispose; GC.free(&this.outgoing);
+                    this.outgoing.dispose(); GC.free(&this.outgoing);
                 this.createOutgoing();
             }
         }
@@ -579,7 +579,7 @@ private class Peer {
         foreach(h, c; this.incoming)
             if(this.inValidity[h] < Clock.currTime) {
                 this.incoming.remove(h);
-                c.dispose; GC.free(&c);
+                c.dispose(); GC.free(&c);
             }
     }
 
@@ -757,7 +757,7 @@ package final class Crypto {
         synchronized(this.lock.writer)
             if(p in this.peers) {
                 auto peer = this.peers[p];
-                peer.dispose; GC.free(&peer);
+                peer.dispose(); GC.free(&peer);
                 this.peers.remove(p);
             }
     }
@@ -882,9 +882,9 @@ unittest { test.header("crypt: rsa encrypt/decrypt");
     invalidC.remove("signed");
     invalidC.remove("self");
 
-    selfC.dispose;
-    signedC.dispose;
-    invalidC.dispose;
+    selfC.dispose();
+    signedC.dispose();
+    invalidC.dispose();
 test.footer; }
 
 unittest { test.header("crypt: rsa sign/verify");
@@ -914,9 +914,9 @@ unittest { test.header("crypt: rsa sign/verify");
     invalidC.remove("signed");
     invalidC.remove("self");
 
-    selfC.dispose;
-    signedC.dispose;
-    invalidC.dispose;
+    selfC.dispose();
+    signedC.dispose();
+    invalidC.dispose();
 test.footer; }
 
 version(unittest) {

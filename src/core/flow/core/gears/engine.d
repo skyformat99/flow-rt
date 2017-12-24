@@ -1,5 +1,6 @@
 module flow.core.gears.engine;
 
+private import flow.core.data;
 private import flow.core.gears.data;
 private import flow.core.gears.proc;
 private import flow.core.util;
@@ -53,9 +54,6 @@ abstract class Tick {
     /// execute tick meant to be called by processor
     private void exec() {
         import std.datetime.systime : Clock;
-
-        // registering an execution on entity
-        this.entity.execLock.reader.lock();
         this.entity.count++;
 
         // run tick
@@ -133,7 +131,7 @@ abstract class Tick {
         import std.datetime.systime : Clock;
 
         auto stdTime = Clock.currStdTime;
-        if(this.meta.control || (tick != fqn!EntityFreezeTick && tick != fqn!EntityStoreTick)) {
+        if(this.meta.control || (tick != fqn!EntityFreezeSystemTick && tick != fqn!EntityStoreSystemTick)) {
             auto m = tick.createTickMeta(this.meta.info.group);
 
             // if this tick has control, pass it
@@ -227,15 +225,15 @@ abstract class Tick {
     }
 
     /// send an unicast signal to a destination
-    protected bool send(Unicast s, string entity, string space) {
+    protected bool send(Unicast s, string entity, string space, UUID group = UUID.init) {
         auto eptr = new EntityPtr;
         eptr.id = entity;
         eptr.space = space;
-        return this.send(s, eptr);
+        return this.send(s, eptr, group);
     }
 
     /// send an unicast signal to a destination
-    protected bool send(Unicast s, EntityPtr e = null) {
+    protected bool send(Unicast s, EntityPtr e = null, UUID group = UUID.init) {
         import flow.core.gears.error : TickException;
         
         if(s is null)
@@ -246,13 +244,14 @@ abstract class Tick {
         if(s.dst is null || s.dst.id == string.init || s.dst.space == string.init)
             throw new TickException("unicast signal needs a valid destination(dst)");
 
-        s.group = this.meta.info.group;
+        if(s.group == UUID.init)
+            s.group = group == UUID.init ? this.meta.info.group : group;
 
         return this.entity.send(s);
     }
 
     /// send an anycast signal to spaces matching space pattern
-    protected bool send(Anycast s, string dst = string.init) {
+    protected bool send(Anycast s, string dst = string.init, UUID group = UUID.init) {
         import flow.core.gears.error : TickException;
         
         if(dst != string.init) s.dst = dst;
@@ -260,13 +259,14 @@ abstract class Tick {
         if(s.dst == string.init)
             throw new TickException("anycast signal needs a space pattern");
 
-        s.group = this.meta.info.group;
+        if(s.group == UUID.init)
+            s.group = group == UUID.init ? this.meta.info.group : group;
 
         return this.entity.send(s);
     }
 
     /// send an anycast signal to spaces matching space pattern
-    protected bool send(Multicast s, string dst = string.init) {
+    protected bool send(Multicast s, string dst = string.init, UUID group = UUID.init) {
         import flow.core.gears.error : TickException;
         
         if(dst != string.init) s.dst = dst;
@@ -274,7 +274,8 @@ abstract class Tick {
         if(s.dst == string.init)
             throw new TickException("multicast signal needs a space pattern");
 
-        s.group = this.meta.info.group;
+        if(s.group == UUID.init)
+            s.group = group == UUID.init ? this.meta.info.group : group;
 
         return this.entity.send(s);
     }
@@ -284,8 +285,10 @@ abstract class Tick {
     }
 }
 
-final class EntityFreezeTick : Tick {}
-final class EntityStoreTick : Tick {}
+final class EntityFreezeSystemTick : Tick {}
+final class EntityStoreSystemTick : Tick {}
+final class SpaceFreezeSystemTick : Tick {}
+final class SpaceStoreSystemTick : Tick {}
 
 /// gets the prefix string of ticks for logging
 string logPrefix(Tick t) {
@@ -403,20 +406,28 @@ private class Entity : StateMachine!SystemState {
                 if(this.state == SystemState.Ticking) {
                     // create a new tick of given type or notify failing and stop
                     switch(nm.info.type) {
-                        case fqn!EntityFreezeTick:
+                        case fqn!EntityFreezeSystemTick:
                             auto control = nm.control;
                             if(control)
                                 this.freezeAsync(); // async for avoiding deadlock
                             break;
-                        case fqn!EntityStoreTick:
+                        case fqn!EntityStoreSystemTick:
                             auto control = nm.control;
                             if(control)
                                 this.storeAsync(); // async for avoiding deadlock
                             break;
+                        case fqn!SpaceFreezeSystemTick:
+                            auto control = nm.control;
+                            if(control)
+                                this.spaceFreezeAsync(); // async for avoiding deadlock
+                            break;
+                        case fqn!SpaceStoreSystemTick:
+                            auto control = nm.control;
+                            if(control)
+                                this.spaceStoreAsync(); // async for avoiding deadlock
+                            break;
                         default:
-                            auto n = this.pop(nm);
-                            n.job = Job(&n.exec, &n.catchError, nm.time);
-                            this.space.proc.run(&n.job);
+                            this.exec(this.pop(nm));
                             break;
                     }
                 } else {
@@ -424,6 +435,22 @@ private class Entity : StateMachine!SystemState {
                 }
             }
         }, next));
+    }
+
+    void exec(Tick tick) {
+        import std.parallelism : taskPool, task;
+
+        this.opLock.reader.lock();
+        taskPool.put(task((Tick t){
+            scope(exit)
+                this.opLock.reader.unlock();
+
+            // registering an execution on entity
+            this.execLock.reader.lock();
+
+            t.job = Job(&t.exec, &t.catchError, t.meta.time);
+            this.space.proc.run(&t.job);
+        }, tick));
     }
 
     void dispose() {
@@ -458,14 +485,24 @@ private class Entity : StateMachine!SystemState {
             scope(exit)
                 this.opLock.reader.unlock();
             this.freeze();
+        }));
+    }
 
+    void spaceFreezeAsync() {
+        import std.parallelism : taskPool, task;
+
+        this.opLock.reader.lock();
+        taskPool.put(task((){
+            scope(exit)
+                this.opLock.reader.unlock();
+            this.space.freeze();
         }));
     }
 
     // stores actual entity meta to disk
     void store() {
         import std.file : mkdirRecurse, write;
-        import std.path : expandTilde, buildPath;
+        import std.path : buildPath;
         import std.process : environment;
         bool wasFrozen;
         if(this.state != SystemState.Frozen) { // freeze if necessary
@@ -482,6 +519,16 @@ private class Entity : StateMachine!SystemState {
             this.tick();
     }
 
+    void wipe() {
+        import std.file : remove, exists;
+        import std.path : buildPath;
+
+        this.ensureState(SystemState.Frozen);
+
+        auto t = this.target.buildPath(this.meta.ptr.id);
+        if(t.exists) t.remove;
+    }
+
     void storeAsync() {
         import std.parallelism : taskPool, task;
 
@@ -490,6 +537,17 @@ private class Entity : StateMachine!SystemState {
             scope(exit)
                 this.opLock.reader.unlock();
             this.store();
+        }));
+    }
+
+    void spaceStoreAsync() {
+        import std.parallelism : taskPool, task;
+
+        this.opLock.reader.lock();
+        taskPool.put(task((){
+            scope(exit)
+                this.opLock.reader.unlock();
+            this.space.store();
         }));
     }
 
@@ -529,18 +587,13 @@ private class Entity : StateMachine!SystemState {
                 if(e.control)
                     t.meta.control = true;
 
-                if(t.accept) {
-                    t.job = Job(&t.exec, &t.catchError, t.meta.time);
-                    this.space.proc.run(&t.job);
-                }
+                if(t.accept)
+                    this.exec(t);
             }       
 
             // creating and starting all frozen ticks
-            foreach(tm; this.meta.ticks) {
-                auto t = this.pop(tm);
-                t.job = Job(&t.exec, &t.catchError, t.meta.time);
-                this.space.proc.run(&t.job);
-            }
+            foreach(tm; this.meta.ticks)
+                this.exec(this.pop(tm));
 
             // all frozen ticks are ticking -> empty store
             this.meta.ticks = TickMeta[].init;
@@ -563,10 +616,8 @@ private class Entity : StateMachine!SystemState {
                 if(e.control)
                     t.meta.control = true;
 
-                if(t.accept) {
-                    t.job = Job(&t.exec, &t.catchError, t.meta.time);
-                    this.space.proc.run(&t.job);
-                }
+                if(t.accept)
+                    this.exec(t);
             } 
         }
 
@@ -839,6 +890,11 @@ class EntityController {
         return this._entity.snap();
     }
     
+    /// makes entity storing
+    void store() {
+        this._entity.store();
+    }
+    
     /// makes entity freezing
     void freeze() {
         this._entity.freeze();
@@ -1019,7 +1075,7 @@ abstract class Junction : StateMachine!JunctionState {
     private void deinitCrypto() {
         import core.memory : GC;
         if(this._meta.key !is null && this.crypto !is null) {
-            this.crypto.dispose; GC.free(&this.crypto); this.crypto = null;
+            this.crypto.dispose(); GC.free(&this.crypto); this.crypto = null;
         }
     }
 
@@ -1231,11 +1287,11 @@ class Space : StateMachine!SystemState {
             this.freeze();
 
         foreach(j; this.junctions) {
-            j.dispose; GC.free(&j);
+            j.dispose(); GC.free(&j);
         }
 
         foreach(k, e; this.entities) {
-            e.dispose; GC.free(&e);
+            e.dispose(); GC.free(&e);
         }
 
         this.junctions = Junction[].init;
@@ -1323,7 +1379,8 @@ class Space : StateMachine!SystemState {
     }
 
     private void onFrozen() {
-        foreach(e; this.entities.values)
+        // freezing happens backwards
+        foreach_reverse(e; this.entities.values)
             e.freeze();
 
         foreach(j; this.junctions)
@@ -1339,6 +1396,24 @@ class Space : StateMachine!SystemState {
             }
             
             return this.meta.clone;
+        }
+    }
+
+    /// makes all of spaces content storing
+    void store() {
+        synchronized(this.lock.reader) {
+            Entity[] frozen;
+            foreach_reverse(e; this.entities.values)
+                if(e.state == SystemState.Frozen) {
+                    e.freeze();
+                    frozen ~= e;
+                }
+
+            scope(exit) foreach_reverse(e; frozen)
+                e.tick();
+            
+            foreach(e; this.entities.values)
+                e.store();
         }
     }
 
@@ -1379,7 +1454,7 @@ class Space : StateMachine!SystemState {
         synchronized(this.lock.writer) {
             if(en in this.entities) {
                 auto e = this.entities[en];
-                e.dispose; GC.free(&e);
+                e.freeze(); e.wipe(); e.dispose(); GC.free(&e);
                 this.entities.remove(en);
             } else throw new SpaceException("entity with addr \""~en~"\" is not existing");
         }
@@ -1509,7 +1584,7 @@ class Process {
     void dispose() {
         import core.memory : GC;
         foreach(k, s; this.spaces) {
-            s.dispose; GC.free(&s);
+            s.dispose(); GC.free(&s);
         }
 
         this.destroy;
@@ -1558,7 +1633,7 @@ class Process {
         synchronized(this.lock.writer)
             if(sn in this.spaces) {
                 auto s = this.spaces[sn];
-                s.dispose;
+                s.dispose();
                 this.spaces.remove(sn);
             } else
                 throw new ProcessException("space with id \""~sn~"\" is not existing");
@@ -1590,35 +1665,42 @@ EntityMeta createEntity(string id, ushort level = 0) {
 EntityMeta addEntity(SpaceMeta sm, string id, ushort level = 0) {
     import flow.core.data : createData;
     auto em = id.createEntity(level);
+    em.ptr.space = sm.id;
     sm.entities ~= em;
 
     return em;
 }
 
 /// adds an event mapping
-void addEvent(EntityMeta em, EventType type, string tickType) {
+void addEvent(EntityMeta em, EventType type, string tickType, bool control = false) {
     auto e = new Event;
     e.type = type;
     e.tick = tickType;
+    e.control = control;
+
     em.events ~= e;
 }
 
 /// adds an receptor mapping
-void addReceptor(EntityMeta em, string signalType, string tickType) {
+void addReceptor(EntityMeta em, string signalType, string tickType, bool control = false) {
     auto r = new Receptor;
     r.signal = signalType;
     r.tick = tickType;
+    r.control = control;
+
     em.receptors ~= r;
 }
 
 /// creates tick metadata and appends it to an entities metadata
-TickMeta addTick(EntityMeta em, string type, UUID group = randomUUID) {
+TickMeta addTick(EntityMeta em, string type, Data d = null, UUID group = randomUUID, bool control = false) {
     auto tm = new TickMeta;
     tm.info = new TickInfo;
     tm.info.id = randomUUID;
     tm.info.type = type;
     tm.info.entity = em.ptr.clone;
     tm.info.group = group;
+    tm.data = d;
+    tm.control = control;
 
     em.ticks ~= tm;
 
@@ -1831,7 +1913,7 @@ unittest { test.header("gears.engine: events");
     import flow.core.util;
 
     auto proc = new Process;
-    scope(exit) proc.dispose;
+    scope(exit) proc.dispose();
 
     auto spcDomain = "spc.test.engine.ipc.flow";
 
@@ -1846,7 +1928,7 @@ unittest { test.header("gears.engine: events");
 
     spc.tick();
 
-    Thread.sleep(5.msecs);
+    Thread.sleep(10.msecs);
 
     spc.freeze();
 
@@ -1865,7 +1947,7 @@ unittest { test.header("gears.engine: first level error handling");
     import std.range;   
 
     auto proc = new Process;
-    scope(exit) proc.dispose;
+    scope(exit) proc.dispose();
 
     auto spcDomain = "spc.test.engine.ipc.flow";
 
@@ -1880,7 +1962,7 @@ unittest { test.header("gears.engine: first level error handling");
     Log.logLevel = LL.Message;
     spc.tick();
 
-    Thread.sleep(5.msecs); // exceptionhandling takes quite a while
+    Thread.sleep(10.msecs); // exceptionhandling takes quite a while
     Log.logLevel = origLL;
 
     assert(spc.get(em.ptr).state == SystemState.Frozen, "entity isn't frozen");
@@ -1897,7 +1979,7 @@ unittest { test.header("gears.engine: second level -> damage error handling");
     
 
     auto proc = new Process;
-    scope(exit) proc.dispose;
+    scope(exit) proc.dispose();
 
     auto spcDomain = "spc.test.engine.ipc.flow";
 
@@ -1911,7 +1993,7 @@ unittest { test.header("gears.engine: second level -> damage error handling");
     Log.logLevel = LL.Message;
     spc.tick();
 
-    Thread.sleep(5.msecs); // exceptionhandling takes quite a while
+    Thread.sleep(10.msecs); // exceptionhandling takes quite a while
     Log.logLevel = origLL;
 
     assert(spc.get(em.ptr).state == SystemState.Frozen, "entity isn't frozen");
@@ -1925,7 +2007,7 @@ unittest { test.header("gears.engine: delayed next");
     import flow.core.util;
 
     auto proc = new Process;
-    scope(exit) proc.dispose;
+    scope(exit) proc.dispose();
 
     auto spcDomain = "spc.test.engine.ipc.flow";
     auto delay = 100.msecs;
@@ -1963,7 +2045,7 @@ unittest { test.header("gears.engine: send and receipt of all signal types and p
     import std.uuid;
 
     auto proc = new Process;
-    scope(exit) proc.dispose;
+    scope(exit) proc.dispose();
 
     auto spcDomain = "spc.test.engine.ipc.flow";
 
@@ -1975,9 +2057,9 @@ unittest { test.header("gears.engine: send and receipt of all signal types and p
     a.dstEntity = "receiving";
     a.dstSpace = spcDomain;
 
-    ems.addTick(fqn!UnicastSendingTestTick, group);
-    ems.addTick(fqn!AnycastSendingTestTick, group);
-    ems.addTick(fqn!MulticastSendingTestTick, group);
+    ems.addTick(fqn!UnicastSendingTestTick, null, group);
+    ems.addTick(fqn!AnycastSendingTestTick, null, group);
+    ems.addTick(fqn!MulticastSendingTestTick, null, group);
 
     // first the receiving entity should come up
     // (order of entries in space equals order of starting ticking)
@@ -1991,7 +2073,7 @@ unittest { test.header("gears.engine: send and receipt of all signal types and p
 
     spc.tick();
 
-    Thread.sleep(5.msecs);
+    Thread.sleep(10.msecs);
 
     spc.freeze();
 

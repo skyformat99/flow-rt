@@ -39,12 +39,12 @@ class InProcessChannel : Channel {
     override protected void dispose() {
         import core.memory : GC;
         if(this.master) {
-            this.peer.dispose; GC.free(&this.peer);
+            this.peer.dispose(); GC.free(&this.peer);
         }
 
         this.own.unregister(this);
 
-        super.dispose;
+        super.dispose();
     }
 
     override protected ubyte[] reqAuth() {
@@ -194,7 +194,7 @@ unittest { test.header("gears.inproc: fully enabled passing of signals");
     import std.uuid;
 
     auto proc = new Process;
-    scope(exit) proc.dispose;
+    scope(exit) proc.dispose();
 
     auto spc1Domain = "spc1.test.inproc.gears.core.flow";
     auto spc2Domain = "spc2.test.inproc.gears.core.flow";
@@ -249,7 +249,7 @@ unittest { test.header("gears.inproc: hiding (not) passing of signals");
     import std.uuid;
 
     auto proc = new Process;
-    scope(exit) proc.dispose;
+    scope(exit) proc.dispose();
 
     auto spc1Domain = "spc1.test.inproc.gears.core.flow";
     auto spc2Domain = "spc2.test.inproc.gears.core.flow";
@@ -306,7 +306,7 @@ unittest { test.header("gears.inproc: indifferent (not) passing of signals");
     import std.uuid;
 
     auto proc = new Process;
-    scope(exit) proc.dispose;
+    scope(exit) proc.dispose();
 
     auto spc1Domain = "spc1.test.inproc.gears.core.flow";
     auto spc2Domain = "spc2.test.inproc.gears.core.flow";
@@ -362,7 +362,7 @@ unittest { test.header("gears.inproc: introvert (not) passing of signals");
     import std.uuid;
 
     auto proc = new Process;
-    scope(exit) proc.dispose;
+    scope(exit) proc.dispose();
 
     auto spc1Domain = "spc1.test.inproc.gears.core.flow";
     auto spc2Domain = "spc2.test.inproc.gears.core.flow";
@@ -418,7 +418,7 @@ unittest { test.header("gears.inproc: fully enabled passing of signals over a on
     import std.uuid;
 
     auto proc = new Process;
-    scope(exit) proc.dispose;
+    scope(exit) proc.dispose();
 
     auto spc1Domain = "spc1.test.inproc.gears.core.flow";
     auto spc2Domain = "spc2.test.inproc.gears.core.flow";
@@ -641,7 +641,7 @@ unittest { test.header("gears.inproc: fully enabled passing of signals over an e
     import std.uuid;
 
     auto proc = new Process;
-    scope(exit) proc.dispose;
+    scope(exit) proc.dispose();
 
     auto spc1Domain = "spc1.test.inproc.gears.core.flow";
     auto spc2Domain = "spc2.test.inproc.gears.core.flow";

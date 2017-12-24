@@ -20,7 +20,7 @@ class CheckFreezeTick : Tick {
             auto cnt = this.count;
             
             if(cnt == a.last + 1)
-                this.invoke(fqn!EntityFreezeTick);
+                this.invoke(fqn!EntityFreezeSystemTick);
 
             a.last = cnt;
             this.invoke(fqn!CheckFreezeTick, a.delay);
@@ -29,10 +29,11 @@ class CheckFreezeTick : Tick {
 }
 
 void addFreezingAspect(EntityMeta em, Duration d = 1.seconds) {
+    import std.uuid : UUID;
+    
     auto a = new FreezingAspect; em.aspects ~= a;
     a.delay = d;
-    auto tm = em.addTick(fqn!CheckFreezeTick);
-    tm.control = true;
+    auto tm = em.addTick(fqn!CheckFreezeTick, null, UUID.init, true);
 }
 
 unittest { test.header("aspects.freeze: in control");
@@ -41,7 +42,7 @@ unittest { test.header("aspects.freeze: in control");
 
     auto proc = new Process;
     scope(exit)
-        proc.dispose;
+        proc.dispose();
 
     auto spcDomain = "spc.test.freeze.aspects.core.flow";
 
@@ -65,7 +66,7 @@ unittest { test.header("aspects.freeze: not in control");
 
     auto proc = new Process;
     scope(exit)
-        proc.dispose;
+        proc.dispose();
 
     auto spcDomain = "spc.test.freeze.aspects.core.flow";
 
@@ -74,7 +75,6 @@ unittest { test.header("aspects.freeze: not in control");
     auto a = new FreezingAspect; em.aspects ~= a;
     a.delay = 2.msecs;
     auto tm = em.addTick(fqn!CheckFreezeTick);
-    // tm.control = true; << its not in control
 
     auto spc = proc.add(sm);
     spc.tick();
