@@ -319,7 +319,7 @@ string logPrefix(Junction t) {
     return "junction("~t.meta.info.id.to!string~"): ";
 }
 
-private TickMeta createTickMeta(string type, UUID group = randomUUID) {
+private TickMeta createTickMeta(string type, UUID group = UUID.init) {
     import flow.core.gears.data : TickMeta, TickInfo;
     import std.uuid : randomUUID;
 
@@ -327,7 +327,7 @@ private TickMeta createTickMeta(string type, UUID group = randomUUID) {
     m.info = new TickInfo;
     m.info.id = randomUUID;
     m.info.type = type;
-    m.info.group = group;
+    m.info.group = group == UUID.init ? randomUUID : group;
 
     return m;
 }
@@ -876,7 +876,9 @@ string addr(EntityPtr e) {
 
 /// controlls an entity
 class EntityController {
+    private import core.time : Duration;
     private import flow.core.data : Data;
+    private import std.datetime.systime : SysTime;
 
     private Entity _entity;
 
@@ -920,6 +922,124 @@ class EntityController {
     /// makes entity ticking
     void tick() {
         this._entity.tick();
+    }
+    
+    /// invoke tick
+    bool invoke(string tick, Data data = null, UUID group = UUID.init, bool control = false) {
+        return this.invoke(tick, Duration.init, data, group);
+    }
+
+    /// invoke tick with delay
+    bool invoke(string tick, SysTime schedule, Data data = null, UUID group = UUID.init, bool control = false) {
+        import std.datetime.systime : Clock;
+
+        auto delay = schedule - Clock.currTime;
+
+        if(delay.total!"hnsecs" > 0)
+            return this.invoke(tick, delay, data, group, control);
+        else
+            return this.invoke(tick, data, group, control);
+    }
+
+    /// invoke tick with delay
+    bool invoke(string tick, Duration delay, Data data = null, UUID group = UUID.init, bool control = false) {
+        import flow.core.gears.error : TickException;
+        import std.datetime.systime : Clock;
+
+        auto stdTime = Clock.currStdTime;
+        auto m = tick.createTickMeta(group);
+        m.control = control;
+
+        m.time = stdTime + delay.total!"hnsecs";
+        m.data = data;
+
+        bool a; { // check if there exists a tick for given meta and if it accepts the request
+            auto t = this._entity.pop(m);
+            scope(exit)
+                this._entity.put(t);
+            a = t !is null && t.accept;
+        }
+
+        if(a) {
+            this._entity.invoke(m);
+            return true;
+        } else return false;
+    }
+
+    /// registers a receptor for signal which invokes a tick
+    protected void register(string signal, string tick) {
+        import flow.core.gears.error : TickException;
+        import flow.core.data : createData;
+        
+        auto s = createData(signal).as!Signal;
+        if(s is null || createData(tick) is null)
+            throw new TickException("can only register receptors for valid signals and ticks");
+
+        this._entity.register(signal, tick);
+    }
+
+    /// deregisters an receptor for signal invoking tick
+    protected void deregister(string signal, string tick) {
+        this._entity.deregister(signal, tick);
+    }
+
+    /// send an unicast signal to a destination
+    protected bool send(Unicast s, string entity, string space, UUID group = UUID.init) {
+        auto eptr = new EntityPtr;
+        eptr.id = entity;
+        eptr.space = space;
+        return this.send(s, eptr, group);
+    }
+
+    /// send an unicast signal to a destination
+    protected bool send(Unicast s, EntityPtr e = null, UUID group = UUID.init) {
+        import flow.core.gears.error : TickException;
+        import std.uuid : randomUUID;
+        
+        if(s is null)
+            throw new TickException("cannot sand an empty unicast");
+
+        if(e !is null) s.dst = e;
+
+        if(s.dst is null || s.dst.id == string.init || s.dst.space == string.init)
+            throw new TickException("unicast signal needs a valid destination(dst)");
+
+        if(s.group == UUID.init)
+            s.group = group == UUID.init ? randomUUID : group;
+
+        return this._entity.send(s);
+    }
+
+    /// send an anycast signal to spaces matching space pattern
+    protected bool send(Anycast s, string dst = string.init, UUID group = UUID.init) {
+        import flow.core.gears.error : TickException;
+        import std.uuid : randomUUID;
+        
+        if(dst != string.init) s.dst = dst;
+
+        if(s.dst == string.init)
+            throw new TickException("anycast signal needs a space pattern");
+
+        if(s.group == UUID.init)
+            s.group = group == UUID.init ? randomUUID : group;
+
+        return this._entity.send(s);
+    }
+
+    /// send an anycast signal to spaces matching space pattern
+    protected bool send(Multicast s, string dst = string.init, UUID group = UUID.init) {
+        import flow.core.gears.error : TickException;
+        import std.uuid : randomUUID;
+        
+        if(dst != string.init) s.dst = dst;
+
+        if(s.dst == string.init)
+            throw new TickException("multicast signal needs a space pattern");
+
+        if(s.group == UUID.init)
+            s.group = group == UUID.init ? randomUUID : group;
+
+        return this._entity.send(s);
     }
 }
 
