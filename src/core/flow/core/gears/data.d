@@ -108,8 +108,12 @@ class JunctionInfo : IdData {
 
 /// metadata of a junction
 class JunctionMeta : Data {
+    private import std.uuid : UUID;
+
     mixin data;
 
+    // id used for internal identification
+    mixin field!(UUID, "id");
     mixin field!(JunctionInfo, "info");
     mixin field!(string, "type");
     mixin field!(ushort, "level");

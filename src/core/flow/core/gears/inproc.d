@@ -11,8 +11,6 @@ class InProcessJunctionMeta : JunctionMeta {
     private import std.uuid : UUID;
 
     mixin data;
-
-    mixin field!(UUID, "id");
 }
 
 class InProcessChannel : Channel {
@@ -161,6 +159,31 @@ JunctionMeta addInProcJunction(
     ushort level = 0
 ) {
     return sm.addInProcJunction(id, level, false, false, false);
+}
+
+/// creates metadata for an in process junction 
+JunctionMeta createInProcJunction(
+    SpaceMeta sm,
+    UUID id,
+    ushort level = 0,
+    bool hiding = false,
+    bool indifferent = false,
+    bool introvert = false
+) {
+    import flow.core.gears.inproc : InProcessJunctionMeta;
+    import flow.core.util : as;
+    
+    auto jm = createJunction(
+        "flow.core.gears.inproc.InProcessJunctionMeta",
+        "flow.core.gears.inproc.InProcessJunction",
+        level,
+        hiding,
+        indifferent,
+        introvert
+    ).as!InProcessJunctionMeta;
+    jm.id = id;
+
+    return jm;
 }
 
 /// creates metadata for an in process junction and appeds it to a spaces metadata 

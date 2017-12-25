@@ -11,6 +11,7 @@ class EntitySpawnRefuseReason : Data {
     mixin field!(string, "reason");
 }
 
+// to protect aspect you wouldn't want to combine it with other aspects
 class ControllingAspect : Data {
     mixin data;
 
@@ -18,6 +19,9 @@ class ControllingAspect : Data {
 
     mixin field!(string, "entitySpawnAnalyzer");
     mixin field!(EntitySpawnRefuseReason[], "entitySpawnRefuseReasons");
+
+    mixin field!(string, "junctionAttachAnalyzer");
+    mixin field!(EntitySpawnRefuseReason[], "junctionAttachRefuseReasons");
 }
 
 bool trusts(ControllingAspect a, EntityPtr e) {
@@ -169,6 +173,130 @@ class EntityKillTick : Tick {
                 }
             } else {
                 auto i = new RefusedEntityKillInfo;
+                i.reason = "source is not trusted";
+                this.send(i, s.src);
+            }
+        }
+    }
+}
+
+class JunctionAttachRequest : Unicast {
+    mixin data;
+
+    mixin field!(JunctionMeta, "data");
+}
+
+class JunctionAttachTick : Tick {
+    override void run() {
+        auto a = this.aspect!ControllingAspect;
+        auto s = this.trigger.as!JunctionAttachRequest;
+
+        if(s !is null) {
+            // only if signal source is trusted
+            if(a.trusts(s.src))
+                this.invoke(fqn!NullJunctionAttachAnalyzeTick);
+            else this.invoke(fqn!RefusedJunctionAttachTick);
+        }
+    }
+}
+
+class NullJunctionAttachAnalyzeTick : Tick {
+    override void run() {
+        auto a = this.aspect!ControllingAspect;
+        auto s = this.trigger.as!JunctionAttachRequest;
+
+        if(s.data !is null)
+            this.invoke(a.junctionAttachAnalyzer != string.init
+                ? a.junctionAttachAnalyzer
+                : fqn!AcceptJunctionAttachTick);
+        else
+            this.invoke(fqn!RefusedJunctionAttachTick);
+    }
+}
+
+class RefusedJunctionAttachInfo : Unicast {
+    mixin data;
+
+    mixin field!(string, "reason");
+}
+
+class RefusedJunctionAttachTick : Tick {
+    override void run() {
+        import std.algorithm.iteration : filter;
+
+        auto a = this.aspect!ControllingAspect;
+        auto s = this.trigger.as!JunctionAttachRequest;
+        auto i = new RefusedJunctionAttachInfo;
+
+        switch(this.previous.type) {
+            case fqn!JunctionAttachTick:
+                i.reason = "source is not trusted";
+                break;
+            case fqn!NullJunctionAttachAnalyzeTick:
+                i.reason = "invalid metadata";
+                break;
+            default:
+                auto r = a.junctionAttachRefuseReasons.filter!((r) => r.tick == this.previous.type);
+                if(r.empty)
+                    i.reason = this.previous.type;
+                else i.reason = r.front.reason;
+        }
+
+        this.send(i, s.src);
+    }
+}
+
+class JunctionAttachedInfo : Unicast {mixin data;}
+
+class AcceptJunctionAttachTick : Tick {
+    override void run() {
+        auto s = this.trigger.as!JunctionAttachRequest;
+
+        try {
+            this.attach(s.data);
+        } catch(TickException exc) {
+            auto i = new RefusedJunctionAttachInfo;
+            i.reason = exc.msg;
+            this.send(i, s.src);
+        }
+        this.send(new JunctionAttachedInfo, s.src);
+    }
+}
+
+class JunctionDetachRequest : Unicast {
+    private import std.uuid : UUID;
+
+    mixin data;
+
+    mixin field!(UUID, "id");
+}
+
+class RefusedJunctionDetachInfo : Unicast {
+    mixin data;
+
+    mixin field!(string, "reason");
+}
+
+class JunctionDetachedInfo : Unicast {mixin data;}
+
+class JunctionDetachTick : Tick {
+    override void run() {
+        auto a = this.aspect!ControllingAspect;
+        auto s = this.trigger.as!JunctionDetachRequest;
+
+        if(s !is null) {
+            // only if signal source is trusted
+            if(a.trusts(s.src)) {
+                try {
+                    this.detach(s.id);
+                    this.send(new JunctionDetachedInfo, s.src);
+                } catch(TickException exc) {
+                    auto i = new RefusedJunctionDetachInfo;
+                    i.reason = exc.msg;
+                    this.send(i, s.src);
+                }
+            } else {
+                auto i = new RefusedJunctionDetachInfo;
                 i.reason = "source is not trusted";
                 this.send(i, s.src);
             }
@@ -394,16 +522,22 @@ class EntitySnapTick : Tick {
 void addControllingAspect(EntityMeta em,
     EntityPtr[] trusted,
     string entitySpawnAnalyzer = string.init,
-    EntitySpawnRefuseReason[] entitySpawnRefuseReasons = null
+    EntitySpawnRefuseReason[] entitySpawnRefuseReasons = null,
+    string junctionAttachAnalyzer = string.init,
+    EntitySpawnRefuseReason[] junctionAttachRefuseReasons = null
 ) {
     auto a = new ControllingAspect; em.aspects ~= a;
     a.trusted = trusted;
     a.entitySpawnAnalyzer = entitySpawnAnalyzer;
     a.entitySpawnRefuseReasons = entitySpawnRefuseReasons;
+    a.junctionAttachAnalyzer = junctionAttachAnalyzer;
+    a.junctionAttachRefuseReasons = junctionAttachRefuseReasons;
     em.addReceptor(fqn!SpaceFreezeRequest, fqn!SpaceFreezeTick, true);
     em.addReceptor(fqn!SpaceStoreRequest, fqn!SpaceStoreTick, true);
     em.addReceptor(fqn!EntitySpawnRequest, fqn!EntitySpawnTick, true);
     em.addReceptor(fqn!EntityKillRequest, fqn!EntityKillTick, true);
+    em.addReceptor(fqn!JunctionAttachRequest, fqn!JunctionAttachTick, true);
+    em.addReceptor(fqn!JunctionDetachRequest, fqn!JunctionDetachTick, true);
     em.addReceptor(fqn!EntityMetricsRequest, fqn!EntityMetricsTick, true);
     em.addReceptor(fqn!EntityTickRequest, fqn!EntityTickTick, true);
     em.addReceptor(fqn!EntityFreezeRequest, fqn!EntityFreezeTick, true);
@@ -576,6 +710,7 @@ unittest { test.header("aspects.control: spawn entity; trusted sender");
     tca.controller = cem.ptr;
     rem.aspects ~= tca;
     rem.addTick(fqn!TestControllerTick);
+    rem.addReceptor(fqn!EntitySpawnedInfo, fqn!TestControllerTick);
     rem.addReceptor(fqn!RefusedEntitySpawnInfo, fqn!TestControllerTick);
 
     auto spc = proc.add(sm);
@@ -586,6 +721,7 @@ unittest { test.header("aspects.control: spawn entity; trusted sender");
     auto ra = spc.get("requesting").aspects[0].as!TestControllerAspect;
     assert(spc.get("spawned") !is null, "entity wasn't spawned");
     assert(ra.response.as!RefusedEntitySpawnInfo is null, "spawn was refused");
+    assert(ra.response.as!EntitySpawnedInfo !is null, "spawn wasn't confirmed");
 test.footer(); }
 
 unittest { test.header("aspects.control: spawn entity; untrusted sender");
@@ -610,6 +746,7 @@ unittest { test.header("aspects.control: spawn entity; untrusted sender");
     tca.controller = cem.ptr;
     rem.aspects ~= tca;
     rem.addTick(fqn!TestControllerTick);
+    rem.addReceptor(fqn!EntitySpawnedInfo, fqn!TestControllerTick);
     rem.addReceptor(fqn!RefusedEntitySpawnInfo, fqn!TestControllerTick);
 
     auto spc = proc.add(sm);
@@ -619,6 +756,7 @@ unittest { test.header("aspects.control: spawn entity; untrusted sender");
 
     auto ra = spc.get("requesting").aspects[0].as!TestControllerAspect;
     assert(spc.get("spawned") is null, "entity spawned even requester wasn't trusted");
+    assert(ra.response.as!EntitySpawnedInfo is null, "spawn was confirmed");
     assert(ra.response.as!RefusedEntitySpawnInfo !is null, "spawn wasn't refused");
 test.footer(); }
 
@@ -645,6 +783,7 @@ unittest { test.header("aspects.control: kill entity; trusted sender");
     tca.controller = cem.ptr;
     rem.aspects ~= tca;
     rem.addTick(fqn!TestControllerTick);
+    rem.addReceptor(fqn!EntityKilledInfo, fqn!TestControllerTick);
     rem.addReceptor(fqn!RefusedEntityKillInfo, fqn!TestControllerTick);
 
     auto spc = proc.add(sm);
@@ -655,6 +794,7 @@ unittest { test.header("aspects.control: kill entity; trusted sender");
     auto ra = spc.get("requesting").aspects[0].as!TestControllerAspect;
     assert(spc.get("killing") is null, "entity wasn't killed");
     assert(ra.response.as!RefusedEntityKillInfo is null, "kill was refused");
+    assert(ra.response.as!EntityKilledInfo !is null, "kill wasn't confirmed");
 test.footer(); }
 
 unittest { test.header("aspects.control: kill entity; untrusted sender");
@@ -680,6 +820,7 @@ unittest { test.header("aspects.control: kill entity; untrusted sender");
     tca.controller = cem.ptr;
     rem.aspects ~= tca;
     rem.addTick(fqn!TestControllerTick);
+    rem.addReceptor(fqn!EntityKilledInfo, fqn!TestControllerTick);
     rem.addReceptor(fqn!RefusedEntityKillInfo, fqn!TestControllerTick);
 
     auto spc = proc.add(sm);
@@ -689,7 +830,126 @@ unittest { test.header("aspects.control: kill entity; untrusted sender");
 
     auto ra = spc.get("requesting").aspects[0].as!TestControllerAspect;
     assert(spc.get("killing") !is null, "entity killed even requester wasn't trusted");
+    assert(ra.response.as!EntityKilledInfo is null, "kill was confirmed");
     assert(ra.response.as!RefusedEntityKillInfo !is null, "kill wasn't refused");
+test.footer(); }
+
+unittest { test.header("aspects.control: attach junction; trusted sender");
+    import core.thread;
+    import flow.core.util;
+    import std.path, std.file;
+    import std.range;
+    import std.uuid;
+
+    auto proc = new Process;
+    scope(exit)
+        proc.dispose();
+
+    auto spcDomain = "spc.test.control.aspects.core.flow";
+
+    auto sm = createSpace(spcDomain);
+    auto cem = sm.addEntity("controlling");
+    auto rem = sm.addEntity("requesting");
+    cem.addControllingAspect([rem.ptr]);
+
+    auto tca = new TestControllerAspect;
+    tca.signal = new JunctionAttachRequest;
+    tca.signal.as!JunctionAttachRequest.data = sm.createInProcJunction(randomUUID);
+    tca.controller = cem.ptr;
+    rem.aspects ~= tca;
+    rem.addTick(fqn!TestControllerTick);
+    rem.addReceptor(fqn!JunctionAttachedInfo, fqn!TestControllerTick);
+    rem.addReceptor(fqn!RefusedJunctionAttachInfo, fqn!TestControllerTick);
+
+    auto spc = proc.add(sm);
+    spc.tick();
+
+    Thread.sleep(50.msecs);
+
+    auto ra = spc.get("requesting").aspects[0].as!TestControllerAspect;
+    auto nsm = spc.snap;
+    assert(!nsm.junctions.empty, "junction wasn't attached");
+    assert(ra.response.as!JunctionAttachedInfo !is null, "junction attach wasn't confirmed");
+    assert(ra.response.as!RefusedJunctionAttachInfo is null, "junction attach was refused");
+test.footer(); }
+
+unittest { test.header("aspects.control: attach junction; untrusted sender");
+    import core.thread;
+    import flow.core.util;
+    import std.path, std.file;
+    import std.range;
+    import std.uuid;
+
+    auto proc = new Process;
+    scope(exit)
+        proc.dispose();
+
+    auto spcDomain = "spc.test.control.aspects.core.flow";
+
+    auto sm = createSpace(spcDomain);
+    auto cem = sm.addEntity("controlling");
+    auto rem = sm.addEntity("requesting");
+    cem.addControllingAspect([]);
+
+    auto tca = new TestControllerAspect;
+    tca.signal = new JunctionAttachRequest;
+    tca.signal.as!JunctionAttachRequest.data = sm.createInProcJunction(randomUUID);
+    tca.controller = cem.ptr;
+    rem.aspects ~= tca;
+    rem.addTick(fqn!TestControllerTick);
+    rem.addReceptor(fqn!JunctionAttachedInfo, fqn!TestControllerTick);
+    rem.addReceptor(fqn!RefusedJunctionAttachInfo, fqn!TestControllerTick);
+
+    auto spc = proc.add(sm);
+    spc.tick();
+
+    Thread.sleep(50.msecs);
+
+    auto ra = spc.get("requesting").aspects[0].as!TestControllerAspect;
+    auto nsm = spc.snap;
+    assert(nsm.junctions.empty, "junction was attached");
+    assert(ra.response.as!RefusedJunctionAttachInfo !is null, "junction attach wasn't refused");
+    assert(ra.response.as!JunctionAttachedInfo is null, "junction attach was confirmed");
+test.footer(); }
+
+unittest { test.header("aspects.control: detach junction; trusted sender");
+    import core.thread;
+    import flow.core.util;
+    import std.path, std.file;
+    import std.range;
+    import std.uuid;
+
+    auto proc = new Process;
+    scope(exit)
+        proc.dispose();
+
+    auto spcDomain = "spc.test.control.aspects.core.flow";
+
+    auto sm = createSpace(spcDomain);
+    auto jm = sm.addInProcJunction(randomUUID);
+    auto cem = sm.addEntity("controlling");
+    auto rem = sm.addEntity("requesting");
+    cem.addControllingAspect([rem.ptr]);
+
+    auto tca = new TestControllerAspect;
+    tca.signal = new JunctionDetachRequest;
+    tca.signal.as!JunctionDetachRequest.id = jm.id;
+    tca.controller = cem.ptr;
+    rem.aspects ~= tca;
+    rem.addTick(fqn!TestControllerTick);
+    rem.addReceptor(fqn!JunctionDetachedInfo, fqn!TestControllerTick);
+    rem.addReceptor(fqn!RefusedJunctionDetachInfo, fqn!TestControllerTick);
+
+    auto spc = proc.add(sm);
+    spc.tick();
+
+    Thread.sleep(50.msecs);
+
+    auto ra = spc.get("requesting").aspects[0].as!TestControllerAspect;
+    auto nsm = spc.snap;
+    assert(nsm.junctions.empty, "junction wasn't detached");
+    assert(ra.response.as!JunctionDetachedInfo !is null, "junction detach wasn't confirmed");
+    assert(ra.response.as!RefusedJunctionDetachInfo is null, "junction detach was refused");
 test.footer(); }
 
 unittest { test.header("aspects.control: entity metrics; trusted sender");

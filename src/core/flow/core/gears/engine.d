@@ -186,13 +186,13 @@ abstract class Tick {
     }
 
     /// kills a given entity in common space
-    protected void kill(EntityPtr entity) {
+    protected void kill(EntityPtr ptr) {
         import flow.core.gears.error : TickException;
         
         if(this.meta.control) {
-            if(entity.space != this.entity.space.meta.id)
+            if(ptr.space != this.entity.space.meta.id)
                 throw new TickException("an entity not belonging to own space cannot be killed");
-            this.kill(entity.id);
+            this.kill(ptr.id);
         } else throw new TickException("tick is not in control");
     }
 
@@ -204,6 +204,23 @@ abstract class Tick {
                 throw new TickException("entity cannot kill itself");
             else
                 this.entity.space.kill(e);
+        } else throw new TickException("tick is not in control");
+    }
+
+    /// spawns a new entity in common space
+    protected UUID attach(JunctionMeta junction) {
+        import flow.core.gears.error : TickException;
+
+        if(this.meta.control)
+            return this.entity.space.attach(junction);
+        else throw new TickException("tick is not in control");
+    }
+
+    protected void detach(UUID jid) {
+        import flow.core.gears.error : TickException;
+        
+        if(this.meta.control) {
+            this.entity.space.detach(jid);
         } else throw new TickException("tick is not in control");
     }
 
@@ -1267,11 +1284,13 @@ test.footer(); }
 
 /// hosts a space which can host n entities
 class Space : StateMachine!SystemState {
+    private import std.uuid : UUID;
+
     private SpaceMeta meta;
     private Process process;
     private Processor proc;
 
-    private Junction[] junctions;
+    private Junction[UUID] junctions;
     private Entity[string] entities;
 
     private this(Process p, SpaceMeta m) {
@@ -1286,15 +1305,13 @@ class Space : StateMachine!SystemState {
         if(this.state == SystemState.Ticking)
             this.freeze();
 
-        foreach(j; this.junctions) {
+        foreach(i, j; this.junctions) {
             j.dispose(); GC.free(&j);
         }
 
         foreach(k, e; this.entities) {
             e.dispose(); GC.free(&e);
         }
-
-        this.junctions = Junction[].init;
 
         this.proc.stop();
 
@@ -1351,10 +1368,11 @@ class Space : StateMachine!SystemState {
         // creating junctions
         foreach(jm; this.meta.junctions) {
             auto j = Object.factory(jm.type).as!Junction;
+            if(jm.id == UUID.init) jm.id = randomUUID;
             jm.info.space = this.meta.id; // ensure junction knows correct space
             j._meta = jm;
             j._space = this;
-            this.junctions ~= j;
+            this.junctions[jm.id] = j;
         }
 
         // creating entities
@@ -1371,7 +1389,7 @@ class Space : StateMachine!SystemState {
         }
     }
     private void onTicking() {
-        foreach(j; this.junctions)
+        foreach(i, j; this.junctions)
             j.attach();
 
         foreach(e; this.entities)
@@ -1383,20 +1401,19 @@ class Space : StateMachine!SystemState {
         foreach_reverse(e; this.entities.values)
             e.freeze();
 
-        foreach(j; this.junctions)
+        foreach(i, j; this.junctions)
             j.detach();
     }
 
     /// snapshots whole space (deep clone)
     SpaceMeta snap() {
-        synchronized(this.lock.reader) {
-            if(this.state == SystemState.Ticking) {
-                this.state = SystemState.Frozen;
-                scope(exit) this.state = SystemState.Ticking;
-            }
-            
-            return this.meta.clone;
+        if(this.state == SystemState.Ticking) {
+            this.state = SystemState.Frozen;
+            scope(exit) this.state = SystemState.Ticking;
         }
+
+        synchronized(this.lock.reader)
+            return this.meta.clone;
     }
 
     /// makes all of spaces content storing
@@ -1457,6 +1474,56 @@ class Space : StateMachine!SystemState {
                 e.freeze(); e.wipe(); e.dispose(); GC.free(&e);
                 this.entities.remove(en);
             } else throw new SpaceException("entity with addr \""~en~"\" is not existing");
+        }
+    }
+
+    /// attaches space to new junction
+    UUID attach(JunctionMeta jm) {
+        import flow.core.gears.error : SpaceException;
+        import std.conv : to;
+
+        synchronized(this.lock.writer) {
+            if(jm.id in this.junctions)
+                throw new SpaceException("junction with id \""~jm.id.to!string~"\" is already existing");
+            else {
+                this.meta.junctions ~= jm;
+                auto j = Object.factory(jm.type).as!Junction;
+                if(jm.id == UUID.init) jm.id = randomUUID;
+                jm.info.space = this.meta.id; // ensure junction knows correct space
+                j._meta = jm;
+                j._space = this;
+                this.junctions[jm.id] = j;
+
+                // only start if space is ticking
+                if(this.state == SystemState.Ticking)
+                    j.attach();
+
+                return jm.id;
+            }
+        }
+    }
+
+    /// detaches space from junction
+    void detach(UUID jid) {
+        import core.memory : GC;
+        import flow.core.gears.error : SpaceException;
+        import std.algorithm.mutation : remove;
+        import std.conv : to;
+
+        synchronized(this.lock.writer) {
+            if(jid in this.junctions) {
+                auto j = this.junctions[jid];
+                // only stop if space is ticking
+                if(this.state == SystemState.Ticking)
+                    j.detach();
+                
+                this.junctions.remove(jid);
+
+                foreach_reverse(i, jm; this.meta.junctions) {
+                    if(jm.id == jid)
+                        this.meta.junctions = this.meta.junctions.remove(i);
+                }
+            } else throw new SpaceException("junction with id \""~jid.to!string~"\" is not existing");
         }
     }
     
@@ -1545,14 +1612,14 @@ class Space : StateMachine!SystemState {
     }
 
     private bool ship(Unicast s) {
-        foreach(j; this.junctions)
+        foreach(i, j; this.junctions)
             if(j.ship(s)) return true;
 
         return false;
     }
 
     private bool ship(Anycast s) {
-        foreach(j; this.junctions)
+        foreach(i, j; this.junctions)
             if(j.ship(s))
                 return true;
 
@@ -1561,7 +1628,7 @@ class Space : StateMachine!SystemState {
 
     private bool ship(Multicast s) {
         auto ret = false;
-        foreach(j; this.junctions)
+        foreach(i, j; this.junctions)
             ret = j.ship(s) || ret;
 
         return ret;
@@ -1714,7 +1781,9 @@ JunctionMeta addJunction(
     string junctionType,
     ushort level = 0
 ) {
-    return sm.addJunction(type, junctionType, level, false, false, false);
+    auto jm = createJunction(type, junctionType, level, false, false, false);
+    sm.junctions ~= jm;
+    return jm;
 }
 
 /// creates metadata for an junction and appends it to a space
@@ -1727,10 +1796,26 @@ JunctionMeta addJunction(
     bool indifferent,
     bool introvert
 ) {
+    auto jm = createJunction(type, junctionType, level, hiding, indifferent, introvert);
+    sm.junctions ~= jm;
+    return jm;
+}
+
+/// creates metadata for an junction and appends it to a space
+JunctionMeta createJunction(
+    string type,
+    string junctionType,
+    ushort level = 0,
+    bool hiding = false,
+    bool indifferent = false,
+    bool introvert = false
+) {
     import flow.core.data : createData;
     import flow.core.util : as;
+    import std.uuid : UUID;
     
     auto jm = createData(type).as!JunctionMeta;
+    jm.id = randomUUID;
     jm.info = new JunctionInfo;
     jm.type = junctionType;
     
@@ -1739,7 +1824,6 @@ JunctionMeta addJunction(
     jm.info.indifferent = indifferent;
     jm.info.introvert = introvert;
 
-    sm.junctions ~= jm;
     return jm;
 }
 
