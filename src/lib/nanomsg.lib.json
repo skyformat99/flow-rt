@@ -2,5 +2,7 @@
     "limit": "deimos",
     "deps": [],
     "cflags": [],
-    "lflags": []
+    "lflags": [],
+    "posixlibs": ["libnanomsg.so"],
+    "winlibs": ["nanomsg.lib"]
 }

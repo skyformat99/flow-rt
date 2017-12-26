@@ -2,32 +2,32 @@ import std.file, std.path, std.json, std.compiler;
 
 static if(vendor == Vendor.digitalMars) {
     immutable DC = "dmd";
-    immutable LD = "dmd";
 } else static if(vendor == Vendor.llvm) {
     immutable DC = "ldc";
-    immutable LD = "ldc";
 } else static assert(false, "!!! supporting only dmd and ldc yet");
 
 static if(vendor == Vendor.digitalMars) {
     version(Posix) {
-        immutable defaultlib = "libphobos2.so";
-        debug {immutable defCflags = ["-c","-debug","-g","-fPIC","-vcolumns","-w","-defaultlib="~defaultlib];}
-        else {immutable defCflags = ["-c","-fPIC","-w","-defaultlib="~defaultlib];}
-        immutable defLflags = ["-L-l:"~defaultlib];
+        debug {immutable defCflags = ["-debug","-g","-fPIC","-vcolumns","-w","-defaultlib=phobos2"];}
+        else {immutable defCflags = ["-fPIC","-w","-defaultlib=phobos2"];}
+        immutable defLflags = [];
     }
     version(Windows) {
-        immutable defaultlib = "libphobos2.dll";
-        debug {immutable defCflags = ["-c","-debug","-g","-vcolumns","-w","-defaultlib="~defaultlib];}
-        else {immutable defCflags = ["-c","-w","-defaultlib="~defaultlib];}
-        immutable defLflags = ["-L-l:"~defaultlib];
+        debug {immutable defCflags = ["-debug","-g","-fPIC","-vcolumns","-w","-defaultlib=libphobos2.dll"];}
+        else {immutable defCflags = ["-w","-defaultlib=libphobos2.dll"];}
+        immutable defLflags = ["libphobos2.dll"];
     }
 } else static if(vendor == Vendor.llvm) {
-    version(Posix) {immutable defaultlib = "libphobos2-ldc.so"; }
-    version(Windows) {immutable defaultlib = "libphobos2-ldc.dll"; }
-    
-    debug {immutable defCflags = ["-c","-d-debug","-g","-vcolumns","-w","-defaultlib="~defaultlib];}
-    else {immutable defCflags = ["-c","-w","-defaultlib="~defaultlib];}
-    immutable defLflags = ["-L-l:"~defaultlib];
+    version(Posix) {
+        debug {immutable defCflags = ["-d-debug","-g","-vcolumns","-w","-defaultlib=phobos2-ldc"];}
+        else {immutable defCflags = ["-w","-defaultlib=phobos2-ldc"];}
+        immutable defLflags = [];
+    }
+    version(Windows) {
+        debug {immutable defCflags = ["-d-debug","-g","-vcolumns","-w","-defaultlib=libphobos2-ldc.dll"];}
+        else {immutable defCflags = ["-w","-defaultlib=libphobos2.dll"];}
+        immutable defLflags = ["libphobos2-ldc.dll"];
+    }
 }
 
 string rootDir;
@@ -50,20 +50,13 @@ enum LinkType {
     Bin
 }
 
-class Build {
-    static Build[string] reg;
-
-    static void make() {
-        foreach(n, b; reg)
-            if(!b.done && b.flow)
-                b.exec();
-    }
-
+abstract class Build {
     version(Posix) {
         immutable staticExt = ".a";
         immutable sharedExt = ".so";
         immutable binExt = string.init;
     }
+
     version(Windows) {
         immutable staticExt = ".lib";
         immutable sharedExt = ".dll";
@@ -71,9 +64,7 @@ class Build {
     }
 
     string name;
-    LinkType type;
     string main;
-    bool flow;
     string root;
     string limit;
     string[] deps;
@@ -81,16 +72,13 @@ class Build {
     string[] lflags;
     string[] posixlibs;
     string[] winlibs;
+
     bool done = false;
     bool clean = false;
-    bool execute = false;
 
-    this(string n, LinkType t, string m, bool f, string j, bool e = false) {
+    this(string n, string m, string j) {
         this.name = n;
-        this.type = t;
         this.main = m;
-        this.flow = f;
-        this.execute = e;
 
         this.load(j);
     }
@@ -127,144 +115,57 @@ class Build {
         return true;
     }
 
-    final bool checkDeps() {
-        foreach(d; this.deps) {
-            assert(d in reg, "!!! dependecy \""~d~"\" of \""~this.of~"\" not found");
-            
-            if(!Build.reg[d].clean)
-                return false;
-        }
+    final @property string srcRoot() {return this.main.buildPath(this.root);}
 
-        return true;
-    }
-
-    final string[] src() @property {
+    final @property string[] src() {
         import std.range : array;
         import std.algorithm.iteration : map;
         auto limitDir = this.srcRoot.buildPath(this.limit);
         return limitDir.dirEntries("*.d", SpanMode.depth).map!(x => x.relativePath(this.srcRoot)).array;
     }
 
-    final string of() @property {
-        if(this.type == LinkType.Static)
-            return rootDir.buildPath("lib", "lib"~this.name~staticExt);
-        else if(this.type == LinkType.Shared)
-            return rootDir.buildPath("lib", "lib"~this.name~sharedExt);
-        else return rootDir.buildPath("bin", "flow-"~this.name~binExt);
+    final bool checkDeps() {
+        foreach(d; this.deps) {
+            assert(d in Lib.reg, "!!! dependecy \""~d~"\" of \""~this.name~"\" not found");
+            
+            if(!Lib.reg[d].clean)
+                return false;
+        }
+
+        return true;
     }
 
-    final string obj() @property {
-        version(Posix)
-            return rootDir.buildPath("obj", this.name~".o");
-        version(Windows)
-            return rootDir.buildPath("obj", this.name~".obj");
+    final void buildDeps() {
+        foreach(d; this.deps) {
+            assert(d in Lib.reg, "!!! dependecy \""~d~"\" of \""~this.name~"\" not found");
+            
+            if(!Lib.reg[d].done)
+                Lib.reg[d].doMake();
+        }
     }
 
-    final string srcRoot() @property {return this.main.buildPath(this.root);}
-    
-    final string[] depCflags() @property {
-        string[] flags;
-        foreach(d; this.deps)
-            flags ~= Build.reg[d].depCflags;
-
-        if(!this.flow)
-            flags ~= ["-I"~this.srcRoot];
-        return flags;
-    }
-
-    final string[] buildCflags() @property {
-        string[] flags = cast(string[])defCflags;
-
-        if(this.flow && this.type != LinkType.Bin)
-            flags ~= ["-op", "-Hd="~rootDir.buildPath("ifc")];
-
-        foreach(d; this.deps)
-            flags ~= Build.reg[d].depCflags;
-
-        return flags~["-I"~rootDir.buildPath("ifc")];
-    }
-
-    version(Posix) final string[] libsLflags() @property {
+    version(Posix) final string[] getLibLflags() {
         string[] flags;
         foreach(l; this.posixlibs)
             flags ~= ["-L-l:"~l];
         return flags;
     }
     
-    version(Win32) final string[] libsLflags() @property {
+    version(Win32) final string[] getLibLflags() {
         string[] flags;
         foreach(l; this.winlibs)
             flags ~= [rootDir.buildPath("dist", "x86", l)];
         return flags;
     }
     
-    version(Win64) final string[] libsLflags() @property {
+    version(Win64) final string[] getLibLflags() {
         string[] flags;
         foreach(l; this.winlibs)
             flags ~= [rootDir.buildPath("dist", "x86_64", l)];
         return flags;
     }
-
-    version(Posix) final string[] depLflags() @property {
-        string[] flags;
-        foreach(d; this.deps)
-            flags ~= Build.reg[d].depLflags;
-
-        return flags~this.libsLflags~["-L-l:"~this.of.baseName];
-    }
-
-    version(Windows) final string[] depLflags() @property {
-        string[] flags;
-        foreach(d; this.deps)
-            flags ~= Build.reg[d].depLflags;
-
-        return flags~this.libsLflags~[this.of];
-    }
-
-    final string[] buildLflags() @property {
-        string[] flags = cast(string[])defLflags;
-
-        flags ~= this.libsLflags;
-
-        if(this.type == LinkType.Shared)
-            flags ~= "-shared";
-        else if(this.type == LinkType.Static)
-            flags ~= "-lib";
-
-        foreach(d; this.deps)
-            flags ~= Build.reg[d].depLflags;
-
-        return flags~["-L-L"~rootDir.buildPath("lib")];
-    }
-
-    final void buildDeps() {
-        foreach(d; this.deps) {
-            assert(d in reg, "!!! dependecy \""~d~"\" of \""~this.of~"\" not found");
-            
-            if(!Build.reg[d].done)
-                Build.reg[d].exec();
-        }
-    }
-
-    void exec() {
-        import std.stdio : writeln;
-
-        this.buildDeps();
-
-        writeln("*** building \""~this.of~"\"");
-        this.clean = this.check(this.obj) && this.checkDeps();
-        if(!this.clean) {
-            this.compile(this.cflags, this.obj);
-            this.link(this.lflags, this.obj, this.of);
-        } else writeln("+++ up to date");
-
-        if(this.execute && this.type == LinkType.Bin)
-            this.run(this.of);
-
-        this.done = true;
-    }
-
-    final void compile(string[] cflags, string obj) {
+    
+    final void compile(string of, string[] cflags, string[] lflags) {
         import std.conv : to;
         import std.datetime.stopwatch : benchmark;
         import std.range : array;
@@ -274,24 +175,14 @@ class Build {
 
         auto f = {
             auto dcPid = spawnProcess(
-                [DC, "-of"~obj]~this.buildCflags~cflags~this.src,
+                //["echo", DC, "-of"~of]~cflags~lflags~this.src,
+                [DC, "-of"~of]~cflags~lflags~this.src,
                 stdin, stdout, stderr, null, Config.none, this.srcRoot);
             assert(dcPid.wait() == 0, "!!! compiling error");
         };
 
         auto b = benchmark!(f)(1);
-        writeln("+++ ", b[0]);        
-    }
-
-    final void link(string[] lflags, string obj, string of) {
-        import std.datetime.stopwatch : benchmark;
-        import std.stdio : stdin, stdout, stderr, writeln;
-        import std.process : spawnProcess, wait, Config;
-        
-        auto ldPid = spawnProcess(
-            [LD, "-of"~of]~this.buildLflags~lflags~[obj],
-            stdin, stdout, stderr, null, Config.none, this.srcRoot);
-        assert(ldPid.wait() == 0, "!!! linking error");      
+        writeln("+++ ", b[0]);
     }
 
     final void run(string exec) {
@@ -304,6 +195,7 @@ class Build {
         auto f = {
             string[string] env;
             env["LD_LIBRARY_PATH"] = rootDir.buildPath("lib");
+            //auto tstPid = spawnProcess(["echo", exec], stdin, stdout, stderr, env, Config.none, rootDir);
             auto tstPid = spawnProcess([exec], stdin, stdout, stderr, env, Config.none, rootDir);
             assert(tstPid.wait() == 0, "!!! execution error");
         };
@@ -313,40 +205,185 @@ class Build {
     }
 }
 
-class Test : Build {
-    static Test[string] reg;
+final class Lib : Build {
+    static Lib[string] reg;
 
-    static void execute() {
-        foreach(n, t; reg)
-            t.exec();
+    static void make() {
+        foreach(n, l; Lib.reg)
+            if(!l.done)
+                l.doMake();
     }
 
-    this(string n, string m, string j) {
-        super(n, LinkType.Bin, m, false, j);
+    static void test() {
+        foreach(n, l; Lib.reg)
+            l.doTest();
     }
 
-    final string testOf() @property {
-        return rootDir.buildPath("test", this.name~binExt);
+    bool isShared;
+    bool genIfc;
+    
+    this(string n, string m, bool s, bool i, string j) {
+        super(n, m, j);
+
+        //this.isShared = s;
+        this.genIfc = i;
     }
 
-    final string testObj() @property {
-        version(Posix)
-            return rootDir.buildPath("test", "obj", this.name~".o");
-        version(Windows)
-            return rootDir.buildPath("test", "obj", this.name~".obj");
+    @property string of() {
+        return rootDir.buildPath(
+            "lib", "lib"~this.name~(this.isShared ? sharedExt : staticExt)
+        );
     }
 
-    override void exec() {
-        import std.stdio : writeln;
+    @property string tof() {
+        return rootDir.buildPath(
+            "test", "lib", "lib"~this.name~(this.isShared ? sharedExt : staticExt)
+        );
+    }
 
-        writeln("*** testing \""~this.testOf~"\"");
-        this.clean = this.check(this.testObj) && this.checkDeps();
-        if(!this.clean) {
-            this.compile(this.cflags~["-unittest", "-main"], this.testObj);
-            this.link(this.lflags, this.testObj, this.testOf);
+    @property string tbof() {
+        return rootDir.buildPath(
+            "test", this.name~binExt
+        );
+    }
+
+    string[] getDepCflags() {
+        string[] flags;
+        foreach(d; this.deps)
+            flags ~= Lib.reg[d].getDepCflags();
+
+        if(!this.genIfc)
+            flags ~= ["-I"~this.srcRoot];
+        return flags;
+    }
+
+    version(Posix) string[] getDepLflags(bool test = false) {
+        string[] flags;
+        foreach(d; this.deps)
+            flags ~= Lib.reg[d].getDepLflags(test);
+
+        flags ~= this.getLibLflags();
+        if(this.isShared)
+            flags ~= ["-L-l:"~(test ? this.tof.baseName : this.of.baseName)];
+        else flags ~= test ? this.tof : this.of;
+
+        return flags;
+    }
+
+    version(Windows) string[] getDepLflags(bool test = false) {
+        string[] flags;
+        foreach(d; this.deps)
+            flags ~= Lib.reg[d].getDepLflags();
+
+        // TODO
+
+        return flags;
+    }
+
+    string[] getCflags(bool bin = false, bool test = false) {
+        string[] flags = cast(string[])defCflags;
+
+        if(this.genIfc)
+            flags ~= ["-op", "-Hd="~rootDir.buildPath("ifc")];
+
+        foreach(d; this.deps)
+            flags ~= Lib.reg[d].getDepCflags();
+
+        if(bin || test) flags ~= "-unittest";
+        if(bin) flags ~= "-main";
+
+        return flags~["-I"~rootDir.buildPath("ifc")];
+    }
+
+    string[] getLflags(bool bin = false, bool test = false) {
+        string[] flags = cast(string[])defLflags;
+
+        flags ~= this.getLibLflags();
+
+        if(!bin) {
+            if(this.isShared) flags ~= "-shared";
+            else flags ~= "-lib";
         }
 
-        this.run(this.testOf);
+        foreach(d; this.deps)
+            flags ~= Lib.reg[d].getDepLflags(test);
+
+        auto libPath = test ? rootDir.buildPath("test", "lib") : rootDir.buildPath("lib");
+
+        return flags~["-L-L"~libPath];
+    }
+    
+    void doMake() {
+        import std.stdio : writeln;
+
+        this.buildDeps();
+
+        writeln("*** building \""~this.name~"\"");
+        this.clean = this.check(this.of) && this.checkDeps();
+        if(!this.clean) {
+            this.compile(this.of, this.getCflags(), this.getLflags());
+            this.compile(this.tof, this.getCflags(false, true), this.getLflags(false, true));
+            this.compile(this.tbof, this.getCflags(true, true), this.getLflags(true, true));
+        } else writeln("+++ up to date");
+
+        this.done = true;
+    }
+
+    void doTest() {
+        import std.stdio : writeln;
+
+        writeln("*** testing \""~this.name~"\"");
+        this.run(this.tbof);
+    }
+}
+
+final class Bin : Build {
+    static Bin[string] reg;
+
+    static void make() {
+        foreach(n, b; reg)
+            if(!b.done)
+                b.doMake();
+    }
+    
+    this(string n, string m, string j) {
+        super(n, m, j);
+    }
+
+    @property string of() {
+        return rootDir.buildPath("bin", "flow-"~this.name~binExt);
+    }
+
+    string[] getCflags() {
+        string[] flags = cast(string[])defCflags;
+
+        foreach(d; this.deps)
+            flags ~= Lib.reg[d].getDepCflags();
+
+        return flags~["-I"~rootDir.buildPath("ifc")];
+    }
+
+    string[] getLflags() {
+        string[] flags = cast(string[])defLflags;
+
+        flags ~= this.getLibLflags();
+
+        foreach(d; this.deps)
+            flags ~= Lib.reg[d].getDepLflags();
+
+        return flags~["-L-L"~rootDir.buildPath("lib")];
+    }
+    
+    void doMake() {
+        import std.stdio : writeln;
+
+        this.buildDeps();
+
+        writeln("*** building \""~this.name~"\"");
+        this.clean = this.check(this.of) && this.checkDeps();
+        if(!this.clean) {
+            this.compile(of, this.getCflags(), this.getLflags());
+        } else writeln("+++ up to date");
 
         this.done = true;
     }
@@ -359,8 +396,7 @@ void loadLibs() {
     foreach(j; jsons) {
         auto name = j.baseName(".lib.json");
         writeln("*** adding library ", name);
-        Build.reg[name] = new Build(name, LinkType.Static, j.dirName.buildPath(name), false, j.readText);
-        Test.reg[name] = new Test(name, j.dirName.buildPath(name), j.readText);
+        Lib.reg[name] = new Lib(name, j.dirName.buildPath(name), false, false, j.readText);
     }
 }
 
@@ -374,8 +410,7 @@ void loadCore() {
         auto j = jsons.front;
         auto name = "core";
         writeln("*** adding flow core");
-        Build.reg[name] = new Build(name, LinkType.Shared, j.dirName.buildPath(name), true, j.readText);
-        Test.reg[name] = new Test(name, j.dirName.buildPath(name), j.readText);
+        Lib.reg[name] = new Lib(name, j.dirName.buildPath(name), true, true, j.readText);
     }
 }
 
@@ -386,8 +421,7 @@ void loadExts() {
     foreach(j; jsons) {
         auto name = j.baseName(".ext.json");
         writeln("*** adding extension ", name);
-        Build.reg[name] = new Build(name, LinkType.Shared, j.dirName.buildPath(name), true, j.readText);
-        Test.reg[name] = new Test(name, j.dirName.buildPath(name), j.readText);
+        Lib.reg[name] = new Lib(name, j.dirName.buildPath(name), true, true, j.readText);
     }
 }
 
@@ -398,7 +432,7 @@ void loadBins() {
     foreach(j; jsons) {
         auto name = j.baseName(".bin.json");
         writeln("*** adding binary ", name);
-        Build.reg[name] = new Build(name, LinkType.Bin, j.dirName.buildPath(name), true, j.readText);
+        Bin.reg[name] = new Bin(name, j.dirName.buildPath(name), j.readText);
     }
 }
 
@@ -409,7 +443,7 @@ void loadDocs() {
     foreach(j; jsons) {
         auto name = j.baseName(".doc.json");
         writeln("*** adding doc ", name);
-        Build.reg[name] = new Build(name, LinkType.Bin, j.dirName.buildPath(name), true, j.readText, true);
+        Bin.reg[name] = new Bin(name, j.dirName.buildPath(name), j.readText);
     }
 }
 
@@ -423,9 +457,6 @@ int main(string[] args) {
     auto cmd = args.length > 1 ? args[1] : "build";
 
     if(cmd == "rebuild" || cmd == "clean") {
-        if(rootDir.buildPath("obj").exists)
-            rootDir.buildPath("obj").rmdirRecurse;
-
         if(rootDir.buildPath("ifc").exists)
             rootDir.buildPath("ifc").rmdirRecurse;
 
@@ -440,12 +471,11 @@ int main(string[] args) {
     }
 
     if(cmd == "build" || cmd == "rebuild") {
-        rootDir.buildPath("obj").mkdirRecurse;
         rootDir.buildPath("ifc").mkdirRecurse;
         rootDir.buildPath("lib").mkdirRecurse;
         rootDir.buildPath("bin").mkdirRecurse;
         rootDir.buildPath("test").mkdirRecurse;
-        rootDir.buildPath("test", "obj").mkdirRecurse;
+        rootDir.buildPath("test", "lib").mkdirRecurse;
 
         loadLibs();
         loadCore();
@@ -453,8 +483,9 @@ int main(string[] args) {
         loadBins();
         loadDocs();
         
-        Build.make();
-        Test.execute();
+        Lib.make();
+        Lib.test();
+        Bin.make();
     }
 
     return 0;

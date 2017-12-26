@@ -2,6 +2,6 @@
 
 rootDir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-export LD_LIBRARY_PATH=$rootDir/util/dmd2/linux/lib64:$rootDir/core/lib:$rootDir/run/bin/lib:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=$rootDir/lib:$LD_LIBRARY_PATH
 
 $rootDir/run/bin/flow-run ${@:1}

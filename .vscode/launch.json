@@ -2,31 +2,6 @@
     "version": "0.2.0",
 
     "configurations": [
-
-        /*{
-            "name": "flow-core",
-            "type": "cppdbg",
-            "request": "launch",
-            "targetArchitecture": "x64",
-            "program": "${workspaceRoot}/test/test_flow-core",
-            "args": [ ],
-            "cwd": "${workspaceRoot}/test",
-            "stopAtEntry": false,
-            "externalConsole": true,
-            "linux": {
-                "MIMode": "gdb",
-                "environment": [{
-                    "name":"LD_LIBRARY_FLAGS", "value":"/usr/lib:${workspaceRoot}/lib:${workspaceRoot}/ext"
-                }],
-                "setupCommands": [
-                    {
-                        "description": "Enable pretty-printing for gdb",
-                        "text": "-enable-pretty-printing",
-                        "ignoreFailures": true
-                    }
-                ]
-            }
-        },*/
         {
             "name": "test/core",
             "type": "gdb",
@@ -41,21 +16,20 @@
             "cwd": "${workspaceRoot}/test"
         },
         {
-            "name": "flow-complex-gen",
+            "name": "test/ipc-nanomsg",
             "type": "gdb",
             "request": "launch",
             "autorun": [
-                "set environment LD_LIBRARY_PATH ${workspaceRoot}/util/dmd2/linux/lib64:${workspaceRoot}/lib:${workspaceRoot}/ext",
+                "set environment LD_LIBRARY_PATH ${workspaceRoot}/util/dmd2/linux/lib64:${workspaceRoot}/lib",
                 "handle SIGUSR1 nostop noprint",
                 "handle SIGUSR2 nostop noprint",
                 "break onInvalidMemoryOperationError"
             ],
-            "target": "flow-complex-gen",
-            "cwd": "${workspaceRoot}/bin",
-            "arguments": "power -o ${workspaceRoot}/tmp/cfg/complex/power/1 -s 1 -a 200 -f"
+            "target": "${workspaceRoot}/test/ipc-nanomsg",
+            "cwd": "${workspaceRoot}/test"
         },
         {
-            "name": "flow-run",
+            "name": "bin/flow-run",
             "type": "gdb",
             "request": "launch",
             "autorun": [
@@ -69,7 +43,7 @@
             "arguments": "${workspaceRoot}/tmp/cfg/complex/power/1"
         },
         {
-            "name": "doc_introduction",
+            "name": "bin/flow-introduction",
             "type": "gdb",
             "request": "launch",
             "autorun": [
@@ -82,7 +56,7 @@
             "cwd": "${workspaceRoot}/bin"
         },
         {
-            "name": "run test",
+            "name": "tmp/test",
             "type": "gdb",
             "request": "launch",
             "autorun": [
@@ -95,7 +69,7 @@
             "cwd": "${workspaceRoot}/tmp"
         },
         {
-            "name": "run build",
+            "name": "make",
             "type": "gdb",
             "request": "launch",
             "autorun": [
