@@ -62,7 +62,7 @@ class SpaceMeta : Data {
 }
 
 /// info of a junction
-class JunctionInfo : IdData {
+class JunctionInfo : Data {
     mixin data;
 
     /// space of junction (set by space when creating junction)
@@ -107,13 +107,9 @@ class JunctionInfo : IdData {
 }
 
 /// metadata of a junction
-class JunctionMeta : Data {
-    private import std.uuid : UUID;
-
+class JunctionMeta : IdData {
     mixin data;
 
-    // id used for internal identification
-    mixin field!(UUID, "id");
     mixin field!(JunctionInfo, "info");
     mixin field!(string, "type");
     mixin field!(ushort, "level");

@@ -29,6 +29,19 @@
             "cwd": "${workspaceRoot}/test"
         },
         {
+            "name": "test/ipc-zeromq",
+            "type": "gdb",
+            "request": "launch",
+            "autorun": [
+                "set environment LD_LIBRARY_PATH ${workspaceRoot}/util/dmd2/linux/lib64:${workspaceRoot}/lib",
+                "handle SIGUSR1 nostop noprint",
+                "handle SIGUSR2 nostop noprint",
+                "break onInvalidMemoryOperationError"
+            ],
+            "target": "${workspaceRoot}/test/ipc-zeromq",
+            "cwd": "${workspaceRoot}/test"
+        },
+        {
             "name": "bin/flow-run",
             "type": "gdb",
             "request": "launch",
